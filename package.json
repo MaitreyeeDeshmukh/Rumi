@@ -1,0 +1,1 @@
+{ "name": "rumi", "private": true, "version": "0.1.0", "scripts": { "build": "node build.mjs" }, "devDependencies": { "esbuild": "0.21.5" } }
