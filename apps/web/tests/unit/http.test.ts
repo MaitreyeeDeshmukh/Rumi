@@ -77,7 +77,9 @@ describe("readJson", () => {
 
   it("returns 400 for invalid JSON, invalid UTF-8 and a missing body", async () => {
     await expect(readJson(post("{nope"), 1000)).rejects.toMatchObject({ status: 400, code: "bad_input" });
-    await expect(readJson(post(new Uint8Array([0x7b, 0x22, 0xff, 0x22, 0x7d])), 1000)).rejects.toMatchObject({ status: 400 });
+    // valid JSON apart from one byte that is not UTF-8: {"a":"<0xFF>"}
+    const badByte = new Uint8Array([0x7b, 0x22, 0x61, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]);
+    await expect(readJson(post(badByte), 1000)).rejects.toMatchObject({ status: 400 });
     await expect(readJson(post(null), 1000)).rejects.toMatchObject({ status: 400 });
   });
 });

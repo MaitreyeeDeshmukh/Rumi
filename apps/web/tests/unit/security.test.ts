@@ -87,8 +87,11 @@ describe("createRateLimiter", () => {
     const l = createRateLimiter({ now: c.now, limits: { perIp: 2 } });
     hit(l, "ipA");
     hit(l, "ipA");
-    for (let i = 0; i < 50; i++) expect(hit(l, "ipA")).toBe(false);
-    c.advance(60_001);
+    for (let i = 0; i < 50; i++) {
+      c.advance(100);
+      expect(hit(l, "ipA")).toBe(false);
+    }
+    c.advance(55_001); // 60,001 ms after the two allowed requests
     expect(hit(l, "ipA")).toBe(true);
   });
 

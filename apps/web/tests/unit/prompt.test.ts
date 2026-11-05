@@ -124,6 +124,13 @@ describe("regions", () => {
     expect(leftover).not.toMatch(/<\s*\/?\s*(?:system|assistant|user_text|user_memory)/i);
   });
 
+  it("removes invisible and bidi characters from stated preferences", () => {
+    const zeroWidth = String.fromCodePoint(0x200b);
+    const bidi = String.fromCodePoint(0x202e);
+    const out = renderStyleRegion([`Pl${zeroWidth}ease speak${bidi} slowly`], nonce);
+    expect(out).toContain(`>>>Please speak slowly<<<END ${nonce}>>>`);
+  });
+
   it("caps the number of stated preferences and their length", () => {
     const out = renderStyleRegion(Array.from({ length: 50 }, (_, i) => `pref ${i} ${"x".repeat(500)}`), nonce);
     expect(out.match(/field=memory/g)?.length).toBe(20);

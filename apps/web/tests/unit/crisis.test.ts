@@ -99,6 +99,9 @@ const POSITIVES: Array<[theme: string, phrase: string]> = [
   ["spanish", "quiero quitarme la vida"],
   ["spanish", "estoy pensando en suicidarme"],
   ["spanish", "me voy a matar"],
+  ["spanish", "voy a matarme esta noche"],
+  ["spanish", "quiero morirme"],
+  ["spanish", "tengo dolor de pecho ahora"],
   ["spanish", "no puedo respirar"],
   ["spanish", "mi esposo me pega"],
 ];

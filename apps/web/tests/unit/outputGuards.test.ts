@@ -102,6 +102,8 @@ describe("adviceCodes: dose", () => {
     "take one tablet",
     "Try 10 mg",
     "5 mg of ibu\u200Bprofen",
+    "\u0665\u0660\u0660 milligrams",
+    "\u0662 tablets",
   ];
   it.each(trip)("flags a dose that is not in the ledger: %j", (text) => {
     expect(adviceCodes(text, empty())).toContain("advice_dose");

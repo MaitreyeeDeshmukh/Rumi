@@ -73,7 +73,7 @@ describe("getSession", () => {
 
   it("rejects an id that is not a uuid even when its signature is valid", async () => {
     const { session } = await load({ SESSION_SECRET: SECRET_A });
-    const id = "../../admin";
+    const id = "admin_user_1";
     const sig = createHmac("sha256", SECRET_A).update(id).digest("base64url");
     const s = session.getSession(withCookie(`rumi_sid=${id}.${sig}`));
     expect(s.id).not.toBe(id);
