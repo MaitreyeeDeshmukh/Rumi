@@ -6,7 +6,7 @@
  * sometimes block a harmless sentence; the retry and the deterministic fallback cover both cases.
  * Server only. Text longer than MAX_GUARD_CHARS is not scanned: the guards return the hard code "schema" for it.
  */
-import { COMMON_DRUGS, CONDITIONS } from "@/features/shared/lists";
+import { COMMON_DRUGS, CONDITIONS, EXTRA_CONDITIONS } from "@/features/shared/lists";
 import type { GuardCode } from "@/features/shared/guards";
 import type { EvidenceLedger } from "@/features/shared/task";
 import { extractAmounts, normalizeText, numberTokens, splitSentences, wordSet } from "@/lib/text/tokens";
@@ -226,14 +226,6 @@ const DOSE_COMMANDS: readonly RegExp[] = [
 
 // ---------------------------------------------------------------- diagnosis and treatment (07 D15)
 
-// Conditions that 'lists.ts' lacks (the shared file is frozen); the exact additions are reported under ISSUES FOUND.
-const EXTRA_CONDITIONS = [
-  "high blood pressure", "low blood pressure", "high cholesterol", "low iron", "iron deficiency", "anemic", "depressed", "anxious",
-  "bipolar disorder", "panic attack", "panic attacks", "stress", "stressed", "vitamin d deficiency", "underactive thyroid",
-  "overactive thyroid", "irritable bowel", "food poisoning", "kidney infection", "chronic fatigue", "sleep disorder",
-  "hormonal imbalance", "hormone imbalance", "heart condition", "blood clot", "dehydration", "malnutrition", "obesity", "diabetic",
-  "autistic", "asthmatic", "epileptic", "prediabetic", "overweight",
-];
 // "add" and "aids" are ordinary words ("add a question", "aids to help you"); "AIDS" is checked on its own, in capitals.
 const AMBIGUOUS_CONDITIONS = new Set(["add", "aids"]);
 const COND = alternation([...CONDITIONS.filter((c) => !AMBIGUOUS_CONDITIONS.has(c)), ...EXTRA_CONDITIONS]);

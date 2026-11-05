@@ -56,6 +56,15 @@ export const CONDITIONS = [
   'bulimia', 'panic disorder', 'panic attacks', 'burnout', 'long covid', 'pcos', 'endometriosis', 'tendonitis',
 ] as const;
 
+/** Everyday names for conditions that CONDITIONS lacks. The advice guard treats them like CONDITIONS. */
+export const EXTRA_CONDITIONS = [
+  "high blood pressure", "low blood pressure", "high cholesterol", "low iron", "iron deficiency", "anemic", "depressed", "anxious",
+  "bipolar disorder", "panic attack", "panic attacks", "stress", "stressed", "vitamin d deficiency", "underactive thyroid",
+  "overactive thyroid", "irritable bowel", "food poisoning", "kidney infection", "chronic fatigue", "sleep disorder",
+  "hormonal imbalance", "hormone imbalance", "heart condition", "blood clot", "dehydration", "malnutrition", "obesity", "diabetic",
+  "autistic", "asthmatic", "epileptic", "prediabetic", "overweight",
+] as const;
+
 export const STOPWORDS = [
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'any', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'has',
   'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'did', 'get', 'let', 'say', 'she',
