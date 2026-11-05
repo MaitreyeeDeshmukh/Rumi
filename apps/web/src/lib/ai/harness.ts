@@ -21,10 +21,10 @@ import { isHard, type GuardCode } from "@/features/shared/guards";
 import { FactsRequest } from "@/features/shared/schemas";
 import type { EvidenceLedger, TaskSpec, Tier } from "@/features/shared/task";
 import { crisisTier } from "@/lib/crisis";
-import { ConfigError, assertRuntimeEnv, getEvalCanary, mockAiEnabled } from "@/lib/env";
+import { ConfigError, assertRuntimeEnv, getEvalCanary, isProduction, mockAiEnabled } from "@/lib/env";
 import { HttpError, errorResponse, json, readJson } from "./http";
 import { adviceCodes, claimsHumanCodes, clinicianFindingCodes, collectStrings, mapStrings, stripUrls } from "./guards/output";
-import { promptForm, redactPii, scanInjection } from "./guards/input";
+import { MAX_GUARD_CHARS, promptForm, redactPii, scanInjection } from "./guards/input";
 import { buildCrisisCheckPrompt, buildPreamble, canaryLine, containsCanary, fence, newNonce, renderFactsRegion, renderStyleRegion, renderTaskRegion } from "./prompt";
 import { ProviderError, createGroqProvider, type Provider, type ProviderCall, type ProviderResult } from "./provider";
 import { logEvent, type AiEvent, type EventErrorCode, type Stage } from "./telemetry";
@@ -69,13 +69,17 @@ const defaultProvider = (): Provider => (groq ??= createGroqProvider());
 interface Breaker {
   fails: number;
   openUntil: number;
+  /** True while the one half-open probe call is in flight. */
+  probing: boolean;
+  /** Counts failures. A success counts only if no failure happened since its call started. */
+  version: number;
 }
 /** One breaker per provider object, so each serverless instance and each test provider has its own. */
 const breakers = new WeakMap<Provider, Breaker>();
 function breakerOf(p: Provider): Breaker {
   let b = breakers.get(p);
   if (b === undefined) {
-    b = { fails: 0, openUntil: 0 };
+    b = { fails: 0, openUntil: 0, probing: false, version: 0 };
     breakers.set(p, b);
   }
   return b;
@@ -120,8 +124,13 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
   const breaker = breakerOf(provider);
   const left = DEADLINE_MS - (run.now() - run.startedAt);
   const budget = Math.min(CALL_MAX_MS, left - RESERVE_MS);
-  if (run.calls >= MAX_CALLS || breaker.openUntil > run.now() || budget <= 0) return { ok: false, kind: "skipped" };
+  const tripped = breaker.fails >= BREAKER_FAILS;
+  // Open: skip. Half-open (the pause is over): one probe call at a time, every other call is skipped until it ends.
+  if (run.calls >= MAX_CALLS || budget <= 0 || (tripped && (breaker.openUntil > run.now() || breaker.probing))) return { ok: false, kind: "skipped" };
 
+  const probe = tripped;
+  if (probe) breaker.probing = true;
+  const version = breaker.version;
   run.calls += 1;
   run.ev.attempts = run.calls;
   run.ev.tier = call.tier;
@@ -129,25 +138,36 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
     const answer = await withTimeout(provider, call, budget);
     const valid = ProviderAnswer.safeParse(answer);
     if (!valid.success) throw new ProviderError("empty");
-    breaker.fails = 0;
-    breaker.openUntil = 0;
+    // A success that started before a newer failure must not close a breaker those failures opened.
+    if (breaker.version === version) {
+      breaker.fails = 0;
+      breaker.openUntil = 0;
+    }
     run.ev.inTokens += Math.max(0, Math.floor(answer.inTokens));
     run.ev.outTokens += Math.max(0, Math.floor(answer.outTokens));
     return { ok: true, result: answer };
   } catch (e) {
     // Anything that is not a ProviderError is a bug in a provider; it counts as a failed call like any other.
     const kind = e instanceof ProviderError ? e.kind : "http";
+    run.ev.providerKind = kind;
     if (kind !== "config" && kind !== "aborted") {
       breaker.fails += 1;
+      breaker.version += 1;
+      // The pause is counted from this failure, which is when it is noticed (a call that hangs fails at its timeout).
       if (breaker.fails >= BREAKER_FAILS) breaker.openUntil = run.now() + BREAKER_PAUSE_MS;
     }
     return { ok: false, kind };
+  } finally {
+    if (probe) breaker.probing = false;
   }
 }
 
 // ---------------------------------------------------------------- model text
 
 /** JSON.parse that accepts one ``` fence around the JSON and drops a __proto__ key. undefined when it is not JSON. */
+/** The model's own crisis flag in any shape: prose around it, a fence, nested, quoted, any case. Matching the raw text is deliberate. */
+const MODEL_CRISIS_FLAG = /["']?crisis["']?\s*[:=]\s*["']?true\b/i;
+
 function parseModelJson(text: string): unknown {
   if (text.length > MAX_MODEL_TEXT) return undefined;
   let body = text.trim();
@@ -180,7 +200,7 @@ const unique = <T>(list: readonly T[]): T[] => [...new Set(list)];
 /** Everything between the model's text and a reply the user may see. Returns codes only, never text. */
 function checkOutput<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req, ledger: EvidenceLedger, text: string, canary: string | undefined): Verdict<Reply> {
   const raw = parseModelJson(text);
-  if (isRecord(raw) && raw.crisis === true) return { kind: "crisis" }; // D5: read before Zod, so a reply of only {"crisis":true} counts
+  if ((isRecord(raw) && raw.crisis === true) || MODEL_CRISIS_FLAG.test(text.slice(0, MAX_MODEL_TEXT))) return { kind: "crisis" }; // D5: read before Zod, so a reply of only {"crisis":true} counts
   if (canary !== undefined && containsCanary(text, canary)) return { kind: "checked", codes: ["schema"] };
   const parsed = spec.modelOut.safeParse(raw);
   if (!parsed.success) return { kind: "checked", codes: ["schema"] };
@@ -216,9 +236,16 @@ function memoryStrings(useMemory: boolean, body: unknown): string[] {
   return facts.success ? factStrings(facts.data.filter((f) => f.kind !== "help_level")) : [];
 }
 
+/** Words that would read as an instruction when placed in "You are <name>". Whole words only. */
+const NAME_BLOCKED = new Set(["never", "ignore", "refuse", "always", "must", "system", "instructions", "prompt", "pretend", "jailbreak"]);
+const SAFE_NAME = /^[A-Za-z]{2,15}(?: [A-Za-z]{2,15})?$/;
+
+/** The helper name goes into the system prompt, so it is held to a stricter rule than the schema: otherwise "Rumi". */
 function companionOf(r: unknown): string {
   const name = isRecord(r) ? r.companionName : undefined;
-  return typeof name === "string" && COMPANION_RE.test(name) ? name : "Rumi";
+  if (typeof name !== "string" || !COMPANION_RE.test(name) || !SAFE_NAME.test(name)) return "Rumi";
+  if (name.toLowerCase().split(" ").some((w) => NAME_BLOCKED.has(w)) || scanInjection(name) > 0) return "Rumi";
+  return name;
 }
 
 const withDegraded = (reply: unknown, degraded: boolean): unknown => ({ ...(reply as object), degraded });
@@ -294,7 +321,13 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
     // 3. every string leaf cleaned into a clone; the schema runs again so text that is empty after cleaning is refused (I-044)
     stage = "sanitize";
-    const sanitized = spec.request.safeParse(mapStrings(parsed.data, promptForm));
+    const sanitized = spec.request.safeParse(
+      mapStrings(parsed.data, (s) => {
+        // Nothing the guards cannot scan is let through: an oversize field is refused before any pattern runs on it.
+        if (s.length > MAX_GUARD_CHARS) throw new HttpError(413, "too_large");
+        return promptForm(s);
+      }),
+    );
     if (!sanitized.success) throw new HttpError(400, "bad_input");
     const r = sanitized.data;
     clean = r;
@@ -311,7 +344,10 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     const provider = deps.provider ?? (mockAiEnabled() ? undefined : defaultProvider());
     if (flagged.length > 0) {
       stage = "provider";
-      const text = redactPii(flagged.join("\n")).text.slice(0, LIMITS.rawTextMax);
+      // Text that tries to steer the classifier is not trusted to it: the card is shown.
+      if (flagged.some((t) => scanInjection(t) > 0)) return finish(crisis());
+      // Numbers and contacts are redacted but names are not ("I am Hopeless" must stay readable to the classifier).
+      const text = redactPii(flagged.map((t) => t.slice(0, LIMITS.rawTextMax)).join("\n"), { names: false }).text;
       if (await modelSaysCrisis(run, provider, nonce, text)) return finish(crisis());
     }
 
@@ -321,8 +357,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       r,
       (s) => {
         ev.injectionHits += scanInjection(s);
-        const red = redactPii(s);
-        if (red.tooLarge) throw new HttpError(413, "too_large");
+        const red = redactPii(s); // each field is at most MAX_GUARD_CHARS here (checked when the request was cleaned)
         ev.redactions += red.count;
         return red.text;
       },
@@ -343,6 +378,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     if (!configured) return finish(degrade("config"));
     if (mockAiEnabled()) {
       stage = "reply";
+      if (isProduction()) ev.stage = "mock_prod"; // MOCK_AI must never be set in production; this makes it visible
       const mocked = answer(spec.mock(r), "mock");
       return finish(mocked ?? degrade("ai_invalid"));
     }
