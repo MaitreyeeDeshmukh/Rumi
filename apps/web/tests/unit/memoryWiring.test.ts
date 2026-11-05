@@ -52,6 +52,12 @@ describe("addCustomItem", () => {
     expect(addCustomItem(empty(), w(16)).error).toBe("Make it shorter and clearer: 15 words or fewer, one idea.");
   });
 
+  it("the 15 words count the whole line, not each sentence", () => {
+    const two = "Please speak slowly to me today. Please wait for me until I finish my whole answer.";
+    expect(two.split(" ")).toHaveLength(16);
+    expect(addCustomItem(empty(), two).error).toBe("Make it shorter and clearer: 15 words or fewer, one idea.");
+  });
+
   it.each([
     ["an idiom", "Please give it a shot."],
     ["two commands", "Open the door and sit down."],
