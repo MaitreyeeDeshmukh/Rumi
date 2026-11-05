@@ -25,7 +25,7 @@ export interface CallOpts {
   typedText?: readonly string[];
 }
 
-export const API_TIMEOUT_MS = 25_000;
+const API_TIMEOUT_MS = 25_000;
 const MAX_DEPTH = 12;
 
 const MESSAGES: Record<ApiErrorCode, string> = {

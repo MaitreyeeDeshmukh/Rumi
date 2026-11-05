@@ -4,6 +4,7 @@
  * delete takes at most 100 ids. Extra knobs let tests model slow deletes and documents that never go away.
  */
 export interface SmCall {
+  origin: string;
   method: string;
   path: string;
   query: string;
@@ -65,7 +66,7 @@ export function fakeSupermemory(): FakeSm {
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" && init.body ? JSON.parse(init.body) : undefined;
     const headers = new Headers(init?.headers);
-    sm.calls.push({ method, path: url.pathname, query: url.search, body, auth: headers.get("authorization") });
+    sm.calls.push({ origin: url.origin, method, path: url.pathname, query: url.search, body, auth: headers.get("authorization") });
     if (sm.delayMs) {
       await new Promise<void>((resolve, reject) => {
         const t = setTimeout(resolve, sm.delayMs);

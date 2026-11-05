@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SM_BASE, SmError, createSmClient } from "@/features/memory/smClient";
+import { SmError, createSmClient } from "@/features/memory/smClient";
 import { fakeSupermemory } from "./helpers/fakeSupermemory";
 
 const KEY = "sm-key-SECRET-123";
@@ -21,7 +21,7 @@ describe("smClient requests", () => {
       `DELETE /ns/${NS}/document`,
     ]);
     expect(sm.calls.every((c) => c.auth === `Bearer ${KEY}`)).toBe(true);
-    expect(SM_BASE).toBe("https://api.supermemory.ai");
+    expect(sm.calls.every((c) => c.origin === "https://api.supermemory.ai")).toBe(true);
   });
 
   it("get of a missing document is null, not an error", async () => {

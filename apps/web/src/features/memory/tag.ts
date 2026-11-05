@@ -5,7 +5,7 @@
 import { createHmac } from 'node:crypto';
 import { isRecoveryCode } from './recoveryCode';
 
-export const MIN_TAG_SECRET_CHARS = 32;
+const MIN_TAG_SECRET_CHARS = 32;
 
 export function tagFromCode(code: string, secret: string): string {
   if (!isRecoveryCode(code) || secret.length < MIN_TAG_SECRET_CHARS) throw new Error('bad memory key');

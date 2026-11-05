@@ -5,9 +5,9 @@
 import type { Persona, SupportCard, SupportItem, VisitPlan } from '@/features/shared/types';
 import { SUPPORT_PRESETS, presetText } from './presets';
 
-export const SUPPORT_HEADING = 'How I like to be supported';
+const SUPPORT_HEADING = 'How I like to be supported';
 export const CONCERN_HEADING = 'My main concern';
-export const QUESTIONS_HEADING = 'My top questions';
+const QUESTIONS_HEADING = 'My top questions';
 const TOP_QUESTIONS = 2;
 
 /** One item per preset; on only if the person chose it before (a `support_pref` fact for that preset id). */

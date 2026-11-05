@@ -10,7 +10,7 @@ import { presetText } from '@/features/support/presets';
 import { PACING_PRESET, factText } from './factText';
 
 /** Stable id, so writing the same fact twice is an update, never a second copy. */
-export const factId = (kind: FactKind, key: string): string => `${kind}:${key}`;
+const factId = (kind: FactKind, key: string): string => `${kind}:${key}`;
 
 /** One entry per practice that used this kind of plan item. Shape is what the start-level rule reads. */
 export interface HelpHistoryEntry {

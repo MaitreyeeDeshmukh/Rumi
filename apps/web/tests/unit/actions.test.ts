@@ -100,6 +100,16 @@ describe("syncPersona with memory on", () => {
     }
   });
 
+  it("an error status counts as failed even when its body looks like a good answer", async () => {
+    const bad = (async () => Response.json({ saved: 1, rejected: 0 }, { status: 500 })) as typeof fetch;
+    const { actions } = setup(bad);
+    expect((await actions.enableMemory()).remote).toBe("failed");
+    const badForget = (async () => Response.json({ status: "ok" }, { status: 500 })) as typeof fetch;
+    const second = setup(badForget);
+    second.store.update((d) => void (d.persona.recoveryCode = CODE));
+    expect(await second.actions.forgetAll()).toEqual({ remote: "failed" });
+  });
+
   it("times out instead of hanging", async () => {
     const hang = ((_u: RequestInfo | URL, init?: RequestInit) =>
       new Promise<Response>((_res, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("a", "AbortError"))))) as typeof fetch;

@@ -9,12 +9,12 @@
  */
 import { z } from 'zod';
 
-export const SM_BASE = 'https://api.supermemory.ai';
+const SM_BASE = 'https://api.supermemory.ai';
 export const NS_RE = /^[a-zA-Z0-9_:-]{1,100}$/;
 /** No dots: encodeURIComponent('..') is '..' and would walk the path. */
-export const DOC_ID_RE = /^[A-Za-z0-9_:-]{1,100}$/;
-export const DELETE_BATCH = 100;
-export const LIST_PAGE_LIMIT = 100;
+const DOC_ID_RE = /^[A-Za-z0-9_:-]{1,100}$/;
+const DELETE_BATCH = 100;
+const LIST_PAGE_LIMIT = 100;
 const MAX_LIST_PAGES = 50;
 const MAX_CONTENT_CHARS = 500;
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -35,11 +35,11 @@ export interface SmDoc {
   id: string;
   metadata?: Record<string, unknown>;
 }
-export interface SmListPage {
+interface SmListPage {
   documents: SmDoc[];
   totalPages: number;
 }
-export interface SmDeps {
+interface SmDeps {
   fetchFn: typeof fetch;
   apiKey: string;
   timeoutMs?: number;

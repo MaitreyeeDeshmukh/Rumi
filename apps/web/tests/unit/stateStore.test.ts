@@ -53,7 +53,7 @@ describe("stateStore before hydration", () => {
     expect(JSON.parse(storage.data.get(KEY) as string).settings.name).toBe("Sam");
   });
 
-  it("reset drops updates that were waiting for hydration", () => {
+  it("reset before hydration discards waiting updates and leaves a clean hydrated state", () => {
     const storage = fakeStorage();
     const store = createStateStore({ storage });
     store.update((d) => void (d.settings.name = "Sam"));

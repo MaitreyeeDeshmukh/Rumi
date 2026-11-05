@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { factId, factsFromState, helpHistoryFor, toWireFacts } from "@/features/memory/persona";
+import { factsFromState, helpHistoryFor, toWireFacts } from "@/features/memory/persona";
 import { factText } from "@/features/memory/factText";
 import { FactsRequest } from "@/features/shared/schemas";
 import { defaultState } from "@/lib/storage";
@@ -129,6 +129,5 @@ describe("toWireFacts", () => {
     const withLevel = toWireFacts([{ id: "help_level:question", kind: "help_level", key: "question", level: 2, createdAt: NOW }]);
     expect(withLevel).toEqual([{ kind: "help_level", key: "question", level: 2 }]);
     expect(FactsRequest.safeParse({ facts: withLevel }).success).toBe(true);
-    expect(factId("pacing", "extra_time")).toBe("pacing:extra_time");
   });
 });

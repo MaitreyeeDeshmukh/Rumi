@@ -26,9 +26,9 @@ export interface MemoryActionDeps {
   timeoutMs?: number;
 }
 
-export const FACTS_PATH = '/api/memory/facts';
-export const FORGET_PATH = '/api/memory/forget';
-export const MEMORY_HEADER = 'x-rumi-key';
+const FACTS_PATH = '/api/memory/facts';
+const FORGET_PATH = '/api/memory/forget';
+const MEMORY_HEADER = 'x-rumi-key';
 
 /** The code to send with AI calls: only while memory is on and the code is valid. */
 export const memoryCodeFor = (s: RumiState): string | undefined =>

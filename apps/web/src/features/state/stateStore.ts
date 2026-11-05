@@ -9,7 +9,6 @@
  *  - `verifiedRecoveryCode()` reads the code back from storage; remote writes use it, so a code that did not
  *    reach this device (full disk, other tab) can never create a remote namespace nobody can erase.
  */
-import { isRecoveryCode } from '@/features/memory/recoveryCode';
 import type { RumiState } from '@/features/shared/types';
 import { KEY, MAX_SESSIONS, defaultState, loadState, resetState, saveState, type SaveResult, type StorageLike } from '@/lib/storage';
 
@@ -111,13 +110,11 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
     update,
     reset() {
       const result = resetState(storage);
-      pending = [];
       publish({ state: defaultState(), hydrated: true, lastSave: result });
       return result;
     },
     verifiedRecoveryCode() {
       const inMemory = snapshot.state.persona.recoveryCode;
-      if (!inMemory || !isRecoveryCode(inMemory)) return undefined;
       return loadState(storage).persona.recoveryCode === inMemory ? inMemory : undefined;
     },
   };
