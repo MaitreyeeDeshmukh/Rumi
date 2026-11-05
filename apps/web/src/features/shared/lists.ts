@@ -40,6 +40,7 @@ export const COMMON_DRUGS = [
   'guanfacine', 'clonidine', 'melatonin', 'lorazepam', 'ativan', 'alprazolam', 'xanax', 'diazepam', 'valium', 'clonazepam',
   'gabapentin', 'pregabalin', 'tramadol', 'codeine', 'oxycodone', 'morphine', 'hydrocodone', 'sumatriptan', 'albuterol',
   'cetirizine', 'loratadine', 'benadryl', 'diphenhydramine', 'montelukast', 'levothyroxine', 'cannabis', 'cbd',
+  'panadol', 'percocet', 'hydroxychloroquine', 'excedrin', 'nurofen', 'voltaren', 'zyrtec', 'claritin', 'prilosec', 'nexium', 'zantac', 'imodium', 'lipitor', 'ozempic', 'wegovy', 'viagra', 'cialis', 'oxycontin', 'vicodin', 'dilaudid', 'suboxone', 'methadone', 'prednisolone', 'dexamethasone', 'hydrocortisone', 'ranitidine', 'famotidine', 'fexofenadine', 'ventolin', 'salbutamol', 'amitriptyline', 'propranolol', 'buspirone', 'hydroxyzine', 'modafinil', 'vyvanse', 'lisdexamfetamine', 'dexamfetamine', 'dextroamphetamine', 'concerta', 'strattera', 'ketamine', 'codamol', 'cocodamol', 'metoclopramide', 'ondansetron', 'loperamide', 'gaviscon', 'benzonatate', 'sildenafil',
 ] as const;
 
 /** Conditions a pretend clinician must never tell the user they have. */

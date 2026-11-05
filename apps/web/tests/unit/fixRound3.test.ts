@@ -8,7 +8,7 @@ import { verifyEvidence } from "@/features/recap/verifyEvidence";
 import { RecapReply, RecapRequest, PracticeRequest } from "@/features/shared/schemas";
 import type { RecapItem, Speaker, TranscriptLine } from "@/features/shared/types";
 import { DEMO_PLAN } from "@/fixtures/demoPlan";
-import { EXTRA_DRUGS } from "@/lib/text/extraDrugs";
+import { COMMON_DRUGS } from "@/features/shared/lists";
 import { dosesByDrug, ledgerFromTexts, ungroundedSpecifics } from "@/lib/text/specifics";
 import { stem } from "@/lib/text/stems";
 import { STOP_LINE } from "../../prompts/persona";
@@ -221,11 +221,13 @@ describe("R2-7 natural answers are credited, stray words are not", () => {
 });
 
 describe("P3 extras", () => {
-  it("EXTRA_DRUGS is a plain lowercase array the harness can import", () => {
-    expect(Array.isArray(EXTRA_DRUGS)).toBe(true);
-    expect(EXTRA_DRUGS).toContain("panadol");
-    expect(EXTRA_DRUGS.length).toBeGreaterThan(40);
-    for (const d of EXTRA_DRUGS) expect(d).toBe(d.toLowerCase());
+  it("the extra brand names live in the shared COMMON_DRUGS list the harness imports", () => {
+    const list: readonly string[] = COMMON_DRUGS;
+    for (const name of ["panadol", "percocet", "hydroxychloroquine", "excedrin", "nurofen", "ozempic", "sildenafil"]) {
+      expect(list).toContain(name);
+    }
+    expect(list.length).toBeGreaterThan(120);
+    for (const d of list) expect(d).toBe(d.toLowerCase());
   });
 
   it("a date keeps its order: 5/11 is not 11/5", () => {

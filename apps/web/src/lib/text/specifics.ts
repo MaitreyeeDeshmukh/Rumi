@@ -7,7 +7,6 @@
  */
 import type { GuardCode } from "@/features/shared/guards";
 import { COMMON_DRUGS, MONTHS, NUMBER_WORDS, RELATIVE_TIME, SENTENCE_STARTERS, STOPWORDS, UNITS, WEEKDAYS, toSet } from "@/features/shared/lists";
-import { EXTRA_DRUGS } from "@/lib/text/extraDrugs";
 import type { EvidenceLedger } from "@/features/shared/task";
 import { normalizeText, splitSentences, wordList } from "@/lib/text/tokens";
 
@@ -19,7 +18,7 @@ export interface SpecificsResult {
 
 const MONTH_SET = toSet(MONTHS);
 const WEEKDAY_SET = toSet(WEEKDAYS);
-const DRUG_SET: ReadonlySet<string> = new Set([...COMMON_DRUGS, ...EXTRA_DRUGS]);
+const DRUG_SET: ReadonlySet<string> = new Set<string>(COMMON_DRUGS);
 const STOP = toSet(STOPWORDS);
 export const isDrugWord = (w: string): boolean => DRUG_SET.has(w.toLowerCase());
 const NUMBER_WORD_SET = toSet(NUMBER_WORDS);
