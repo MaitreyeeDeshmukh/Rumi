@@ -99,3 +99,9 @@ describe("scoreNumbers: units, money and unit swaps (E-8)", () => {
     expect(inv("It costs $2 million", "I owe $2000000")).toEqual([]);
   });
 });
+
+describe("scoreNumbers: survivors of the first mutation round", () => {
+  it("money is its own unit: a bare 41000 does not ground \$41k", () => {
+    expect(scoreNumbers({ script: "It costs $41k" }, ["I have 41000 coins"]).invented).toHaveLength(1);
+  });
+});

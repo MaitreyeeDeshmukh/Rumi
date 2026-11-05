@@ -109,3 +109,11 @@ describe("echoesPayload (supporting signal)", () => {
     expect(echoesPayload(body, payload)).toBe(true);
   });
 });
+
+describe("shape: survivors of the first mutation round", () => {
+  it("a foreign-language reply and short filler fail through the reply checks, not just the helpers", () => {
+    expect(failures("sayit:s02", script("Me duele el hombro cuando levanto el brazo.")).join("|")).toMatch(/language/);
+    expect(failures("sayit:s02", script("word ".repeat(40))).join("|")).toMatch(/filler: repetitive/);
+    expect(failures("sayit:s02", script("I want to ask about my visit, please.")).join("|")).not.toMatch(/language|filler/);
+  });
+});

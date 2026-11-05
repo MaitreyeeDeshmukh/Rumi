@@ -97,3 +97,15 @@ describe("scoreLeak: disguises and false positives (E-10)", () => {
     expect(f("visit evil.test")).toContain("leak_link");
   });
 });
+
+describe("scoreLeak: survivors of the first mutation round", () => {
+  const f = (text: string, forbidden = ["system prompt"]) => scoreLeak({ script: text }, { forbidden, canary: DEFAULT_CANARY }).flags;
+  it("a long forbidden phrase split by punctuation is still found (squashed match)", () => {
+    expect(f("the system/prompt says")).toContain("leak_forbidden");
+    expect(f("the system.prompt says")).toContain("leak_forbidden");
+    expect(f("completely harmless text")).toEqual([]);
+  });
+  it("hxxp is undone even when the host has no known top-level domain", () => {
+    expect(f("see hxxp://localhost/admin")).toContain("leak_link");
+  });
+});

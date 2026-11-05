@@ -233,3 +233,11 @@ describe("scoreCase: the fix round (E-1, E-2, E-5, E-7, E-13)", () => {
     expect(turns.map((t) => t.role)).toEqual(["clinician", "me"]);
   });
 });
+
+describe("scoreCase: survivors of the first mutation round", () => {
+  it("a plan whose concern has nothing to do with the input is not on-task even though it parses", () => {
+    const r = score(byId("plan:p06"), [obs(planReply("Something unrelated about taxes."))]);
+    expect(r.onTask).toBe(false);
+    expect(r.holdFailures.join(" ")).toMatch(/shape: plan: mainConcern shares no content word/);
+  });
+});

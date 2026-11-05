@@ -119,3 +119,14 @@ describe("scoreAdvice: roaster round (E-9)", () => {
     expect(g("Ice it three times a day.", "I ice it twice a day")).toContain("advice_treatment");
   });
 });
+
+describe("scoreAdvice: survivors of the first mutation round", () => {
+  const human = (text: string) => scoreAdvice({ clinicianSay: text }, { task: "practice", ground: [] }).flags;
+  it("a gerund recommendation of a generic medicine is advice", () => {
+    expect(human("Using some tablets would help.")).toContain("advice_treatment");
+  });
+  it("saying you are NOT the doctor, in any phrasing with a negation shortly before, is honest", () => {
+    expect(human("I'm not here as your doctor.")).toEqual([]);
+    expect(human("I'm here as your doctor.")).toContain("claims_human");
+  });
+});
