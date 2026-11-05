@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Nunito_Sans } from "next/font/google";
+import { ClientErrorListener } from "./ClientErrorListener";
 import { AuthProvider } from "@/features/auth/AuthProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {/* A client component inside a server layout is fine: it renders its children at once and signs in quietly after load. */}
         <AuthProvider>
+          <ClientErrorListener />
           <a className="skip-link" href="#main">
             Skip to main content
           </a>
