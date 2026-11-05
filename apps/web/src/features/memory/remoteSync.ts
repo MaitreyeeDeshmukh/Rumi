@@ -42,12 +42,14 @@ const MAX_STATED_DOCS = 20;
 
 /** Sentences for a document list, from metadata only. Pure, so the read path is testable on its own. */
 export function statedFactStrings(docs: readonly SmDoc[]): string[] {
-  const picked: { kind: string; key: string }[] = [];
+  const picked: { kind: string; key: string; level?: number }[] = [];
   for (const d of docs) {
     const m = d.metadata;
     if (!m || !Object.hasOwn(m, 'kind') || !Object.hasOwn(m, 'key')) continue;
-    const { kind, key } = m;
-    if (typeof kind === 'string' && typeof key === 'string' && STATED_KINDS.has(kind)) picked.push({ kind, key });
+    const { kind, key, level } = m;
+    if (typeof kind === 'string' && typeof key === 'string' && STATED_KINDS.has(kind)) {
+      picked.push({ kind, key, ...(typeof level === 'number' ? { level } : {}) });
+    }
   }
   return factStrings(picked.slice(0, MAX_STATED_DOCS));
 }

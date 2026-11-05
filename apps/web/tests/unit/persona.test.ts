@@ -126,6 +126,9 @@ describe("toWireFacts", () => {
       { kind: "pacing", key: "one_question" },
     ]);
     expect(FactsRequest.safeParse({ facts: wire }).success).toBe(true);
+    const withLevel = toWireFacts([{ id: "help_level:question", kind: "help_level", key: "question", level: 2, createdAt: NOW }]);
+    expect(withLevel).toEqual([{ kind: "help_level", key: "question", level: 2 }]);
+    expect(FactsRequest.safeParse({ facts: withLevel }).success).toBe(true);
     expect(factId("pacing", "extra_time")).toBe("pacing:extra_time");
   });
 });

@@ -13,11 +13,15 @@ function clock() {
   return { now: () => t, sleep: async (ms: number) => void (t += ms, sleeps.push(ms)), sleeps };
 }
 
-function scripted(lists: SmDoc[][]) {
+function scripted(lists: (SmDoc[] | Error)[]) {
   const dels: string[][] = [];
   let i = 0;
   const client = {
-    listAll: async () => lists[Math.min(i++, lists.length - 1)],
+    listAll: async () => {
+      const next = lists[Math.min(i++, lists.length - 1)];
+      if (next instanceof Error) throw next;
+      return next;
+    },
     del: async (_ns: string, ids: readonly string[]) => void dels.push([...ids]),
   } as unknown as SmClient;
   return { client, dels, listCalls: () => i };
@@ -50,6 +54,12 @@ describe("forgetNamespace", () => {
     expect(await forgetNamespace(NS, { client: s.client, ...clock() })).toBe("ok");
     expect(s.listCalls()).toBe(5);
     expect(s.dels).toEqual([["a"], ["a"]]);
+  });
+
+  it("a list error between empty lists resets the count", async () => {
+    const s = scripted([[], new Error("boom"), [], []]);
+    expect(await forgetNamespace(NS, { client: s.client, ...clock() })).toBe("ok");
+    expect(s.listCalls()).toBe(4);
   });
 
   it("when the second list is not empty for the whole budget it returns failed", async () => {
