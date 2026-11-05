@@ -254,12 +254,29 @@ describe("syncPersona: remote", () => {
     expect(d.state().settings.memoryOptIn).toBe(true);
   });
 
-  it("the sync flag off on the server: failed (503 is retried and then reported), local data untouched", async () => {
+  it("the sync flag off on the server: `paused`, asked once and never retried, local data untouched, memory stays on", async () => {
     const { d } = await enabled();
     d.flag.on = false;
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "paused" });
+    expect(d.calls).toHaveLength(1);
+    expect(d.sleeps).toEqual([]);
+    expect(d.state().persona.facts).toHaveLength(3);
+    expect(d.state().settings.memoryOptIn).toBe(true);
+  });
+
+  it("a 503 that is a real outage is still retried and reported as failed (only sync_paused stops the retries)", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(503, { error: { code: "store_unavailable" } }), json(503, { error: { code: "store_unavailable" } }), json(503, { error: { code: "store_unavailable" } }));
     expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
     expect(d.calls).toHaveLength(3);
-    expect(d.state().persona.facts).toHaveLength(3);
+  });
+
+  it("turning memory on while sync is paused: consent is granted, then the sync is `paused` with one call", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    d.flag.on = false;
+    expect(await d.actions.enableMemory()).toEqual({ ok: true, remote: "paused" });
+    expect(d.calls.map((c) => c.path)).toEqual(["/api/memory/consent", "/api/memory/facts"]);
   });
 
   it("two quick taps run one after another, never interleaved", async () => {

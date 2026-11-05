@@ -7,7 +7,8 @@
  *    (turning memory on, or syncing with it on, first asks for sign-in through `ensureSignedIn`; nothing else does);
  *  - local state is the source of truth: a sync that cannot finish loses nothing, and the next one retries;
  *  - a write is retried with growing, jittered waits only for faults that may clear (network, 5xx, 429), never for a 4xx,
- *    and Retry-After is honoured;
+ *    and Retry-After is honoured; the server's `sync_paused` answer (kill switch) is the exception to the 5xx rule: it is
+ *    not retried and is reported as `paused`;
  *  - last write wins per fact on its change time; a stored fact that is newer replaces the local copy;
  *  - when the server says consent is off (turned off on another device), writing stops, memory switches off here
  *    and no error is shown: that is not a failure;
@@ -54,7 +55,7 @@ const CONSENT_PATH = '/api/memory/consent';
 const BASE_WAIT_MS = 400;
 const MAX_WAIT_MS = 8000;
 
-type Answer = { kind: 'ok'; data: unknown } | { kind: 'consent_off' } | { kind: 'failed' };
+type Answer = { kind: 'ok'; data: unknown } | { kind: 'consent_off' } | { kind: 'paused' } | { kind: 'failed' };
 
 const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -119,6 +120,10 @@ export function createMemoryActions({
         if (res.status === 403 && ((await res.json().catch(() => null)) as { error?: { code?: unknown } } | null)?.error?.code === 'consent_required') {
           return { kind: 'consent_off' };
         }
+        // The server's kill switch for sync: not a fault and not worth a retry. The facts stay on this device.
+        if (res.status === 503 && ((await res.json().catch(() => null)) as { error?: { code?: unknown } } | null)?.error?.code === 'sync_paused') {
+          return { kind: 'paused' };
+        }
         if (res.status !== 429 && res.status < 500) return { kind: 'failed' };
         wait = retryAfterMs(res);
       } catch {
@@ -153,6 +158,7 @@ export function createMemoryActions({
     if (!parseFactBatch(body).ok) return { saved, remote: 'failed' };
 
     const answer = await post(FACTS_PATH, body);
+    if (answer.kind === 'paused') return { saved, remote: 'paused' };
     if (answer.kind === 'consent_off') {
       store.update((d) => void (d.settings.memoryOptIn = false));
       return { saved, remote: 'off' };

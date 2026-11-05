@@ -3,7 +3,8 @@
  * Every route: same-origin and size checks and a verified user (guard), then the work.
  * Answers carry a code, one plain sentence and the request id. They never carry the database's message.
  *  - facts:   writes a batch (and any removals) as the signed-in user, answers with what is stored.
- *             Off when the `memory_sync_enabled` flag is off (cloud writes fail safe).
+ *             Off when the `memory_sync_enabled` flag is off (cloud writes fail safe): 503 `sync_paused` with Retry-After 300,
+ *             which the browser does not retry.
  *  - forget:  revokes consent FIRST (so no push can land after the erase), then erases, then proves consent is off and
  *             no row is left. Ignores the flag, so a person can always delete.
  *  - consent: turn persona memory on or off for this account. Also ignores the flag.
@@ -41,7 +42,7 @@ export interface RouteDeps {
   createLog?: typeof createLogger;
 }
 
-type Code = 'bad_input' | 'too_large' | 'unauthorized' | 'forbidden' | 'consent_required' | 'rate_limited' | 'store_unavailable' | 'permission_denied';
+type Code = 'bad_input' | 'too_large' | 'unauthorized' | 'forbidden' | 'consent_required' | 'rate_limited' | 'store_unavailable' | 'permission_denied' | 'sync_paused';
 const MESSAGE: Record<Code, string> = {
   bad_input: 'I could not read that. Check it and try again.',
   too_large: 'That is too long. Make it shorter and try again.',
@@ -51,7 +52,11 @@ const MESSAGE: Record<Code, string> = {
   rate_limited: 'That was too many tries. Wait a minute and try again.',
   store_unavailable: 'Saving is paused. Your work is on this device.',
   permission_denied: 'Saving is paused. Your work is on this device.',
+  sync_paused: 'Saving is paused. Your work is on this device.',
 };
+
+/** How long a browser should leave a paused sync alone. The flag is a kill switch: asking again in seconds only adds load. */
+const SYNC_PAUSED_RETRY_AFTER_SEC = 300;
 
 function fail(status: number, code: Code, requestId: string, headers: Record<string, string> = {}): Response {
   return json({ error: { code, message: MESSAGE[code], requestId } }, status, { [REQUEST_ID_HEADER]: requestId, ...headers });
@@ -123,7 +128,8 @@ export function handleFacts(req: Request, deps: RouteDeps): Promise<Response> {
     async (log, requestId, userId) => {
       if (!(await deps.getFlag('memory_sync_enabled'))) {
         log.info('memory_sync_off');
-        return fail(503, 'store_unavailable', requestId);
+        // A deliberate pause, not a fault: 503 with a long Retry-After and its own code, so the browser stops instead of retrying.
+        return fail(503, 'sync_paused', requestId, { 'Retry-After': String(SYNC_PAUSED_RETRY_AFTER_SEC) });
       }
       const batch = parseFactBatch(await deps.readJson(req, MAX_BODY_BYTES), deps.now());
       if (!batch.ok) return fail(batch.reason === 'too_many' ? 413 : 400, batch.reason === 'too_many' ? 'too_large' : 'bad_input', requestId);

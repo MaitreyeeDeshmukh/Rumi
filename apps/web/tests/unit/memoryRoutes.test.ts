@@ -135,11 +135,22 @@ describe("POST /api/memory/facts", () => {
     expect(db.rows.size).toBe(0);
   });
 
-  it("flag off: nothing is written, answered 503 (cloud writes fail safe)", async () => {
+  it("flag off: nothing is written, answered 503 sync_paused with Retry-After 300 (cloud writes fail safe, and the browser is told not to retry)", async () => {
     const { db, deps } = setup({ getFlag: async () => false });
-    const { status } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }), deps));
+    const { status, body, res } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }), deps));
     expect(status).toBe(503);
+    expect((body.error as { code: string }).code).toBe("sync_paused");
+    expect(res.headers.get("retry-after")).toBe("300");
     expect(db.calls).toEqual([]);
+  });
+
+  it("a real store outage is a 503 store_unavailable, so the browser can tell it from the pause", async () => {
+    const { db, deps } = setup();
+    db.script = Array.from({ length: 4 }, () => ({ status: 500 }));
+    const { status, body, res } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }), deps));
+    expect(status).toBe(503);
+    expect((body.error as { code: string }).code).toBe("store_unavailable");
+    expect(res.headers.get("retry-after")).toBeNull();
   });
 
   it("store down: 503 with a plain sentence, and no database text in the answer", async () => {
