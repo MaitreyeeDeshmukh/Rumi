@@ -61,7 +61,10 @@ const SEP = String.raw`\s+${BREAK}(?:${FILLER}\s+${BREAK}){0,2}`;
 /** Words are separated by a single space in `src`; a space becomes SEP in the spaced form and disappears in the squashed form. */
 function rule(src: string, o: RuleOptions = {}): Rule {
   const re = new RegExp(String.raw`\b(?:${src.replace(/ /g, SEP)})\b`, "g");
-  const squashSrc = typeof o.squash === "string" ? o.squash : o.squash === false ? undefined : src.replace(/ /g, "").split("\\w*").join("").split("\\w+").join("[a-z]+");
+  // A word wildcard inside a counted group, "(?: \w+){0,5}?", becomes the nested quantifier "(?:[a-z]+){0,5}?" once the
+  // spaces are gone, which takes seconds on ordinary run-on text. Such a rule gets no letters-only form.
+  const nested = /\\w[+*] ?\)[{*+]/.test(src);
+  const squashSrc = typeof o.squash === "string" ? o.squash : o.squash === false || nested ? undefined : src.replace(/ /g, "").split("\\w*").join("").split("\\w+").join("[a-z]+");
   return { re, squashed: squashSrc ? new RegExp(squashSrc, "g") : undefined, negatable: o.negatable ?? false, veto: o.veto };
 }
 
@@ -263,6 +266,9 @@ const TIER2: readonly RegExp[] = [
   /\b(?:quiero morir|me quiero|matar|desaparecer|no quiero vivir|dolor de pecho|no puedo respirar|me pega)/,
 ];
 
+/** Characters of one string that crisisTier scans. */
+const MAX_SCAN_CHARS = 4000;
+
 const BLANKS = /[\u2800\u180e]/;
 const BLANKS_ALL = /[\u2800\u180e]/g;
 
@@ -319,7 +325,11 @@ function squashedHit(r: Rule, form: MatchForm): boolean {
 }
 
 /** 'certain' shows the crisis card; 'check' needs a model decision; 'none' continues normally. */
-export function crisisTier(text: string): CrisisTier {
+export function crisisTier(input: string): CrisisTier {
+  // A hard cap on what is scanned per call. Request fields are capped far below this by their schemas; a longer string is
+  // scanned only up to the cap and, if nothing certain is found, handed to the model check instead of being trusted.
+  const text = input.length > MAX_SCAN_CHARS ? input.slice(0, MAX_SCAN_CHARS) : input;
+  const tooLong = input.length > MAX_SCAN_CHARS;
   // The Braille blank and the Mongolian vowel separator are stripped (they sit inside words) and also read as a space
   // (they sit between words); a phrase is judged both ways.
   const forms = [matchForm(text)];
@@ -333,7 +343,7 @@ export function crisisTier(text: string): CrisisTier {
     }
     if (texts.some((t) => TIER2.some((re) => re.test(t)))) check = true;
   }
-  return check ? "check" : "none";
+  return check || tooLong ? "check" : "none";
 }
 
 /** True when the text must show the crisis card and must not reach a model (tier 1). */
