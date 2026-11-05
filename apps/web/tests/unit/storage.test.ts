@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { KEY, MAX_SESSIONS, defaultSettings, defaultState, loadState, resetState, saveState } from "@/lib/storage";
+import { KEY, MAX_SESSIONS, defaultSettings, defaultState, inspectStorage, loadState, resetState, saveState } from "@/lib/storage";
+import { parseState } from "@/lib/storage-schema";
 import { fakeStorage } from "./helpers/fakeStorage";
 import type { RumiState } from "@/features/shared/types";
 
@@ -279,5 +280,63 @@ describe("saveState / resetState", () => {
     };
     expect(resetState(broken)).toEqual({ ok: false, reason: "blocked" });
     expect(resetState(null)).toEqual({ ok: false, reason: "unavailable" });
+  });
+});
+
+describe("one bad field inside a session costs only that field", () => {
+  it("a bad helpCount, turns, coveredItemIds or focus keeps the session", () => {
+    const s = load(base({ sessions: [session("s1", { helpCount: -3, turns: "x", coveredItemIds: [1], focus: "nope", readyBefore: 9 })] }));
+    expect(s.sessions).toHaveLength(1);
+    expect(s.sessions[0]).toMatchObject({ id: "s1", helpCount: 0, turns: [], coveredItemIds: [], focus: "whole" });
+    expect(s.sessions[0].readyBefore).toBeUndefined();
+    expect(load(base({ sessions: [session("s1", { helpCount: "many" })] })).sessions[0].helpCount).toBe(0);
+    expect(load(base({ sessions: [session("s1", { helpCount: 3 })] })).sessions[0].helpCount).toBe(3);
+  });
+});
+
+describe("inspectStorage", () => {
+  const status = (raw: string | null) => inspectStorage({ getItem: () => raw }).status;
+  it("tells missing, ok, corrupt and a newer version apart", () => {
+    expect(status(null)).toBe("missing");
+    expect(status("")).toBe("missing");
+    expect(status(JSON.stringify(base()))).toBe("ok");
+    expect(status("{not json")).toBe("corrupt");
+    expect(status("[]")).toBe("corrupt");
+    expect(status('{"version":"1"}')).toBe("corrupt");
+    expect(status('{"version":0}')).toBe("corrupt");
+    expect(status("{}")).toBe("corrupt");
+    expect(status('{"version":2}')).toBe("future");
+    expect(status('{"version":99,"plan":{}}')).toBe("future");
+    expect(inspectStorage(null).status).toBe("missing");
+    expect(inspectStorage({ getItem: () => { throw new Error("blocked"); } }).status).toBe("corrupt");
+  });
+});
+
+describe("hostile stored data", () => {
+  it("prototype pollution through settings, persona, facts and sessions changes nothing", () => {
+    const raw = JSON.parse(
+      '{"version":1,"__proto__":{"polluted":1},"settings":{"__proto__":{"p2":1},"theme":"</style><script>","textScale":null,"speechRate":1e999,"companionName":"x\\ny"},"persona":{"__proto__":{"recoveryCode":"' + CODE + '"},"facts":[{"__proto__":{"kind":"support_pref","key":"p1"}}]},"sessions":[{"__proto__":{"x":1}}]}',
+    );
+    const s = parseState(raw);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(s.settings).toEqual(defaultSettings());
+    expect(s.persona.recoveryCode).toBeUndefined();
+    expect(s.persona.facts).toEqual([]);
+    expect(s.sessions).toEqual([]);
+  });
+
+  it("a huge blob parses quickly and comes out capped", () => {
+    const sessions = Array.from({ length: 300_000 }, () => null);
+    const facts = Array.from({ length: 300_000 }, () => ({ kind: "support_pref", key: "p1" }));
+    const t0 = performance.now();
+    const s = parseState({ version: 1, sessions, persona: { facts } });
+    expect(performance.now() - t0).toBeLessThan(3000);
+    expect(s.persona.facts.length).toBeLessThanOrEqual(20);
+  });
+
+  it("garbage values never give anything but a version 1 state", () => {
+    for (const v of ["null", "[]", "1", '"x"', "{}", '{"version":1,"sessions":"x","persona":[]}']) {
+      expect(loadState({ getItem: () => v }).version).toBe(1);
+    }
   });
 });

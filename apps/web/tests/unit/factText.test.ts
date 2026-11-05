@@ -84,3 +84,11 @@ describe("factStrings", () => {
     expect(out).toEqual(["Please ask me one question at a time.", "Please speak slowly."]);
   });
 });
+
+describe("factText: odd numbers as levels", () => {
+  it("NaN and fractions give null; negative zero is level 0", () => {
+    expect(factText("help_level", "concern", Number.NaN)).toBeNull();
+    expect(factText("help_level", "concern", 1.5)).toBeNull();
+    expect(factText("help_level", "concern", -0)).not.toBeNull();
+  });
+});

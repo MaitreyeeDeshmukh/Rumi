@@ -119,13 +119,15 @@ describe("syncPersona with memory on", () => {
 
   it("a sync that re-saves the code to storage may go ahead", async () => {
     const api = fakeMemoryApi();
-    const { actions, storage } = setup(api.fetchFn);
+    const { actions, storage, state } = setup(api.fetchFn);
     await actions.enableMemory();
+    const code = state().persona.recoveryCode;
+    expect(isRecoveryCode(code as string)).toBe(true);
     const raw = JSON.parse(storage.data.get(KEY) as string);
     delete raw.persona.recoveryCode;
     storage.data.set(KEY, JSON.stringify(raw));
     expect((await actions.syncPersona()).remote).toBe("ok");
-    expect(JSON.parse(storage.data.get(KEY) as string).persona.recoveryCode).toBeDefined();
+    expect(JSON.parse(storage.data.get(KEY) as string).persona.recoveryCode).toBe(code);
   });
 
   it("does not write remotely when the code can no longer be read back from storage", async () => {
@@ -201,10 +203,12 @@ describe("forgetAll and deleteEverything", () => {
     expect(api.sm.docs(ns).size).toBe(0);
     expect(state().persona).toEqual({ facts: [] });
     expect(state().settings.memoryOptIn).toBe(false);
-    expect(store.getSnapshot().state.supportCard).toBeDefined();
+    expect(store.getSnapshot().state.supportCard?.items.map((i) => i.id)).toEqual(["p1", "p2", "p5"]);
     const forget = api.calls.at(-1);
     expect(forget?.path).toBe("/api/memory/forget");
-    expect(forget?.body).toBe("{}");
+    const sent = JSON.parse(forget?.body ?? "") as { sinceSyncMs: number };
+    expect(Object.keys(sent)).toEqual(["sinceSyncMs"]);
+    expect(sent.sinceSyncMs).toBeGreaterThanOrEqual(0);
   });
 
   it("when the server says failed, the code, the switch and the facts stay", async () => {
@@ -260,11 +264,12 @@ describe("forgetAll and deleteEverything", () => {
     const api = fakeMemoryApi();
     const { actions, state, storage } = setup(api.fetchFn);
     await actions.enableMemory();
+    const code = state().persona.recoveryCode;
     api.sm.stuckIds.add("support_pref:p2");
     expect(await actions.deleteEverything()).toEqual({ status: "failed" });
     expect(storage.data.has(KEY)).toBe(true);
-    expect(state().persona.recoveryCode).toBeDefined();
-    expect(state().supportCard).toBeDefined();
+    expect(state().persona.recoveryCode).toBe(code);
+    expect(state().supportCard?.items.map((i) => i.id)).toEqual(["p1", "p2", "p5"]);
   });
 
   it("delete everything with no code resets the device without any request", async () => {
@@ -282,6 +287,91 @@ describe("forgetAll and deleteEverything", () => {
       throw new Error("blocked");
     };
     expect(await actions.deleteEverything()).toEqual({ status: "failed" });
+  });
+});
+
+describe("actions before the state is loaded", () => {
+  const OLD = "KKKKK-MMMMM-NNNNN-PPPPP";
+  const storedWithCode = () =>
+    fakeStorage({ [KEY]: JSON.stringify({ ...defaultState(), settings: { ...defaultState().settings, memoryOptIn: true }, persona: { facts: [], recoveryCode: OLD } }) });
+
+  it("enableMemory before hydrate does not replace or delete the stored recovery code, and sends nothing", async () => {
+    const storage = storedWithCode();
+    const store = createStateStore({ storage });
+    const api = fakeMemoryApi();
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
+    expect(await actions.enableMemory()).toEqual({ ok: false, remote: "failed" });
+    store.hydrate();
+    expect(store.getSnapshot().state.persona.recoveryCode).toBe(OLD);
+    expect(store.getSnapshot().state.settings.memoryOptIn).toBe(true);
+    expect(JSON.parse(storage.data.get(KEY) as string).persona.recoveryCode).toBe(OLD);
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it("every action answers failed until hydrated and changes nothing", async () => {
+    const storage = storedWithCode();
+    const store = createStateStore({ storage });
+    const api = fakeMemoryApi();
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
+    expect(await actions.syncPersona()).toEqual({ saved: 0, remote: "failed" });
+    expect(await actions.disableMemory()).toEqual({ ok: false });
+    expect(await actions.forgetAll()).toEqual({ remote: "failed" });
+    expect(await actions.deleteEverything()).toEqual({ status: "failed" });
+    expect(storage.writes).toBe(0);
+    expect(api.calls).toHaveLength(0);
+    store.hydrate();
+    expect(store.getSnapshot().state.persona.recoveryCode).toBe(OLD);
+    expect(store.getSnapshot().state.settings.memoryOptIn).toBe(true);
+  });
+});
+
+describe("time since the last sync is sent with forget", () => {
+  function timed() {
+    const api = fakeMemoryApi();
+    const storage = fakeStorage();
+    const store = createStateStore({ storage });
+    store.hydrate();
+    store.update((d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1")] }));
+    let t = 1_000_000;
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn, clock: () => t });
+    return { api, store, actions, tick: (ms: number) => void (t += ms) };
+  }
+  const bodyOf = (api: ReturnType<typeof fakeMemoryApi>) => JSON.parse(api.calls.at(-1)?.body ?? "") as Record<string, unknown>;
+
+  it("sends the milliseconds since the last remote sync, on the browser's own clock", async () => {
+    const { api, actions, tick } = timed();
+    await actions.enableMemory();
+    tick(2500);
+    await actions.forgetAll();
+    expect(bodyOf(api)).toEqual({ sinceSyncMs: 2500 });
+  });
+
+  it("sends an empty body when nothing was ever synced from this page", async () => {
+    const { api, store, actions } = timed();
+    store.update((d) => {
+      d.persona.recoveryCode = "ABCDE-FGHJK-LMNPQ-RSTUV";
+      d.settings.memoryOptIn = true;
+    });
+    await actions.forgetAll();
+    expect(bodyOf(api)).toEqual({});
+  });
+
+  it("a lost answer still counts as a recent write", async () => {
+    const bodies: string[] = [];
+    const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/facts")) throw new Error("net");
+      bodies.push(String(init?.body));
+      return Response.json({ status: "ok" });
+    }) as typeof fetch;
+    const store = createStateStore({ storage: fakeStorage() });
+    store.hydrate();
+    store.update((d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1")] }));
+    let t = 5000;
+    const actions = createMemoryActions({ store, fetchFn, clock: () => t });
+    expect((await actions.enableMemory()).remote).toBe("failed");
+    t += 700;
+    await actions.forgetAll();
+    expect(bodies).toEqual(['{"sinceSyncMs":700}']);
   });
 });
 
@@ -335,5 +425,71 @@ describe("privacy end to end", () => {
     const ns = tagFromCode(store.getSnapshot().state.persona.recoveryCode as string, TEST_SECRET);
     expect(api.sm.docs(ns).get("support_pref:p1")?.content).toBe("Please speak slowly.");
     expect(JSON.stringify(api.sm.calls) + JSON.stringify(api.calls)).not.toMatch(/bipolar|lithium/);
+  });
+});
+
+describe("hostile state and two people", () => {
+  it("nothing typed reaches the memory API or Supermemory, even with colliding ids and tampered presets", async () => {
+    const HOT = ["HIV test", "sertraline", "panic attacks", "Jane Doe", "Okafor", "bipolar", "lithium", "555-0100", "jane@x.org", "ZEROWIDTH"];
+    const api = fakeMemoryApi();
+    const { actions, state } = setup(api.fetchFn, (d) => {
+      d.settings.name = "Jane Doe";
+      d.settings.companionName = "Jane";
+      d.plan = {
+        id: "pl1",
+        title: "HIV test at Dr. Okafor",
+        createdAt: "x",
+        mainConcern: "I take sertraline and have panic attacks, call 555-0100 jane@x.org",
+        symptomsInMyWords: ["panic attacks"],
+        items: [{ id: "i1", text: "Ask about my HIV test", kind: "question", source: "user", enabled: true }],
+      };
+      d.supportCard = {
+        id: "c",
+        topQuestionIds: ["i1"],
+        items: [
+          { id: "p1", text: "I have bipolar and take lithium", source: "preset", enabled: true },
+          { id: "p2", text: "I have bipolar disorder and take lithium.", source: "user", enabled: true },
+          { id: "p3", text: "HIV test", source: "user", enabled: true },
+          { id: "constructor", text: "ZEROWIDTH", source: "user", enabled: true },
+          { id: "__proto__", text: "ZEROWIDTH", source: "preset", enabled: true },
+        ],
+      };
+      d.sessions = [{ id: "s1", planId: "pl1", startedAt: "x", focus: "whole", turns: [{ role: "me", text: "panic attacks sertraline" }], coveredItemIds: ["i1"], helpCount: 1, helpLevelUsed: { concern: 2 } }];
+    });
+    expect((await actions.enableMemory()).ok).toBe(true);
+    const code = state().persona.recoveryCode as string;
+    const wire = JSON.stringify(api.calls);
+    const sm = JSON.stringify(api.sm.calls);
+    for (const h of HOT) {
+      expect(wire).not.toContain(h);
+      expect(sm).not.toContain(h);
+    }
+    expect(sm).not.toContain(code);
+    expect(sm).not.toContain(code.replaceAll("-", ""));
+    expect(state().persona.facts.map((f) => f.id)).toEqual(["support_pref:p1", "help_level:concern"]);
+  });
+
+  it("two people with different codes never touch each other's documents", async () => {
+    const api = fakeMemoryApi();
+    const a = setup(api.fetchFn);
+    const b = setup(api.fetchFn, (d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p3")] }));
+    await a.actions.enableMemory();
+    await b.actions.enableMemory();
+    expect(api.sm.store.size).toBe(2);
+    await a.actions.deleteEverything();
+    const left = [...api.sm.store.values()].map((m) => [...m.keys()]).filter((k) => k.length);
+    expect(left).toEqual([["support_pref:p3"]]);
+  });
+
+  it("delete everything after switching memory off lists until it is empty, then clears the device", async () => {
+    const api = fakeMemoryApi();
+    const { actions, state } = setup(api.fetchFn);
+    await actions.enableMemory();
+    await actions.disableMemory();
+    const before = api.sm.calls.length;
+    expect((await actions.deleteEverything()).status).toBe("ok");
+    const lists = api.sm.calls.slice(before).filter((c) => c.path.endsWith("/list/documents"));
+    expect(lists.length).toBeGreaterThanOrEqual(4); // one with documents, then three empty
+    expect(state()).toEqual(defaultState());
   });
 });

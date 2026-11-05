@@ -32,6 +32,12 @@ export interface FakeSm {
   failBody: string;
   /** Pause before answering, in ms (use with a short client timeout). */
   delayMs: number;
+  /** Newly created documents are not listed until `ms` have passed on `now` (indexing lag). */
+  lag: { now: () => number; ms: number } | null;
+  /** Called at the start of every request; tests use it to move a fake clock. */
+  onRequest: (() => void) | null;
+  /** Makes DELETE answer with this body and delete nothing (to model a server that refuses ids). */
+  deleteReport: ((ids: string[], count: number) => unknown) | null;
   docs(ns: string): Map<string, FakeDoc>;
 }
 
@@ -50,12 +56,16 @@ export function fakeSupermemory(): FakeSm {
     failStatus: null,
     failBody: "",
     delayMs: 0,
+    lag: null,
+    onRequest: null,
+    deleteReport: null,
     docs(ns) {
       let d = sm.store.get(ns);
       if (!d) sm.store.set(ns, (d = new Map()));
       return d;
     },
   };
+  const born = new Map<string, number>();
   const lagging = new Map<string, Map<string, FakeDoc>>();
   let lagLeft = 0;
   const json = (status: number, body: unknown) => new Response(status === 204 ? null : JSON.stringify(body), { status });
@@ -65,6 +75,7 @@ export function fakeSupermemory(): FakeSm {
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" && init.body ? JSON.parse(init.body) : undefined;
     const headers = new Headers(init?.headers);
+    sm.onRequest?.();
     sm.calls.push({ origin: url.origin, method, path: url.pathname, query: url.search, body, auth: headers.get("authorization") });
     if (sm.delayMs) {
       await new Promise<void>((resolve, reject) => {
@@ -88,7 +99,10 @@ export function fakeSupermemory(): FakeSm {
       if (lagLeft > 0) lagLeft--;
       const page = Number(url.searchParams.get("page") ?? 1);
       const limit = Number(url.searchParams.get("limit") ?? 100);
-      const all = [...source.entries()];
+      const all = [...source.entries()].filter(([docId]) => {
+        const at = born.get(ns + "/" + docId);
+        return !(sm.lag && at !== undefined && sm.lag.now() - at < sm.lag.ms);
+      });
       const slice = all.slice((page - 1) * limit, page * limit);
       return json(200, {
         documents: slice.map(([docId, d]) => ({ id: docId, metadata: d.metadata })),
@@ -101,6 +115,7 @@ export function fakeSupermemory(): FakeSm {
       const b = body as { id?: string; content?: string; metadata?: unknown };
       if (!b.id || typeof b.content !== "string" || !flat(b.metadata)) return json(400, { error: "bad body" });
       const existing = docs.get(b.id);
+      if (!existing && sm.lag) born.set(ns + "/" + b.id, sm.lag.now());
       docs.set(b.id, { content: existing ? existing.content + "\n" + b.content : b.content, metadata: b.metadata as Record<string, unknown> });
       return json(200, { id: b.id, status: "queued" });
     }
@@ -122,6 +137,7 @@ export function fakeSupermemory(): FakeSm {
         lagging.set(ns, new Map(docs));
         lagLeft = sm.deleteLag;
       }
+      if (sm.deleteReport) return json(200, sm.deleteReport(ids, 0)); // a server that answers without deleting
       let count = 0;
       for (const d of ids) {
         if (sm.stuckIds.has(d)) continue;

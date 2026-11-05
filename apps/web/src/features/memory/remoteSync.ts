@@ -1,15 +1,22 @@
 /**
- * SERVER ONLY. Keeps the remote copy of a person's persona equal to the list the browser sent.
+ * Keeps the remote copy of a person's persona equal to the list the browser sent (server side; the browser
+ * never imports this, a test proves it).
  *  - Only (kind, key, level) are accepted; the stored sentence is made by `factText`, so free text cannot get in.
- *  - Calls for one namespace run one after another (one in-flight job), so two syncs cannot interleave.
+ *  - Calls for one namespace in ONE PROCESS run one after another, so two syncs there cannot interleave. This is best
+ *    effort: serverless runs several instances, and two of them can race a first write (both PATCH 404, both POST,
+ *    content appended twice). So a document that had to be created is PATCHed once more with the canonical content,
+ *    which heals the duplicate inside the same sync.
  *  - Facts are deduped by id and upserted one at a time; then remote ids that are not in the new set are deleted,
- *    so turning a preference off removes it remotely.
+ *    so turning a preference off removes it remotely. A delete the server refused makes the sync FAIL, never ok.
+ *  - Two devices sharing one recovery code are last-writer-wins: the latest sync decides the whole remote set.
+ *  - `help_level` facts are synced because the contract allows them, but nothing reads them (D25: prompts use
+ *    support_pref and pacing only). They are write-only until a screen or the database needs them.
  *  - Reads use metadata kind and key only (never stored content), limited to the stated kinds.
  */
 import { LIMITS } from '@/features/shared/constants';
 import { PersonaFactWire } from '@/features/shared/schemas';
 import { factStrings, factText } from './factText';
-import type { Flat, SmClient, SmDoc } from './smClient';
+import { SmError, type Flat, type SmClient, type SmDoc } from './smClient';
 
 /** Runs jobs of one namespace in order. A failed job never blocks the next one. */
 export type NamespaceQueue = <T>(ns: string, job: () => Promise<T>) => Promise<T>;
@@ -54,7 +61,18 @@ export function statedFactStrings(docs: readonly SmDoc[]): string[] {
   return factStrings(picked.slice(0, MAX_STATED_DOCS));
 }
 
-export function createRemoteSync(client: SmClient, queue: NamespaceQueue = createNamespaceQueue()) {
+/** `queue` is required: share the same instance with forgetNamespace so an erase waits for a running sync. */
+export function createRemoteSync(client: SmClient, queue: NamespaceQueue) {
+  /** Another instance may have created the same document at the same moment; one more PATCH leaves one canonical line. */
+  async function healAfterCreate(ns: string, id: string, doc: { content: string; metadata: Flat }): Promise<void> {
+    try {
+      await client.patch(ns, id, doc);
+    } catch (e) {
+      // A just-created document may not be patchable yet; the next sync repairs it. Anything else is a real failure.
+      if (!(e instanceof SmError) || e.status !== 404) throw e;
+    }
+  }
+
   function syncFacts(ns: string, facts: readonly unknown[]): Promise<SyncResult> {
     return queue(ns, async () => {
       const wanted = new Map<string, { content: string; metadata: Flat }>();
@@ -71,10 +89,13 @@ export function createRemoteSync(client: SmClient, queue: NamespaceQueue = creat
       }
       rejected += Math.max(0, facts.length - LIMITS.factsMax);
 
-      for (const [id, doc] of wanted) await client.upsert(ns, id, doc);
+      for (const [id, doc] of wanted) {
+        if ((await client.upsert(ns, id, doc)) === 'created') await healAfterCreate(ns, id, doc);
+      }
 
       const stale = (await client.listAll(ns)).map((d) => d.id).filter((id) => !wanted.has(id));
-      await client.del(ns, stale);
+      const { failed } = await client.del(ns, stale);
+      if (failed.length > 0) throw new SmError('Supermemory delete incomplete', 0);
       return { saved: wanted.size, rejected, removed: stale.length };
     });
   }

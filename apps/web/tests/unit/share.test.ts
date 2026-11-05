@@ -156,3 +156,18 @@ describe("shouldPlayFinishSound", () => {
     expect(shouldPlayFinishSound({ ...defaultSettings(), finishSound: "yes" as never })).toBe(false);
   });
 });
+
+describe("buildShareText: a recap section without a recap", () => {
+  it("is an empty string: no title, no 'Nothing was noted', no footer", () => {
+    expect(buildShareText(sel({ recapSections: { discussed: true, medications: true } }), defaultState())).toBe("");
+  });
+
+  it("other chosen parts still print, without a footer", () => {
+    const s = fullState();
+    delete s.recap;
+    const text = buildShareText(sel({ plan: true, recapSections: { discussed: true } }), s);
+    expect(text).toContain("I keep getting headaches");
+    expect(text).not.toContain(RECAP_FOOTER);
+    expect(text).not.toContain("Nothing was noted");
+  });
+});

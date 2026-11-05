@@ -268,3 +268,141 @@ describe("stateStore.verifiedRecoveryCode", () => {
     expect(store.verifiedRecoveryCode()).toBeUndefined();
   });
 });
+
+describe("stateStore: updates that do not fit, nesting, reset", () => {
+  it("the update after the queue is full is reported as dropped and counted, not lost silently", () => {
+    const store = createStateStore({ storage: fakeStorage() });
+    const results: string[] = [];
+    for (let n = 0; n < MAX_PENDING_UPDATES + 2; n++) results.push(store.update((d) => void (d.settings.name = `n${n}`)));
+    expect(results.filter((r) => r === "queued")).toHaveLength(MAX_PENDING_UPDATES);
+    expect(results.slice(-2)).toEqual(["dropped", "dropped"]);
+    expect(store.getSnapshot().droppedUpdates).toBe(2);
+    store.hydrate();
+    expect(store.getSnapshot().droppedUpdates).toBe(2);
+    expect(store.getSnapshot().state.settings.name).toBe(`n${MAX_PENDING_UPDATES - 1}`);
+    expect(store.update((d) => void (d.settings.name = "later"))).toBe("applied");
+  });
+
+  it("update() inside an update function throws a clear error and changes nothing", () => {
+    const store = createStateStore({ storage: fakeStorage() });
+    store.hydrate();
+    expect(() => store.update(() => void store.update((d) => void (d.settings.name = "inner")))).toThrow(/inside an update/);
+    expect(store.getSnapshot().state.settings.name).toBe("");
+    expect(store.update((d) => void (d.settings.name = "after"))).toBe("applied");
+    expect(store.getSnapshot().state.settings.name).toBe("after");
+  });
+
+  it("reset with a storage that refuses to remove keeps the state on screen and reports the failure", () => {
+    const storage = fakeStorage();
+    const store = createStateStore({ storage });
+    store.hydrate();
+    store.update((d) => void (d.settings.name = "keep"));
+    storage.removeItem = () => {
+      throw new Error("blocked");
+    };
+    expect(store.reset()).toEqual({ ok: false, reason: "blocked" });
+    expect(store.getSnapshot().state.settings.name).toBe("keep");
+    expect(store.getSnapshot().lastSave).toEqual({ ok: false, reason: "blocked" });
+    expect(JSON.parse(storage.data.get(KEY) as string).settings.name).toBe("keep");
+  });
+
+  it("reset with no storage at all clears the in-memory state", () => {
+    const store = createStateStore({ storage: null });
+    store.hydrate();
+    store.update((d) => void (d.settings.name = "x"));
+    expect(store.reset()).toEqual({ ok: false, reason: "unavailable" });
+    expect(store.getSnapshot().state.settings.name).toBe("");
+  });
+});
+
+describe("stateStore: other tabs write bad or newer data", () => {
+  function started() {
+    const storage = fakeStorage();
+    const events = fakeEvents();
+    const store = createStateStore({ storage, events });
+    store.start();
+    return { storage, events, store };
+  }
+
+  it("a corrupt value from another tab does not blank this tab; the next save writes this tab's valid state back", () => {
+    const { storage, events, store } = started();
+    store.update((d) => void (d.settings.name = "Mine"));
+    storage.data.set(KEY, "{not json");
+    events.fire({ key: KEY });
+    expect(store.getSnapshot().state.settings.name).toBe("Mine");
+    store.update((d) => void (d.settings.finishSound = true));
+    const saved = JSON.parse(storage.data.get(KEY) as string);
+    expect(saved.settings).toMatchObject({ name: "Mine", finishSound: true });
+  });
+
+  it("a value without a version marker is ignored the same way", () => {
+    const { storage, events, store } = started();
+    store.update((d) => void (d.settings.name = "Mine"));
+    storage.data.set(KEY, JSON.stringify({ settings: {} }));
+    events.fire({ key: KEY });
+    expect(store.getSnapshot().state.settings.name).toBe("Mine");
+  });
+
+  it("a newer app version in another tab makes this tab read-only: its data is never overwritten", () => {
+    const { storage, events, store } = started();
+    store.update((d) => void (d.settings.name = "Mine"));
+    const future = JSON.stringify({ version: 2, plan: { keep: "me" } });
+    storage.data.set(KEY, future);
+    events.fire({ key: KEY });
+    expect(store.getSnapshot().readOnly).toBe(true);
+    expect(store.getSnapshot().state.settings.name).toBe("Mine");
+    expect(store.update((d) => void (d.settings.name = "Still works"))).toBe("applied");
+    expect(store.getSnapshot().state.settings.name).toBe("Still works");
+    expect(storage.data.get(KEY)).toBe(future);
+  });
+});
+
+describe("stateStore: data from a newer app version", () => {
+  const future = JSON.stringify({ version: 2, plan: { keep: "me" } });
+
+  it("hydrates read-only: the app works in memory, nothing is written, the blob stays byte for byte", () => {
+    const storage = fakeStorage({ [KEY]: future });
+    const store = createStateStore({ storage });
+    store.hydrate();
+    expect(store.getSnapshot().readOnly).toBe(true);
+    expect(store.getSnapshot().state).toEqual(defaultState());
+    store.update((d) => void (d.settings.finishSound = true));
+    expect(store.getSnapshot().state.settings.finishSound).toBe(true);
+    expect(store.getSnapshot().lastSave).toEqual({ ok: false, reason: "read_only" });
+    expect(storage.data.get(KEY)).toBe(future);
+    expect(storage.writes).toBe(0);
+  });
+
+  it("updates queued before hydration are not written either", () => {
+    const storage = fakeStorage({ [KEY]: future });
+    const store = createStateStore({ storage });
+    store.update((d) => void (d.settings.name = "early"));
+    store.hydrate();
+    expect(store.getSnapshot().state.settings.name).toBe("early");
+    expect(storage.data.get(KEY)).toBe(future);
+  });
+
+  it("a recovery code cannot be verified in read-only mode, so no remote write can start", () => {
+    const store = createStateStore({ storage: fakeStorage({ [KEY]: future }) });
+    store.hydrate();
+    store.update((d) => void (d.persona.recoveryCode = "ABCDE-FGHJK-LMNPQ-RSTUV"));
+    expect(store.verifiedRecoveryCode()).toBeUndefined();
+  });
+
+  it("an ordinary version 1 blob is not read-only", () => {
+    const store = createStateStore({ storage: fakeStorage({ [KEY]: JSON.stringify(defaultState()) }) });
+    store.hydrate();
+    expect(store.getSnapshot().readOnly).toBe(false);
+  });
+
+  it("delete everything clears the newer data and leaves read-only mode", () => {
+    const storage = fakeStorage({ [KEY]: future });
+    const store = createStateStore({ storage });
+    store.hydrate();
+    expect(store.reset()).toEqual({ ok: true });
+    expect(storage.data.has(KEY)).toBe(false);
+    expect(store.getSnapshot().readOnly).toBe(false);
+    store.update((d) => void (d.settings.name = "fresh"));
+    expect(loadState(storage).settings.name).toBe("fresh");
+  });
+});

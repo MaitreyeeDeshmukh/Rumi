@@ -60,7 +60,8 @@ function saidMyselfBlock(state: RumiState): string {
 
 /** '' when nothing is selected, or when what was selected does not exist. */
 export function buildShareText(sel: ShareSelection, state: RumiState): string {
-  const chosen = RECAP_ORDER.filter((s) => sel.recapSections[s] === true);
+  // A recap section can only be shared when there is a recap: no recap means no section and no footer.
+  const chosen = state.recap ? RECAP_ORDER.filter((s) => sel.recapSections[s] === true) : [];
   const blocks = [
     sel.plan ? planBlock(state) : '',
     sel.supportCard && state.supportCard ? supportSection(state.supportCard) : '',

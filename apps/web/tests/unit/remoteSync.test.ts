@@ -20,7 +20,7 @@ function setup() {
     }
   }) as typeof fetch;
   const client = createSmClient({ fetchFn: counting, apiKey: "k" });
-  const sync = createRemoteSync(client);
+  const sync = createRemoteSync(client, createNamespaceQueue());
   return { sm, client, sync, maxInFlight: () => maxInFlight };
 }
 const p = (key: string) => ({ kind: "support_pref" as const, key });
@@ -61,7 +61,7 @@ describe("syncFacts writes", () => {
     const { sm, sync, maxInFlight } = setup();
     const r = await sync.syncFacts(NS, [p("p1"), p("p2"), p("p1"), p("p3")]);
     expect(r.saved).toBe(3);
-    expect(sm.calls.filter((c) => c.method === "PATCH")).toHaveLength(3);
+    expect(sm.calls.filter((c) => c.method === "POST" && c.path.endsWith("/document"))).toHaveLength(3);
     expect(maxInFlight()).toBe(1);
   });
 
@@ -70,6 +70,19 @@ describe("syncFacts writes", () => {
     await sync.syncFacts(NS, [p("p1")]);
     await sync.syncFacts(NS, [p("p1")]);
     expect(sm.docs(NS).get("support_pref:p1")?.content).toBe("Please speak slowly.");
+  });
+});
+
+describe("syncFacts input limits", () => {
+  it("only the first 20 entries are looked at, and the rest are counted as rejected", async () => {
+    const { sm, sync } = setup();
+    const junk = Array.from({ length: 20 }, () => ({ kind: "diagnosis", key: "x" }));
+    const valid = [p("p1"), p("p2"), p("p3"), { kind: "pacing" as const, key: "extra_time" }, { kind: "help_level" as const, key: "question", level: 1 as const }, p("p4"), p("p5"), p("p6"), { kind: "pacing" as const, key: "one_question" }, { kind: "help_level" as const, key: "concern", level: 0 as const }, { kind: "help_level" as const, key: "accommodation", level: 3 as const }];
+    const r = await sync.syncFacts(NS, [...junk, ...valid]);
+    expect(r).toEqual({ saved: 0, rejected: 31, removed: 0 });
+    expect(sm.docs(NS).size).toBe(0);
+    const ok = await sync.syncFacts(NS, valid);
+    expect(ok).toEqual({ saved: 11, rejected: 0, removed: 0 });
   });
 });
 
@@ -99,7 +112,70 @@ describe("syncFacts reconciles", () => {
     sm.fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) =>
       String(input).includes("list/documents") ? new Response("no", { status: 500 }) : real(input, init)) as typeof fetch;
     const client = createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" });
-    await expect(createRemoteSync(client).syncFacts(NS, [p("p1")])).rejects.toThrow();
+    await expect(createRemoteSync(client, createNamespaceQueue()).syncFacts(NS, [p("p1")])).rejects.toThrow();
+  });
+});
+
+describe("syncFacts: refused deletes and odd ids", () => {
+  it("a delete the server refuses makes the sync fail instead of reporting ok", async () => {
+    const { sm, sync } = setup();
+    await sync.syncFacts(NS, [p("p1")]);
+    sm.deleteReport = () => ({ count: 0, errors: [{ id: "support_pref:p1", error: "locked" }] });
+    await expect(sync.syncFacts(NS, [])).rejects.toThrow();
+    expect(sm.docs(NS).has("support_pref:p1")).toBe(true);
+  });
+
+  it("a stray document with an odd id is removed and does not block later syncs", async () => {
+    const { sm, sync } = setup();
+    sm.docs(NS).set("stray.v1", { content: "x", metadata: {} });
+    await expect(sync.syncFacts(NS, [p("p1")])).resolves.toMatchObject({ saved: 1, removed: 1 });
+    expect([...sm.docs(NS).keys()]).toEqual(["support_pref:p1"]);
+  });
+
+  it("150 stale documents are all removed even when the listing has no pagination field", async () => {
+    const sm = fakeSupermemory();
+    const drifted = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const res = await sm.fetchFn(input, init);
+      if (!String(input).includes("/list/documents")) return res;
+      const j = (await res.json()) as { documents: unknown[] };
+      return Response.json({ documents: j.documents });
+    }) as typeof fetch;
+    for (let n = 0; n < 150; n++) sm.docs(NS).set("junk" + n, { content: "x", metadata: {} });
+    const sync = createRemoteSync(createSmClient({ fetchFn: drifted, apiKey: "k" }), createNamespaceQueue());
+    await sync.syncFacts(NS, [p("p1")]);
+    expect(sm.docs(NS).size).toBe(1);
+  });
+});
+
+describe("syncFacts: two instances", () => {
+  it("two instances racing the first write end with one canonical line, not an appended duplicate", async () => {
+    const sm = fakeSupermemory();
+    sm.delayMs = 1;
+    const a = createRemoteSync(createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" }), createNamespaceQueue());
+    const b = createRemoteSync(createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" }), createNamespaceQueue());
+    await Promise.all([a.syncFacts(NS, [p("p1")]), b.syncFacts(NS, [p("p1")])]);
+    expect(sm.docs(NS).get("support_pref:p1")?.content).toBe("Please speak slowly.");
+    expect(sm.calls.filter((c) => c.method === "POST" && c.path.endsWith("/document")).length).toBe(2);
+  });
+
+  it("a document that was just created is patched once more, and a 404 on that check is tolerated", async () => {
+    const sm = fakeSupermemory();
+    const real = sm.fetchFn;
+    let posted = false;
+    sm.fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST" && String(input).endsWith("/document")) posted = true;
+      if (init?.method === "PATCH" && posted) return new Response("not yet", { status: 404 });
+      return real(input, init);
+    }) as typeof fetch;
+    const sync = createRemoteSync(createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" }), createNamespaceQueue());
+    await expect(sync.syncFacts(NS, [p("p1")])).resolves.toMatchObject({ saved: 1 });
+    sm.fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PATCH" && posted) return new Response("boom", { status: 500 });
+      return real(input, init);
+    }) as typeof fetch;
+    const failing = createRemoteSync(createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" }), createNamespaceQueue());
+    sm.docs(NS).clear();
+    await expect(failing.syncFacts(NS, [p("p1")])).rejects.toThrow();
   });
 });
 

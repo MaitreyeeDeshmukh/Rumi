@@ -10,7 +10,16 @@ export { MAX_SESSIONS, defaultSettings, defaultState };
 export const KEY = 'rumi.v1';
 
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
-export type SaveResult = { ok: true } | { ok: false; reason: 'quota' | 'blocked' | 'unavailable' };
+export type SaveResult = { ok: true } | { ok: false; reason: 'quota' | 'blocked' | 'unavailable' | 'read_only' };
+
+/**
+ * What is in storage, as far as this version can tell:
+ *  - missing: nothing saved (or no storage);
+ *  - ok: a version 1 blob, parsed field by field;
+ *  - corrupt: not JSON, not an object, or an unknown version marker;
+ *  - future: a numeric version above 1, written by a newer app. It must be left untouched (read-only mode).
+ */
+export type StoredStatus = 'missing' | 'ok' | 'corrupt' | 'future';
 
 /** The browser's localStorage, or null on the server or when the browser blocks it. */
 export function browserStorage(): StorageLike | null {
@@ -21,15 +30,21 @@ export function browserStorage(): StorageLike | null {
   }
 }
 
-export function loadState(store: Pick<Storage, 'getItem'> | null = browserStorage()): RumiState {
+export function inspectStorage(store: Pick<Storage, 'getItem'> | null = browserStorage()): { status: StoredStatus; state: RumiState } {
   try {
     const raw = store?.getItem(KEY);
-    if (!raw) return defaultState();
-    return parseState(JSON.parse(raw));
+    if (!raw) return { status: 'missing', state: defaultState() };
+    const parsed: unknown = JSON.parse(raw);
+    const version = typeof parsed === 'object' && parsed !== null ? (parsed as { version?: unknown }).version : undefined;
+    if (typeof version === 'number' && version > 1) return { status: 'future', state: defaultState() };
+    if (version !== 1) return { status: 'corrupt', state: defaultState() };
+    return { status: 'ok', state: parseState(parsed) };
   } catch {
-    return defaultState(); // corrupt JSON or blocked storage: start clean, never a white screen
+    return { status: 'corrupt', state: defaultState() }; // corrupt JSON or blocked storage: never a white screen
   }
 }
+
+export const loadState = (store: Pick<Storage, 'getItem'> | null = browserStorage()): RumiState => inspectStorage(store).state;
 
 const isQuota = (e: unknown): boolean => {
   const err = e as { name?: unknown; code?: unknown } | null;

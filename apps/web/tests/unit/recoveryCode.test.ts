@@ -64,3 +64,36 @@ describe("tagFromCode", () => {
     expect(() => tagFromCode(a, "s".repeat(31))).toThrow();
   });
 });
+
+describe("normaliseRecoveryCode is ASCII-only", () => {
+  const good = "ABCDE-FGHJK-LMNPQ-RSTUV";
+  it("does not let Unicode case folding turn other characters into code letters", () => {
+    expect(normaliseRecoveryCode("ſBCDEFGHJKLMNPQRSTUV")).toBeNull(); // long s would upper-case to S
+    expect(normaliseRecoveryCode("ﬀCDEFGHJKLMNPQRSTUV")).toBeNull(); // ff ligature would upper-case to FF
+    expect(normaliseRecoveryCode("ıBCDEFGHJKLMNPQRSTUV")).toBeNull(); // dotless i
+    expect(normaliseRecoveryCode("АBCDEFGHJKLMNPQRSTUV")).toBeNull(); // Cyrillic A
+  });
+  it("still accepts what a person types: lower case, spaces, dashes, a trailing newline", () => {
+    expect(normaliseRecoveryCode("abcdefghjklmnpqrstuv")).toBe(good);
+    expect(normaliseRecoveryCode(" abcde fghjk-lmnpq rstuv \n")).toBe(good);
+  });
+  it("rejects look-alike separators and characters outside the alphabet", () => {
+    expect(normaliseRecoveryCode("ABCDE FGHJKLMNPQRSTUV")).toBeNull(); // no-break space inside
+    expect(normaliseRecoveryCode("ABCDE–FGHJKLMNPQRSTUV")).toBeNull(); // en dash
+    expect(normaliseRecoveryCode("ABCDEFGHJKLMNPQRSTU0")).toBeNull();
+    expect(normaliseRecoveryCode("ABCDEFGHJKLMNPQRSTUO")).toBeNull();
+  });
+});
+
+describe("tagFromCode: the secret", () => {
+  const code = "ABCDE-FGHJK-LMNPQ-RSTUV";
+  it("undefined, short and whitespace-only secrets all give the same clear error", () => {
+    for (const secret of [undefined as never, "", "a".repeat(31), " ".repeat(40), " ".repeat(10) + "a".repeat(22), "\n".repeat(33)]) {
+      expect(() => tagFromCode(code, secret)).toThrow("bad memory key");
+    }
+  });
+  it("a long enough secret works, and a different secret gives a different tag", () => {
+    expect(tagFromCode(code, "a".repeat(32))).toMatch(/^u_[0-9a-f]{32}$/);
+    expect(tagFromCode(code, "a".repeat(32))).not.toBe(tagFromCode(code, "a".repeat(33)));
+  });
+});

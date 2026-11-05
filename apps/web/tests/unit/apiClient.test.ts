@@ -183,3 +183,93 @@ describe("callApi: request shape and the x-rumi-key header", () => {
     expect(Object.keys(headersOf(none.fetchFn))).toEqual(["Content-Type"]);
   });
 });
+
+describe("callApi: which strings get the crisis check", () => {
+  it("an empty typedText does not switch the check off: the whole body is checked", async () => {
+    const { fetchFn, go } = setup();
+    expect(await go({ rawText: "I want to end it all" }, { typedText: [] })).toEqual({ ok: false, crisis: true });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("skipCrisisCheck is the one explicit way to skip it, and the request still goes out", async () => {
+    const { fetchFn, go } = setup();
+    expect(await go({ lines: [{ text: "end it all" }] }, { skipCrisisCheck: true })).toMatchObject({ ok: true });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(await go({ lines: [{ text: "end it all" }] }, { skipCrisisCheck: false })).toEqual({ ok: false, crisis: true });
+  });
+
+  it("crisis text 32 levels down is seen; nesting deeper than that is refused as bad input, never sent", async () => {
+    const nest = (levels: number) => {
+      let o: unknown = "I want to end it all";
+      for (let i = 0; i < levels; i++) o = { a: o };
+      return o;
+    };
+    const seen = setup();
+    expect(await seen.go(nest(32))).toEqual({ ok: false, crisis: true });
+    const deep = setup();
+    expect(await deep.go(nest(33))).toMatchObject({ ok: false, error: { code: "bad_input" } });
+    expect(deep.fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("a very wide but shallow body is fine", async () => {
+    const { go } = setup();
+    expect(await go({ items: Array.from({ length: 5000 }, (_, i) => ({ text: `line ${i}` })) })).toMatchObject({ ok: true });
+  });
+});
+
+describe("callApi: reply size and timers", () => {
+  const padded = (total: number): string => {
+    const base = JSON.stringify({ ...REPLY, pad: "" });
+    return JSON.stringify({ ...REPLY, pad: "x".repeat(total - base.length) });
+  };
+
+  it("a reply of exactly 1 MB is read; one byte more is ai_invalid", async () => {
+    const atLimit = await setup({ fetchFn: async () => new Response(padded(1_000_000)) }).go();
+    expect(atLimit).toMatchObject({ ok: true });
+    const over = await setup({ fetchFn: async () => new Response(padded(1_000_001)) }).go();
+    expect(over).toMatchObject({ ok: false, error: { code: "ai_invalid" } });
+  });
+
+  it("a 50 MB reply is cut off early instead of being read whole", async () => {
+    const started = Date.now();
+    const r = await setup({ fetchFn: async () => new Response("x".repeat(50_000_000)) }).go();
+    expect(r).toMatchObject({ ok: false, error: { code: "ai_invalid" } });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it("a declared content-length above the cap is refused before reading", async () => {
+    const r = await setup({ fetchFn: async () => new Response(JSON.stringify(REPLY), { headers: { "content-length": "5000000" } }) }).go();
+    expect(r).toMatchObject({ ok: false, error: { code: "ai_invalid" } });
+  });
+
+  it("an oversized error body still maps to the status code", async () => {
+    const r = await setup({ fetchFn: async () => new Response("x".repeat(2_000_000), { status: 429 }) }).go();
+    expect(r).toMatchObject({ ok: false, error: { code: "rate_limited" } });
+  });
+
+  it("the timeout timer is cleared once the call has finished", async () => {
+    vi.useFakeTimers();
+    try {
+      const { go } = setup();
+      expect(await go()).toMatchObject({ ok: true });
+      expect(vi.getTimerCount()).toBe(0);
+      const failing = setup({ fetchFn: async () => Promise.reject(new Error("net")) });
+      expect(await failing.go()).toMatchObject({ ok: false });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("callApi: never throws on odd bodies", () => {
+  it("BigInt, throwing getters and a throwing crisis check give a result, not an exception", async () => {
+    const { go } = setup({
+      crisis: () => {
+        throw new Error("boom");
+      },
+    });
+    expect((await go({ n: BigInt(10) })).ok).toBe(false);
+    expect((await go({ get x(): string { throw new Error("g"); } })).ok).toBe(false);
+  });
+});
