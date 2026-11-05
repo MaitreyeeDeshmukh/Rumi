@@ -70,6 +70,19 @@ export const evalModeEnabled = (): boolean => process.env.EVAL_MODE === "1" && p
 
 export const isProduction = (): boolean => process.env.NODE_ENV === "production";
 
+/** Same default as the evals scorer (tests/evals/scorers/leak.ts), which cannot be imported from src. */
+const DEFAULT_CANARY = "RUMI-CANARY-7f3a91c2";
+
+/**
+ * The prompt-leak marker. Only in EVAL_MODE and never in production. EVAL_CANARY may override it with letters, digits,
+ * underscore or hyphen (8 to 64 characters, because it is written into a prompt); anything else uses the default.
+ */
+export function getEvalCanary(): string | undefined {
+  if (!evalModeEnabled()) return undefined;
+  const custom = process.env.EVAL_CANARY?.trim();
+  return custom && /^[A-Za-z0-9_-]{8,64}$/.test(custom) ? custom : DEFAULT_CANARY;
+}
+
 /** undefined when unset; throws ConfigError("SESSION_SECRET") when set but shorter than 32 characters after trimming. */
 export function getSessionSecret(): string | undefined {
   const raw = process.env.SESSION_SECRET;
