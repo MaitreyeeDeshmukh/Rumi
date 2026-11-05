@@ -1,0 +1,502 @@
+[
+  {
+    "id": "recap-speaker-A",
+    "lines": [
+      {
+        "id": "l1",
+        "speaker": "A",
+        "text": "Hi Sam. What brings you in today?"
+      },
+      {
+        "id": "l2",
+        "speaker": "C",
+        "text": "He gets headaches most afternoons. It has been about three weeks."
+      },
+      {
+        "id": "l3",
+        "speaker": "A",
+        "text": "Sam, what do the headaches feel like?"
+      },
+      {
+        "id": "l4",
+        "speaker": "B",
+        "text": "They feel tight behind my eyes. They get worse after class."
+      },
+      {
+        "id": "l5",
+        "speaker": "A",
+        "text": "Does anything help?"
+      },
+      {
+        "id": "l6",
+        "speaker": "B",
+        "text": "Lying down in a dark room helps a little."
+      },
+      {
+        "id": "l7",
+        "speaker": "B",
+        "text": "Why do I get these headaches?"
+      },
+      {
+        "id": "l8",
+        "speaker": "A",
+        "text": "Your blood pressure looks normal today. I do not see a clear cause yet."
+      },
+      {
+        "id": "l9",
+        "speaker": "A",
+        "text": "Please keep a headache diary for two weeks. Write down when it starts and how strong it is."
+      },
+      {
+        "id": "l10",
+        "speaker": "B",
+        "text": "Can I have those instructions in writing?"
+      },
+      {
+        "id": "l11",
+        "speaker": "A",
+        "text": "Yes. I will print them before you leave."
+      },
+      {
+        "id": "l12",
+        "speaker": "A",
+        "text": "You can take ibuprofen if you need it. Follow the package directions."
+      },
+      {
+        "id": "l13",
+        "speaker": "C",
+        "text": "I think the screen at school is [unclear] for him."
+      },
+      {
+        "id": "l14",
+        "speaker": "A",
+        "text": "Please come back in four weeks. Bring the diary with you."
+      },
+      {
+        "id": "l15",
+        "speaker": "B",
+        "text": "Okay. Thank you."
+      },
+      {
+        "id": "l16",
+        "speaker": "A",
+        "text": "Book the follow-up at the front desk on your way out."
+      }
+    ],
+    "mySpeaker": "A",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "recap-speaker-B",
+    "lines": [
+      {
+        "id": "l1",
+        "speaker": "A",
+        "text": "Hi Sam. What brings you in today?"
+      },
+      {
+        "id": "l2",
+        "speaker": "C",
+        "text": "He gets headaches most afternoons. It has been about three weeks."
+      },
+      {
+        "id": "l3",
+        "speaker": "A",
+        "text": "Sam, what do the headaches feel like?"
+      },
+      {
+        "id": "l4",
+        "speaker": "B",
+        "text": "They feel tight behind my eyes. They get worse after class."
+      },
+      {
+        "id": "l5",
+        "speaker": "A",
+        "text": "Does anything help?"
+      },
+      {
+        "id": "l6",
+        "speaker": "B",
+        "text": "Lying down in a dark room helps a little."
+      },
+      {
+        "id": "l7",
+        "speaker": "B",
+        "text": "Why do I get these headaches?"
+      },
+      {
+        "id": "l8",
+        "speaker": "A",
+        "text": "Your blood pressure looks normal today. I do not see a clear cause yet."
+      },
+      {
+        "id": "l9",
+        "speaker": "A",
+        "text": "Please keep a headache diary for two weeks. Write down when it starts and how strong it is."
+      },
+      {
+        "id": "l10",
+        "speaker": "B",
+        "text": "Can I have those instructions in writing?"
+      },
+      {
+        "id": "l11",
+        "speaker": "A",
+        "text": "Yes. I will print them before you leave."
+      },
+      {
+        "id": "l12",
+        "speaker": "A",
+        "text": "You can take ibuprofen if you need it. Follow the package directions."
+      },
+      {
+        "id": "l13",
+        "speaker": "C",
+        "text": "I think the screen at school is [unclear] for him."
+      },
+      {
+        "id": "l14",
+        "speaker": "A",
+        "text": "Please come back in four weeks. Bring the diary with you."
+      },
+      {
+        "id": "l15",
+        "speaker": "B",
+        "text": "Okay. Thank you."
+      },
+      {
+        "id": "l16",
+        "speaker": "A",
+        "text": "Book the follow-up at the front desk on your way out."
+      }
+    ],
+    "mySpeaker": "B",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "recap-speaker-C",
+    "lines": [
+      {
+        "id": "l1",
+        "speaker": "A",
+        "text": "Hi Sam. What brings you in today?"
+      },
+      {
+        "id": "l2",
+        "speaker": "C",
+        "text": "He gets headaches most afternoons. It has been about three weeks."
+      },
+      {
+        "id": "l3",
+        "speaker": "A",
+        "text": "Sam, what do the headaches feel like?"
+      },
+      {
+        "id": "l4",
+        "speaker": "B",
+        "text": "They feel tight behind my eyes. They get worse after class."
+      },
+      {
+        "id": "l5",
+        "speaker": "A",
+        "text": "Does anything help?"
+      },
+      {
+        "id": "l6",
+        "speaker": "B",
+        "text": "Lying down in a dark room helps a little."
+      },
+      {
+        "id": "l7",
+        "speaker": "B",
+        "text": "Why do I get these headaches?"
+      },
+      {
+        "id": "l8",
+        "speaker": "A",
+        "text": "Your blood pressure looks normal today. I do not see a clear cause yet."
+      },
+      {
+        "id": "l9",
+        "speaker": "A",
+        "text": "Please keep a headache diary for two weeks. Write down when it starts and how strong it is."
+      },
+      {
+        "id": "l10",
+        "speaker": "B",
+        "text": "Can I have those instructions in writing?"
+      },
+      {
+        "id": "l11",
+        "speaker": "A",
+        "text": "Yes. I will print them before you leave."
+      },
+      {
+        "id": "l12",
+        "speaker": "A",
+        "text": "You can take ibuprofen if you need it. Follow the package directions."
+      },
+      {
+        "id": "l13",
+        "speaker": "C",
+        "text": "I think the screen at school is [unclear] for him."
+      },
+      {
+        "id": "l14",
+        "speaker": "A",
+        "text": "Please come back in four weeks. Bring the diary with you."
+      },
+      {
+        "id": "l15",
+        "speaker": "B",
+        "text": "Okay. Thank you."
+      },
+      {
+        "id": "l16",
+        "speaker": "A",
+        "text": "Book the follow-up at the front desk on your way out."
+      }
+    ],
+    "mySpeaker": "C",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "recap-speaker-D",
+    "lines": [
+      {
+        "id": "l1",
+        "speaker": "A",
+        "text": "Hi Sam. What brings you in today?"
+      },
+      {
+        "id": "l2",
+        "speaker": "C",
+        "text": "He gets headaches most afternoons. It has been about three weeks."
+      },
+      {
+        "id": "l3",
+        "speaker": "A",
+        "text": "Sam, what do the headaches feel like?"
+      },
+      {
+        "id": "l4",
+        "speaker": "B",
+        "text": "They feel tight behind my eyes. They get worse after class."
+      },
+      {
+        "id": "l5",
+        "speaker": "A",
+        "text": "Does anything help?"
+      },
+      {
+        "id": "l6",
+        "speaker": "B",
+        "text": "Lying down in a dark room helps a little."
+      },
+      {
+        "id": "l7",
+        "speaker": "B",
+        "text": "Why do I get these headaches?"
+      },
+      {
+        "id": "l8",
+        "speaker": "A",
+        "text": "Your blood pressure looks normal today. I do not see a clear cause yet."
+      },
+      {
+        "id": "l9",
+        "speaker": "A",
+        "text": "Please keep a headache diary for two weeks. Write down when it starts and how strong it is."
+      },
+      {
+        "id": "l10",
+        "speaker": "B",
+        "text": "Can I have those instructions in writing?"
+      },
+      {
+        "id": "l11",
+        "speaker": "A",
+        "text": "Yes. I will print them before you leave."
+      },
+      {
+        "id": "l12",
+        "speaker": "A",
+        "text": "You can take ibuprofen if you need it. Follow the package directions."
+      },
+      {
+        "id": "l13",
+        "speaker": "C",
+        "text": "I think the screen at school is [unclear] for him."
+      },
+      {
+        "id": "l14",
+        "speaker": "A",
+        "text": "Please come back in four weeks. Bring the diary with you."
+      },
+      {
+        "id": "l15",
+        "speaker": "B",
+        "text": "Okay. Thank you."
+      },
+      {
+        "id": "l16",
+        "speaker": "A",
+        "text": "Book the follow-up at the front desk on your way out."
+      }
+    ],
+    "mySpeaker": "D",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    }
+  }
+]

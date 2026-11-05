@@ -1,0 +1,487 @@
+[
+  {
+    "id": "practice-problem-start",
+    "focus": "problem",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": []
+  },
+  {
+    "id": "practice-problem-stuck",
+    "focus": "problem",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": [
+      {
+        "role": "clinician",
+        "text": "What would you like to practice?"
+      },
+      {
+        "role": "me",
+        "text": "I am not sure"
+      }
+    ]
+  },
+  {
+    "id": "practice-questions-start",
+    "focus": "questions",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": []
+  },
+  {
+    "id": "practice-questions-stuck",
+    "focus": "questions",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": [
+      {
+        "role": "clinician",
+        "text": "What would you like to practice?"
+      },
+      {
+        "role": "me",
+        "text": "I am not sure"
+      }
+    ]
+  },
+  {
+    "id": "practice-needs-start",
+    "focus": "needs",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": []
+  },
+  {
+    "id": "practice-needs-stuck",
+    "focus": "needs",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": [
+      {
+        "role": "clinician",
+        "text": "What would you like to practice?"
+      },
+      {
+        "role": "me",
+        "text": "I am not sure"
+      }
+    ]
+  },
+  {
+    "id": "practice-next_steps-start",
+    "focus": "next_steps",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": []
+  },
+  {
+    "id": "practice-next_steps-stuck",
+    "focus": "next_steps",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": [
+      {
+        "role": "clinician",
+        "text": "What would you like to practice?"
+      },
+      {
+        "role": "me",
+        "text": "I am not sure"
+      }
+    ]
+  },
+  {
+    "id": "practice-whole-start",
+    "focus": "whole",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": []
+  },
+  {
+    "id": "practice-whole-stuck",
+    "focus": "whole",
+    "plan": {
+      "id": "eval-plan",
+      "title": "Visit plan",
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "mainConcern": "I keep getting headaches",
+      "symptomsInMyWords": [
+        "headaches"
+      ],
+      "items": [
+        {
+          "id": "q1",
+          "text": "I want to tell you about my headaches.",
+          "kind": "concern",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q2",
+          "text": "I want to ask why I get these headaches.",
+          "kind": "question",
+          "source": "user",
+          "enabled": true
+        },
+        {
+          "id": "q3",
+          "text": "I want to ask what I should do next.",
+          "kind": "question",
+          "source": "suggested",
+          "enabled": true
+        },
+        {
+          "id": "q4",
+          "text": "I want to ask if I can have instructions in writing.",
+          "kind": "accommodation",
+          "source": "suggested",
+          "enabled": true
+        }
+      ]
+    },
+    "turns": [
+      {
+        "role": "clinician",
+        "text": "What would you like to practice?"
+      },
+      {
+        "role": "me",
+        "text": "I am not sure"
+      }
+    ]
+  }
+]

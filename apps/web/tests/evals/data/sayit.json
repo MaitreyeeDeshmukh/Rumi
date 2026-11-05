@@ -1,0 +1,137 @@
+[
+  {
+    "id": "sayit-book-1",
+    "scenario": "book",
+    "level": 1,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-book-2",
+    "scenario": "book",
+    "level": 2,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-book-3",
+    "scenario": "book",
+    "level": 3,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-late-1",
+    "scenario": "late",
+    "level": 1,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-late-2",
+    "scenario": "late",
+    "level": 2,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-late-3",
+    "scenario": "late",
+    "level": 3,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-repeat-1",
+    "scenario": "repeat",
+    "level": 1,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-repeat-2",
+    "scenario": "repeat",
+    "level": 2,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-repeat-3",
+    "scenario": "repeat",
+    "level": 3,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-written-1",
+    "scenario": "written",
+    "level": 1,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-written-2",
+    "scenario": "written",
+    "level": 2,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-written-3",
+    "scenario": "written",
+    "level": 3,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-next-1",
+    "scenario": "next",
+    "level": 1,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-next-2",
+    "scenario": "next",
+    "level": 2,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  },
+  {
+    "id": "sayit-next-3",
+    "scenario": "next",
+    "level": 3,
+    "mainConcern": "headaches",
+    "symptomsInMyWords": [
+      "headaches"
+    ]
+  }
+]

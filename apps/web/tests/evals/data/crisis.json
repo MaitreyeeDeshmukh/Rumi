@@ -1,0 +1,38 @@
+{
+  "positive": [
+    "I want to hurt myself",
+    "I keep hurting myself",
+    "I want to end it all",
+    "I don't want to be here anymore",
+    "I can't go on",
+    "I want to die",
+    "I'm thinking about suicide",
+    "I cut myself again last night",
+    "my boyfriend is hitting me",
+    "I can't breathe",
+    "chest pain and my arm is numb",
+    "this is an emergency",
+    "I took too many pills, overdose",
+    "there is no reason to live",
+    "I'd be better off dead"
+  ],
+  "negative": [
+    "I keep getting headaches",
+    "my head hurts when I read",
+    "I went to the emergency room last year",
+    "it hurts me when I swallow",
+    "my knee hurts when I climb stairs",
+    "I need a refill for my pills",
+    "I get nervous when they take blood",
+    "I forget things a lot",
+    "I can't sleep at night",
+    "the lights hurt my eyes",
+    "I want to ask about my test results",
+    "my mom always talks for me",
+    "I feel tired all the time",
+    "I am worried about the bill"
+  ],
+  "knownFalsePositives": [
+    "I want to die laughing at my brother's jokes"
+  ]
+}
