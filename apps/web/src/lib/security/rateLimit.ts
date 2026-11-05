@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { isIP } from "node:net";
-import { hashingKey } from "./session";
+import { hashingKey } from "@/lib/auth/secret";
 
 /**
  * In-memory sliding windows, per serverless instance. That makes them best effort: a second instance has its own
