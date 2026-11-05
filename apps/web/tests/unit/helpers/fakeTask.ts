@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { COMPANION_RE } from "@/features/shared/constants";
+import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import type { TaskName, TaskSpec } from "@/features/shared/task";
 import { buildLedger } from "@/lib/ai/ledger";
@@ -52,10 +53,8 @@ export function fakeTask(over: Partial<FakeSpec> & { name?: TaskName } = {}): Fa
     reply: z.object({ say: z.string(), degraded: z.boolean().optional() }),
     crisisFields: step("crisisFields", (r: FakeReq) => ({ text: r.text })),
     buildLedger: step("buildLedger", (r: FakeReq) => buildLedger({ rawText: r.text })),
-    build: step("build", (ctx) => ({
-      system: "PERSONA TEXT",
-      user: `TASK TEXT. ${ctx.fence("text", ctx.r.text)}${ctx.r.other === undefined ? "" : ` ${ctx.fence("other", ctx.r.other)}`}`,
-    })),
+    // Through composePrompt like the real specs, so the fake prompt has the real shape: preamble once, STYLE, FACTS, TASK once each.
+    build: step("build", (ctx) => composePrompt(ctx, { persona: "PERSONA TEXT", task: "TASK TEXT.", data: ctx.r.other === undefined ? [] : [ctx.fence("other", ctx.r.other)] })),
     validate: step("validate", (_r: FakeReq, o: FakeOut): GuardCode[] => [...o.say.matchAll(/CODE:([a-z0-9_]+)/g)].map((m) => m[1] as GuardCode)),
     finalize: step("finalize", (_r: FakeReq, o: FakeOut): FakeReply => {
       if (o.say.includes("THROWFINAL")) throw new Error("finalize crashed");

@@ -19,27 +19,28 @@
  *
  * Nothing the user typed, nothing from memory and no key is ever written to a log line or an error body.
  */
+import { after } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/requireUser";
 import { AppError, toResponse } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
 import { REQUEST_ID_HEADER, newRequestId } from "@/lib/requestContext";
-import { recordAiEvent } from "@/lib/telemetry/sinks";
+import { recordAiEvent, recordAppEvent } from "@/lib/telemetry/sinks";
 import { getMemoryFacts } from "@/features/memory/supabaseStore";
 import { COMPANION_RE, LIMITS } from "@/features/shared/constants";
 import { isHard, type GuardCode } from "@/features/shared/guards";
 import type { EvidenceLedger, TaskSpec, Tier } from "@/features/shared/task";
 import { crisisTier } from "@/lib/crisis";
-import { ConfigError, assertRuntimeEnv, getEvalCanary, mockAiEnabled } from "@/lib/env";
+import { ConfigError, aiForceOff, assertRuntimeEnv, getEvalCanary, isVercelProduction, mockAiEnabled, mockOutsideLocalDev } from "@/lib/env";
 import { HttpError, json, readJson, retryAfter } from "./http";
-import { replyCache, replyKey, requestDigest, cacheKey, sharedCache, sharedCacheKey, singleFlight } from "./cache";
+import { CANONICAL_COMPANION, replyCache, replyKey, requestDigest, cacheKey, sharedCache, sharedCacheKey, singleFlight } from "./cache";
 import { getFlag } from "./flags";
-import { bucketOf, checkAndBump, costMicroUsd, recordSpend, spendCapReached } from "./limits";
+import { bucketOf, checkAndBump, costMicroUsd, recordSpend, spendCapReached, type LimitVerdict } from "./limits";
 import { adviceCodes, claimsHumanCodes, clinicianFindingCodes, collectStrings, mapStrings, stripUrls } from "./guards/output";
 import { promptForm, redactPii, scanInjection } from "./guards/input";
-import { buildCrisisCheckPrompt, buildPreamble, canaryLine, containsCanary, fence, newNonce, renderFactsRegion, renderStyleRegion, renderTaskRegion } from "./prompt";
+import { buildCrisisCheckPrompt, canaryLine, containsCanary, fence, newNonce } from "./prompt";
 import { ProviderError, createGroqProvider, toStrictJsonSchema, type JsonSchemaSpec, type Provider, type ProviderCall, type ProviderResult } from "./provider";
-import type { AiEvent, EventErrorCode, Stage } from "./telemetry";
+import type { AiEvent, CrisisSource, EventErrorCode, Stage } from "./telemetry";
 import { guardRequest } from "@/lib/security/guardRequest";
 import type { RateLimiter } from "@/lib/security/rateLimit";
 
@@ -63,7 +64,10 @@ export interface HarnessDeps {
   getFlag?: typeof getFlag;
   spendCapReached?: () => Promise<boolean>;
   checkAndBump?: typeof checkAndBump;
-  recordSpend?: (costMicroUsd: number) => void;
+  /** Records the day's spend and returns the promise that writes it. The harness hands that promise to `defer`. */
+  recordSpend?: (costMicroUsd: number) => Promise<void> | void;
+  /** Keeps work alive after the response (next/server after()). Tests inject a spy. */
+  defer?: (work: Promise<unknown>) => void;
   record?: typeof recordAiEvent;
   getMemoryFacts?: (userId: string) => Promise<string[]>;
   /** Pause before the tier swap. Tests pass an instant one. */
@@ -86,6 +90,10 @@ const SWAP_PAUSE_SPREAD_MS = 200;
 /** The tier 2 crisis question needs a one-word answer; the cap is for the reasoning tokens of a small model. */
 const CLASSIFY_MAX_TOKENS = 400;
 const MAX_MODEL_TEXT = 100_000;
+/** The crisis classifier sees at most this many characters (the regex tiers already saw all of the text). */
+const CLASSIFY_INPUT_CHARS = 400;
+/** The persona-facts read gives up after this long; the harness does not trust the store to do it. */
+const MEMORY_MS = 1_500;
 /** The auth lookup is an outbound call, so it has its own deadline. Past it the caller counts as signed out. */
 const AUTH_MS = 2_000;
 const IDEMPOTENCY_RE = /^[A-Za-z0-9_-]{8,64}$/;
@@ -137,6 +145,8 @@ const defaultProvider = (): Provider => (groq ??= createGroqProvider());
 interface Breaker {
   fails: number;
   openUntil: number;
+  /** True while the one probe call after a pause is in flight: every other request stays on the fallback. */
+  probing: boolean;
   /** Per tier: do not call this tier before this time (a 429 and its Retry-After). */
   cooldownUntil: Record<Tier, number>;
 }
@@ -145,7 +155,7 @@ const breakers = new WeakMap<Provider, Breaker>();
 function breakerOf(p: Provider): Breaker {
   let b = breakers.get(p);
   if (b === undefined) {
-    b = { fails: 0, openUntil: 0, cooldownUntil: { quality: 0, fast: 0 } };
+    b = { fails: 0, openUntil: 0, probing: false, cooldownUntil: { quality: 0, fast: 0 } };
     breakers.set(p, b);
   }
   return b;
@@ -168,11 +178,11 @@ async function withTimeout(provider: Provider, call: Omit<ProviderCall, "signal"
   }
 }
 
-const ProviderAnswer = z.object({ text: z.string().min(1), inTokens: z.number(), outTokens: z.number(), cachedTokens: z.number().optional(), modelUsed: z.string().optional() });
+const ProviderAnswer = z.object({ text: z.string().min(1), inTokens: z.number(), outTokens: z.number(), cachedTokens: z.number().optional(), modelUsed: z.string().optional(), finishReason: z.string().optional() });
 
 /** Why no provider answer was produced. 'skipped': breaker open, tier cooling down, deadline or call budget used up. */
 type CallFailure = ProviderError["kind"] | "skipped";
-type CallOutcome = { ok: true; result: ProviderResult } | { ok: false; kind: CallFailure };
+type CallOutcome = { ok: true; result: ProviderResult } | { ok: false; kind: CallFailure; status?: number; code?: string };
 
 /** The telemetry event while the request runs: the same fields, but the guard hits can still be added to. */
 type LiveEvent = Omit<AiEvent, "guardHits"> & { guardHits: GuardCode[] };
@@ -185,6 +195,19 @@ interface Run {
   /** Spend and cache counts for this request's own provider calls. */
   costMicro: number;
   cachedTokens: number;
+  log: ReturnType<typeof createLogger>;
+}
+
+/** A call that was sent and failed without an answer may still have been billed for its input: count a rough estimate (4 characters a token). */
+const estimateInputTokens = (call: { system: string; user: string }): number => Math.ceil((call.system.length + call.user.length) / 4);
+
+function modelNameOf(provider: Provider, tier: Tier): string {
+  try {
+    return provider.model(tier);
+  } catch {
+    // No usable model name: the price table then uses its safe default (the larger model).
+    return "";
+  }
 }
 
 const tierCooling = (p: Provider, tier: Tier, now: number): boolean => breakerOf(p).cooldownUntil[tier] > now;
@@ -195,11 +218,16 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
   const breaker = breakerOf(provider);
   const left = DEADLINE_MS - (run.now() - run.startedAt);
   const budget = Math.min(CALL_MAX_MS, left - RESERVE_MS);
-  if (run.calls >= MAX_CALLS || breaker.openUntil > run.now() || tierCooling(provider, call.tier, run.now()) || budget <= 0) return { ok: false, kind: "skipped" };
+  // Open: wait out the pause. After the pause exactly one request (the probe) goes through; the rest stay on the fallback.
+  const wasOpen = breaker.openUntil > 0;
+  if (run.calls >= MAX_CALLS || breaker.openUntil > run.now() || (wasOpen && breaker.probing) || tierCooling(provider, call.tier, run.now()) || budget <= 0) {
+    return { ok: false, kind: "skipped" };
+  }
 
   run.calls += 1;
   run.ev.attempts = run.calls;
   run.ev.tier = call.tier;
+  if (wasOpen) breaker.probing = true;
   try {
     const answer = await withTimeout(provider, call, budget);
     const valid = ProviderAnswer.safeParse(answer);
@@ -211,21 +239,35 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
     const cached = Math.min(inTokens, Math.max(0, Math.floor(answer.cachedTokens ?? 0)));
     run.ev.inTokens += inTokens;
     run.ev.outTokens += outTokens;
+    run.ev.finishReason = answer.finishReason;
     run.cachedTokens += cached;
     run.costMicro += costMicroUsd(answer.modelUsed ?? "", inTokens, cached, outTokens);
     return { ok: true, result: answer };
   } catch (e) {
     // Anything that is not a ProviderError is a bug in a provider; it counts as a failed call like any other.
     const kind = e instanceof ProviderError ? e.kind : "http";
-    if (kind !== "config" && kind !== "aborted") {
+    const status = e instanceof ProviderError ? e.status : undefined;
+    run.ev.providerError = kind;
+    run.ev.providerStatus = status;
+    // A config problem or an abort never reached the vendor; a 4xx is a problem with our request, not with the vendor's health.
+    if (kind !== "config" && kind !== "aborted" && kind !== "rejected") {
       breaker.fails += 1;
-      if (breaker.fails >= BREAKER_FAILS) breaker.openUntil = run.now() + BREAKER_PAUSE_MS;
+      if (breaker.fails >= BREAKER_FAILS) {
+        breaker.openUntil = run.now() + BREAKER_PAUSE_MS;
+        run.log.warn("breaker_opened", { kind, ...(status === undefined ? {} : { status }) });
+      }
+    }
+    // Sent but unanswered (timeout, network, 5xx, empty): the vendor may still bill the input.
+    if (kind === "timeout" || kind === "http" || kind === "empty") {
+      run.costMicro += costMicroUsd(modelNameOf(provider, call.tier), estimateInputTokens(call), 0, 0);
     }
     if (kind === "rate_limited") {
       const wait = e instanceof ProviderError && e.retryAfterSec !== undefined ? e.retryAfterSec * 1000 : COOLDOWN_DEFAULT_MS;
       breaker.cooldownUntil[call.tier] = run.now() + Math.min(wait, COOLDOWN_MAX_MS);
     }
-    return { ok: false, kind };
+    return { ok: false, kind, status, code: e instanceof ProviderError ? e.code : undefined };
+  } finally {
+    if (wasOpen) breaker.probing = false;
   }
 }
 
@@ -248,13 +290,41 @@ function parseModelJson(text: string): unknown {
   }
 }
 
-/** Tier 2 (07 D43): true means show the crisis card. A failed call, an unreadable answer or a wrong shape all mean yes. */
-async function modelSaysCrisis(run: Run, provider: Provider | undefined, nonce: string, text: string): Promise<boolean> {
-  const prompt = buildCrisisCheckPrompt(nonce, text);
+/**
+ * Tier 2 (07 D43). The call is metered first (its own daily counters per address and per user): when they are used up the
+ * answer is the crisis card, never a 429. A failed call, an unreadable answer or a wrong shape also mean the card.
+ * `source` says why, for the event only (a fixed list, never text).
+ */
+async function modelSaysCrisis(
+  run: Run,
+  provider: Provider | undefined,
+  nonce: string,
+  text: string,
+  quota: () => Promise<LimitVerdict>,
+): Promise<{ crisis: boolean; source: CrisisSource }> {
+  let verdict: LimitVerdict;
+  try {
+    verdict = await quota();
+  } catch {
+    // The meter itself broke: do not guess, show the card (fail safe).
+    return { crisis: true, source: "failsafe_error" };
+  }
+  if (!verdict.ok) return { crisis: true, source: "failsafe_quota" };
+  const prompt = buildCrisisCheckPrompt(nonce, text.slice(0, CLASSIFY_INPUT_CHARS));
   const call = await callProvider(run, provider, { tier: "fast", ...prompt, temperature: 0, maxOutputTokens: CLASSIFY_MAX_TOKENS, jsonSchema: CLASSIFIER_SCHEMA });
-  if (!call.ok) return true;
+  if (!call.ok) return { crisis: true, source: "failsafe_error" };
   const answer = ClassifierAnswer.safeParse(parseModelJson(call.result.text));
-  return !answer.success || answer.data.crisis;
+  if (!answer.success) return { crisis: true, source: "failsafe_error" };
+  return { crisis: answer.data.crisis, source: "model_yes" };
+}
+
+/** True when the model text looks cut off rather than wrong: the vendor said "length", or it is not JSON and does not end like JSON. */
+const looksCut = (text: string, finish: string | undefined): boolean => finish === "length" || (parseModelJson(text) === undefined && !/[}\]]\s*(?:```)?\s*$/.test(text.trim()));
+
+/** Every string the user (or the browser, which is the same thing to us) supplied, except the pretend clinician's own turns. */
+function userLeaves(r: unknown): string[] {
+  const view = isRecord(r) && Array.isArray(r.turns) ? { ...r, turns: r.turns.filter((t) => !(isRecord(t) && t.role === "clinician")) } : r;
+  return collectStrings(view, isIdKey);
 }
 
 type Verdict<Reply> = { kind: "crisis" } | { kind: "checked"; codes: GuardCode[]; reply?: Reply };
@@ -295,12 +365,13 @@ function checkOutput<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req, l
 
 /**
  * Stated preferences for a signed-in user, read on the server from persona_facts (08 section 3: getMemoryFacts never throws,
- * gives up after 1.5 s and returns []). Facts a browser sends in the body are never used. A signed-out caller has none.
+ * gives up after 1.5 s and returns []; the harness enforces that deadline itself). Facts a browser sends in the body are never
+ * used. A signed-out caller has none.
  */
 async function memoryStrings(useMemory: boolean, userId: string | null, read: (userId: string) => Promise<string[]>): Promise<string[]> {
   if (!useMemory || userId === null) return [];
   try {
-    const facts = await read(userId);
+    const facts = await within(read(userId), MEMORY_MS);
     return Array.isArray(facts) ? facts.filter((f): f is string => typeof f === "string" && f.trim() !== "").slice(0, LIMITS.factsMax) : [];
   } catch {
     // The contract says this never throws; if a broken store does, the request goes on without preferences (they only adapt wording).
@@ -310,13 +381,35 @@ async function memoryStrings(useMemory: boolean, userId: string | null, read: (u
 
 function companionOf(r: unknown): string {
   const name = isRecord(r) ? r.companionName : undefined;
-  return typeof name === "string" && COMPANION_RE.test(name) ? name : "Rumi";
+  return typeof name === "string" && COMPANION_RE.test(name) ? name : CANONICAL_COMPANION;
+}
+
+/** One app event per instance, so a deployment that serves canned answers is visible without flooding the table. */
+let mockAnnounced = false;
+function announceMock(task: string): void {
+  if (mockAnnounced) return;
+  mockAnnounced = true;
+  recordAppEvent({ source: "server", area: "app", code: "mock_ai_active", route: `/api/${task}` });
+}
+
+/** Tests only: the next mock request announces itself again. */
+export function resetMockAnnouncementForTest(): void {
+  mockAnnounced = false;
+}
+
+/** next/server after(): the work is awaited after the response. Outside a request (scripts, unit tests) there is nothing to extend. */
+function deferToAfter(work: Promise<unknown>): void {
+  try {
+    after(() => work);
+  } catch {
+    // Not inside a request scope: the promise simply runs on its own.
+  }
 }
 
 const withDegraded = (reply: unknown, degraded: boolean): unknown => ({ ...(reply as object), degraded });
 
 /** What the work of one request produced. Shared by every request that joined the same computation. */
-type Done = { kind: "crisis" } | { kind: "reply"; reply: unknown; outcome: "ok" | "mock" } | { kind: "degraded"; reply: unknown; code: EventErrorCode };
+type Done = { kind: "crisis"; source: CrisisSource } | { kind: "reply"; reply: unknown; outcome: "ok" | "mock" } | { kind: "degraded"; reply: unknown; code: EventErrorCode };
 
 type CacheStatus = "miss" | "hit" | "bypass";
 
@@ -327,12 +420,14 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   const headerId = req.headers.get(REQUEST_ID_HEADER);
   const requestId = headerId !== null && REQUEST_ID_RE.test(headerId) ? headerId : newRequestId();
   const log = createLogger({ requestId, route: `/api/${spec.name}` });
+  const defer = deps.defer ?? deferToAfter;
   const run: Run = {
     now,
     startedAt: now(),
     calls: 0,
     costMicro: 0,
     cachedTokens: 0,
+    log,
     ev: {
       id: requestId,
       task: spec.name,
@@ -357,22 +452,29 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   let ipHash = "0000000000000000";
   let user: SignedIn | null = null;
   let cacheStatus: CacheStatus = "bypass";
+  let mockHeader = false;
   /** The sanitized request, once it exists. The fallback and the mock use it (not the redacted copy). */
   let clean: Req | undefined;
 
   const finish = (res: Response): Response => {
     ev.ms = Math.max(0, now() - run.startedAt);
     res.headers.set(REQUEST_ID_HEADER, requestId);
-    res.headers.set("x-rumi-cache", cacheStatus);
+    // The cache header is for operators and tests; on a production deployment it is not sent.
+    if (!isVercelProduction()) res.headers.set("x-rumi-cache", cacheStatus);
+    if (mockHeader) res.headers.set("x-rumi-mock", "1");
     if (cookie !== null) res.headers.append("Set-Cookie", cookie);
     try {
-      (deps.record ?? recordAiEvent)(ev, { cacheStatus, cachedTokens: run.cachedTokens, bucket: bucketOf(user === null ? null : user.userHash, ipHash) });
+      // A crisis event carries no bucket: nothing may tie a crisis to a person or an address.
+      const bucket = ev.outcome === "crisis" ? {} : { bucket: bucketOf(user === null ? null : user.userHash, ipHash) };
+      (deps.record ?? recordAiEvent)(ev, { cacheStatus, cachedTokens: run.cachedTokens, ...bucket });
     } catch {
       // Telemetry never blocks or fails an answer. recordAiEvent swallows its own failures; this is for a broken injected sink.
     }
     if (run.costMicro > 0) {
       try {
-        (deps.recordSpend ?? recordSpend)(run.costMicro);
+        // The write to the global bucket is awaited by after()/waitUntil, so it is not lost when the instance freezes.
+        const write = (deps.recordSpend ?? recordSpend)(run.costMicro);
+        if (write !== undefined) defer(write);
       } catch {
         // Cost accounting is best effort; the per-request telemetry above already carries the token counts.
       }
@@ -393,6 +495,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   const respond = (done: Done): Response => {
     if (done.kind === "crisis") {
       ev.outcome = "crisis";
+      ev.crisisSource = done.source;
       cacheStatus = "bypass";
       return json({ crisis: true });
     }
@@ -426,6 +529,10 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     cookie = guard.session.setCookie;
     ipHash = guard.ipHash;
     const mock = mockAiEnabled();
+    if (mock && mockOutsideLocalDev()) {
+      mockHeader = true;
+      announceMock(spec.name);
+    }
 
     // 2. who is asking. Signed out is allowed unless the route says "required"; auth being down counts as signed out.
     if (!mock) {
@@ -453,27 +560,40 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     clean = r;
 
     // 5. crisis: deterministic, before any model sees anything. Certain wins at once, even with AI switched off.
+    //    The regex tier runs over every string the browser supplied (plan items, concern, transcript, the user's turns), not only
+    //    the fresh field: text that skipped the fresh field must not reach a prompt. The model's opinion is only asked about fresh text.
     stage = "crisis";
+    const fresh = Object.values(spec.crisisFields(r));
     const flagged: string[] = [];
-    for (const text of Object.values(spec.crisisFields(r))) {
+    for (const text of fresh) {
       const tier = crisisTier(text);
-      if (tier === "certain") return finish(respond({ kind: "crisis" }));
+      if (tier === "certain") return finish(respond({ kind: "crisis", source: "tier1" }));
       if (tier === "check") flagged.push(text);
+    }
+    for (const text of userLeaves(r)) {
+      if (crisisTier(text) === "certain") return finish(respond({ kind: "crisis", source: "tier1" }));
     }
 
     // 6. kill-switch and spend cap. Either one means no provider call at all; a text that needs the model's opinion
     //    about crisis is then treated as a crisis (fail safe, same as a provider that is down).
+    //    AI_FORCE_OFF=1 is the switch that needs no database. The persona facts are read in parallel with the flag lookups.
     let aiOff = false;
+    let memoryRead: Promise<string[]> = Promise.resolve([]);
     if (!mock) {
       stage = "flags";
-      aiOff = !(await (deps.getFlag ?? getFlag)("ai_enabled")) || (await (deps.spendCapReached ?? spendCapReached)());
+      memoryRead = memoryStrings(spec.useMemory, user === null ? null : user.userId, deps.getMemoryFacts ?? getMemoryFacts);
+      aiOff = aiForceOff() || !(await (deps.getFlag ?? getFlag)("ai_enabled")) || (await (deps.spendCapReached ?? spendCapReached)());
     }
     const nonce = rand();
     const provider = deps.provider ?? (mock ? undefined : defaultProvider());
     if (flagged.length > 0) {
       stage = "provider";
-      const text = redactPii(flagged.join("\n")).text.slice(0, LIMITS.rawTextMax);
-      if (aiOff || (await modelSaysCrisis(run, provider, nonce, text))) return finish(respond({ kind: "crisis" }));
+      const text = redactPii(flagged.join("\n")).text;
+      if (aiOff) return finish(respond({ kind: "crisis", source: "failsafe_off" }));
+      const quota = (): Promise<LimitVerdict> =>
+        (deps.checkAndBump ?? checkAndBump)({ userHash: user === null ? null : user.userHash, isAnonymous: user === null ? true : user.isAnonymous, ipHash, task: "classify" });
+      const asked = await modelSaysCrisis(run, provider, nonce, text, quota);
+      if (asked.crisis) return finish(respond({ kind: "crisis", source: asked.source }));
     }
     if (aiOff) return finish(respond(degrade("ai_unavailable")));
 
@@ -519,10 +639,10 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       if (!(e instanceof ProviderError)) throw e;
       return finish(respond(degrade("config")));
     }
-    const memory = await memoryStrings(spec.useMemory, user === null ? null : user.userId, deps.getMemoryFacts ?? getMemoryFacts);
+    const memory = await memoryRead;
     ev.memoryItems = memory.length;
     const shared = sharedCacheKey(spec.name, r, memory.length, spec.promptVersion, model);
-    const own = user !== null && shared === null ? replyKey(user.userHash, spec.name, { body, memory }, spec.promptVersion, model) : null;
+    const own = user !== null && shared === null ? replyKey(user.userHash, spec.name, { r, memory }, spec.promptVersion, model) : null;
     const hitKey = shared ?? own;
     if (hitKey !== null) {
       const hit = (shared !== null ? sharedCache : replyCache).get(hitKey);
@@ -536,14 +656,14 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
     // 10. one computation for identical requests in flight at the same time (and for the same x-idempotency-key)
     const idem = req.headers.get("x-idempotency-key");
-    const flightKey = cacheKey([user === null ? `ip:${ipHash}` : user.userHash, spec.name, requestDigest({ body, memory }), spec.promptVersion, model, idem !== null && IDEMPOTENCY_RE.test(idem) ? idem : ""]);
+    const flightKey = cacheKey([user === null ? `ip:${ipHash}` : user.userHash, spec.name, requestDigest({ r, memory }), spec.promptVersion, model, idem !== null && IDEMPOTENCY_RE.test(idem) ? idem : ""]);
     let led = false;
 
     const work = async (): Promise<Done> => {
       led = true;
       // 11. daily usage limit
       stage = "limits";
-      const limit = await (deps.checkAndBump ?? checkAndBump)({ userHash: user === null ? null : user.userHash, ipHash, task: spec.name });
+      const limit = await (deps.checkAndBump ?? checkAndBump)({ userHash: user === null ? null : user.userHash, isAnonymous: user === null ? true : user.isAnonymous, ipHash, task: spec.name });
       if (!limit.ok) throw new HttpError(429, "rate_limited", limit.retryAfterSec);
 
       // 12. evidence, prompt
@@ -553,9 +673,11 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       stage = "prompt";
       const companionName = companionOf(redacted);
       const canary = getEvalCanary();
+      // spec.build goes through composePrompt, which already holds the preamble and the STYLE, FACTS and TASK regions:
+      // they are used as returned. Only the evaluation canary is added.
       const built = spec.build({ r: redacted, ledger, fence: (label, text) => fence(nonce, label, text), memory, companionName });
-      const system = [buildPreamble(companionName), built.system, ...(canary === undefined ? [] : [canaryLine(canary)])].join("\n");
-      const userPrompt = [renderStyleRegion(memory, nonce), renderFactsRegion(ledger, nonce, (label, text) => fence(nonce, label, text)), renderTaskRegion(built.user, nonce)].join("\n");
+      const system = canary === undefined ? built.system : `${built.system}\n${canaryLine(canary)}`;
+      const userPrompt = built.user;
       const jsonSchema = schemaOf(spec);
 
       // 13. the model: one retry after a hard failure, one tier swap after a provider error, three calls at most
@@ -570,8 +692,10 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
         const call = await callProvider(run, provider, { tier, system, user: userPrompt, temperature: spec.temperature, maxOutputTokens: spec.maxOutputTokens, jsonSchema });
         if (!call.ok) {
           lastFailure = call.kind === "config" ? "config" : call.kind === "timeout" ? "timeout" : "ai_unavailable";
-          // A 4xx other than 429 is a request problem: the other tier would answer the same, so it is not tried.
-          if (swapped || call.kind === "skipped" || call.kind === "config" || call.kind === "aborted" || call.kind === "rejected") break;
+          // A 4xx other than 429 is a problem with our request: the other tier would answer the same, so it is not tried.
+          // The exception is "this model does not exist or is gone" (404 or a model_not_found code): the other tier may still work.
+          const modelGone = call.kind === "rejected" && (call.status === 404 || call.code !== undefined);
+          if (swapped || call.kind === "skipped" || call.kind === "config" || call.kind === "aborted" || (call.kind === "rejected" && !modelGone)) break;
           swapped = true;
           tier = otherTier(tier);
           const left = DEADLINE_MS - (now() - run.startedAt);
@@ -581,13 +705,23 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
         }
         stage = "output";
         const checked = checkOutput(spec, redacted, ledger, call.result.text, canary);
-        if (checked.kind === "crisis") return { kind: "crisis" };
+        if (checked.kind === "crisis") return { kind: "crisis", source: "model_flag" };
         ev.guardHits.push(...checked.codes);
         if (checked.reply !== undefined) {
           if (hitKey !== null) (shared !== null ? sharedCache : replyCache).set(hitKey, checked.reply);
           return { kind: "reply", reply: checked.reply, outcome: "ok" };
         }
         lastFailure = "ai_invalid";
+        // An answer cut off at the token cap would be cut off again: no identical retry. Swap tier once, else the fallback.
+        if (looksCut(call.result.text, call.result.finishReason)) {
+          if (swapped) break;
+          swapped = true;
+          tier = otherTier(tier);
+          const left = DEADLINE_MS - (now() - run.startedAt);
+          const pause = Math.max(0, Math.min(SWAP_PAUSE_MIN_MS + Math.random() * SWAP_PAUSE_SPREAD_MS, left - 2 * RESERVE_MS));
+          if (pause > 0) await sleep(pause);
+          continue;
+        }
         if (retried) break;
         retried = true;
       }

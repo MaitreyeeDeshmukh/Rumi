@@ -4,7 +4,8 @@ import { logEvent, type AiEvent } from "@/lib/ai/telemetry";
 export interface AiEventExtra {
   cacheStatus: "miss" | "hit" | "bypass";
   cachedTokens: number;
-  bucket: string;
+  /** Omitted for crisis events: nothing ties a crisis to a person or an address. */
+  bucket?: string;
 }
 
 export function recordAiEvent(e: AiEvent, extra: AiEventExtra): void {

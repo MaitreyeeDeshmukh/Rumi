@@ -71,7 +71,7 @@ describe("createGroqProvider: request shape", () => {
       reasoning_effort: "low",
       stream: false,
     });
-    expect(res).toEqual({ text: '{"a":1}', modelUsed: "model-quality-x", inTokens: 120, outTokens: 45, cachedTokens: 0 });
+    expect(res).toEqual({ text: '{"a":1}', modelUsed: "model-quality-x", inTokens: 120, outTokens: 45, cachedTokens: 0, finishReason: "other" });
   });
 
   it("uses the fast model for the fast tier and reports the configured name, never the name the server echoes", async () => {

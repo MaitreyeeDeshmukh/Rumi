@@ -76,7 +76,7 @@ describe("runTask: security guard comes first", () => {
     const third = await runTask(spec, post(okBody(), same), deps(provider, { limiter }));
     expect(third.status).toBe(429);
     expect(Number(third.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
-    expect(await bodyOf(third)).toEqual({ error: { code: "rate_limited", message: "That was too many tries. Wait one minute and try again.", requestId: expect.stringMatching(UUID) } });
+    expect(await bodyOf(third)).toEqual({ error: { code: "rate_limited", message: "That was too many tries. Please try again later or tomorrow.", requestId: expect.stringMatching(UUID) } });
     expect(provider.calls).toHaveLength(2);
     expect(log.filter((s) => s === "request")).toHaveLength(4); // two requests, each parsed twice; the third never reached the schema
   });
@@ -206,10 +206,19 @@ describe("runTask: crisis check (07 D2, D43, D5)", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("checks only the fields crisisFields names: a crisis phrase in another field is data, not a crisis", async () => {
+  it("a certain crisis phrase in ANY user-supplied field shows the card, with no model call (the regex tier runs over every string leaf)", async () => {
     const { spec } = fakeTask();
     const provider = fakeProvider([say("fine")]);
     const res = await runTask(spec, post(okBody("I keep getting headaches.", { other: "Mom said: I want to kill myself." })), deps(provider));
+    expect(await bodyOf(res)).toEqual({ crisis: true });
+    expect(provider.calls).toHaveLength(0);
+    expect(event()).toMatchObject({ outcome: "crisis", crisisSource: "tier1" });
+  });
+
+  it("only the fresh fields get the model's opinion: a doubtful phrase in another field is not sent to the classifier", async () => {
+    const { spec } = fakeTask();
+    const provider = fakeProvider([say("fine")]);
+    const res = await runTask(spec, post(okBody("I keep getting headaches.", { other: "I hate myself." })), deps(provider));
     expect(await bodyOf(res)).toEqual({ say: "fine", degraded: false });
     expect(provider.calls).toHaveLength(1);
   });

@@ -35,7 +35,18 @@ export interface AiEvent {
   errorCode?: EventErrorCode;
   /** The pipeline stage that failed, set when a request ended with an error or an unexpected exception. */
   stage?: Stage;
+  /** Why the crisis card was shown. A fixed list, never text: tier1 regex, the model said yes, the model's own flag, or a fail-safe. */
+  crisisSource?: CrisisSource;
+  /** The kind of the last provider failure, its HTTP status and the last answer's finish reason. Codes only, never a body. */
+  providerError?: string;
+  providerStatus?: number;
+  finishReason?: string;
 }
+
+export type CrisisSource = "tier1" | "model_yes" | "model_flag" | "failsafe_error" | "failsafe_off" | "failsafe_quota";
+const CRISIS_SOURCES: readonly string[] = ["tier1", "model_yes", "model_flag", "failsafe_error", "failsafe_off", "failsafe_quota"];
+const PROVIDER_ERRORS: readonly string[] = ["timeout", "http", "rate_limited", "rejected", "config", "empty", "aborted", "skipped"];
+const FINISH_REASONS: readonly string[] = ["stop", "length", "other"];
 
 const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap"];
 const OUTCOMES: readonly string[] = ["ok", "mock", "crisis", "fallback", "error"];
@@ -80,6 +91,10 @@ export function logEvent(event: AiEvent): void {
     ms: count(e.ms),
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
     ...(e.stage === undefined ? {} : { stage: oneOf(e.stage, STAGES, "unknown") }),
+    ...(e.crisisSource === undefined ? {} : { crisisSource: oneOf(e.crisisSource, CRISIS_SOURCES, "unknown") }),
+    ...(e.providerError === undefined ? {} : { providerError: oneOf(e.providerError, PROVIDER_ERRORS, "unknown") }),
+    ...(typeof e.providerStatus === "number" && e.providerStatus >= 100 && e.providerStatus <= 599 ? { providerStatus: Math.floor(e.providerStatus) } : {}),
+    ...(e.finishReason === undefined ? {} : { finishReason: oneOf(e.finishReason, FINISH_REASONS, "other") }),
   };
   sink(JSON.stringify(record));
 }

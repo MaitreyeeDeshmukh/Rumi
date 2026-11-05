@@ -18,7 +18,7 @@ export const MESSAGE: Record<ApiErrorCode, string> = {
   forbidden: "This request was blocked. Reload the page and try again.",
   ai_invalid: "I could not make a safe answer. Your work is saved. Try again.",
   ai_unavailable: "I could not reach the AI. Your work is saved. Try again.",
-  rate_limited: "That was too many tries. Wait one minute and try again.",
+  rate_limited: "That was too many tries. Please try again later or tomorrow.",
 };
 
 /** Every API answer is private: never cached by the browser, a proxy or the CDN. */
@@ -29,8 +29,8 @@ export function json(body: unknown, status = 200, headers: Record<string, string
   });
 }
 
-/** Whole seconds between 1 and 3600; 60 when the value is missing or not a finite number. */
-export const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(3600, Math.max(1, Math.ceil(sec))) : 60);
+/** Whole seconds between 1 and 86400 (a day: the daily limit resets at UTC midnight); 60 when the value is missing or not a finite number. */
+export const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(86_400, Math.max(1, Math.ceil(sec))) : 60);
 
 export function errorResponse(e: HttpError): Response {
   const headers: Record<string, string> = e.status === 429 ? { "Retry-After": String(retryAfter(e.retryAfterSec)) } : {};

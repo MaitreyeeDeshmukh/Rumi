@@ -15,6 +15,7 @@
 import { z } from "zod";
 import type { Tier } from "@/features/shared/task";
 import { ConfigError, getGroqConfig } from "@/lib/env";
+import { createLogger } from "@/lib/log";
 
 export interface JsonSchemaSpec {
   name: string;
@@ -39,6 +40,8 @@ export interface ProviderResult {
   outTokens: number;
   /** Prompt tokens served from Groq's prompt cache (a subset of inTokens). 0 when the field is absent. */
   cachedTokens?: number;
+  /** Why the model stopped: "length" means the answer was cut off at the token cap. Anything unknown is "other". */
+  finishReason?: "stop" | "length" | "other";
 }
 
 /**
@@ -51,14 +54,17 @@ export class ProviderError extends Error {
   /** Seconds from a 429 Retry-After header, whole and between 0 and 3600. undefined when the header is absent or unreadable. */
   readonly retryAfterSec?: number;
   readonly status?: number;
+  /** For a 4xx: the vendor's error code when it is on a short allowlist (model_not_found, ...). Never a message. */
+  readonly code?: string;
   constructor(
     readonly kind: ProviderErrorKind,
-    detail: { status?: number; retryAfterSec?: number } = {},
+    detail: { status?: number; retryAfterSec?: number; code?: string } = {},
   ) {
     super(kind);
     this.name = "ProviderError";
     this.status = detail.status;
     this.retryAfterSec = detail.retryAfterSec;
+    this.code = detail.code;
   }
 }
 
@@ -71,7 +77,7 @@ export interface Provider {
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const Completion = z.object({
-  choices: z.array(z.object({ message: z.object({ content: z.string().nullish() }) })).min(1),
+  choices: z.array(z.object({ message: z.object({ content: z.string().nullish() }), finish_reason: z.string().nullish() })).min(1),
   usage: z
     .object({
       prompt_tokens: z.number().optional(),
@@ -80,6 +86,12 @@ const Completion = z.object({
     })
     .optional(),
 });
+
+/** Vendor error codes that mean "this model cannot be used right now": the other tier may still work. */
+const MODEL_GONE_CODES = ["model_not_found", "model_decommissioned", "model_terminated"];
+
+/** How long a model stays in JSON-object mode after Groq refused a strict request. A later request tries strict again. */
+export const STRICT_REFUSED_MS = 5 * 60_000;
 
 const tokens = (n: number | undefined): number => (n !== undefined && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
 
@@ -124,14 +136,31 @@ export function toStrictJsonSchema(schema: z.ZodType): Json {
   return strictNode(z.toJSONSchema(schema), false) as Json;
 }
 
+const finishOf = (v: string | null | undefined): "stop" | "length" | "other" => (v === "stop" || v === "length" ? v : "other");
+
+/** Reads an error body just far enough to find error.code on the allowlist. Anything else, or any failure, gives undefined. */
+async function goneCode(res: Response): Promise<string | undefined> {
+  try {
+    const text = (await res.text()).slice(0, 4096);
+    const code = (JSON.parse(text) as { error?: { code?: unknown } } | null)?.error?.code;
+    return typeof code === "string" && MODEL_GONE_CODES.includes(code) ? code : undefined;
+  } catch {
+    // Not JSON, or the body could not be read: the status alone decides.
+    return undefined;
+  }
+}
+
 // ---------------------------------------------------------------- the Groq provider
 
 /**
  * `fetchFn` is for tests. A 400 to a strict request is answered once with the same request in JSON-object mode, and that
  * model stays in JSON-object mode for the life of this provider (the harness still counts it as one call).
  */
-export function createGroqProvider(deps: { fetchFn?: typeof fetch } = {}): Provider {
-  const strictRefused = new Set<string>();
+export function createGroqProvider(deps: { fetchFn?: typeof fetch; now?: () => number } = {}): Provider {
+  const now = deps.now ?? Date.now;
+  /** model -> time until which strict mode is not tried. Entries expire, so one odd 400 does not switch strict mode off for good. */
+  const strictRefusedUntil = new Map<string, number>();
+  const announced = new Set<string>();
 
   async function post(config: ReturnType<typeof getGroqConfig>, model: string, call: ProviderCall, strict: boolean): Promise<Response> {
     const format = strict && call.jsonSchema !== undefined
@@ -185,20 +214,28 @@ export function createGroqProvider(deps: { fetchFn?: typeof fetch } = {}): Provi
       if (call.signal.aborted) throw new ProviderError("aborted");
 
       const model = modelFor(config, call.tier);
-      let strict = call.jsonSchema !== undefined && !strictRefused.has(model);
+      let strict = call.jsonSchema !== undefined && (strictRefusedUntil.get(model) ?? 0) <= now();
       let res = await post(config, model, call, strict);
       if (strict && res.status === 400) {
         await res.body?.cancel().catch(() => undefined);
-        strictRefused.add(model);
+        strictRefusedUntil.set(model, now() + STRICT_REFUSED_MS);
+        // Said once per model per instance, with the configured model name only.
+        if (!announced.has(model)) {
+          announced.add(model);
+          createLogger({ requestId: "system", route: "ai/provider" }).warn("strict_schema_refused", { model });
+        }
         strict = false;
         res = await post(config, model, call, false);
       }
 
       if (!res.ok) {
-        await res.body?.cancel().catch(() => undefined); // the body is never read, so it can never be copied anywhere
+        const client4xx = res.status < 500 && res.status !== 429 && res.status !== 408;
+        // The body is never copied anywhere. For a 4xx only the vendor's error code is looked at, and only if it is on the allowlist.
+        const code = client4xx ? await goneCode(res) : undefined;
+        if (!client4xx) await res.body?.cancel().catch(() => undefined);
         if (res.status === 429) throw new ProviderError("rate_limited", { status: 429, retryAfterSec: parseRetryAfter(res.headers.get("retry-after")) });
         if (res.status >= 500 || res.status === 408) throw new ProviderError("http", { status: res.status });
-        throw new ProviderError("rejected", { status: res.status });
+        throw new ProviderError("rejected", { status: res.status, code });
       }
 
       let data: unknown;
@@ -217,6 +254,7 @@ export function createGroqProvider(deps: { fetchFn?: typeof fetch } = {}): Provi
         inTokens: tokens(parsed.data.usage?.prompt_tokens),
         outTokens: tokens(parsed.data.usage?.completion_tokens),
         cachedTokens: tokens(parsed.data.usage?.prompt_tokens_details?.cached_tokens),
+        finishReason: finishOf(parsed.data.choices[0].finish_reason),
       };
     },
   };

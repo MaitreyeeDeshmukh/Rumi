@@ -88,15 +88,21 @@ export const requestDigest = (body: unknown): string => createHash("sha256").upd
 export const replyKey = (userHash: string, task: TaskName, body: unknown, promptVersion: string, model: string): string =>
   cacheKey([userHash, task, requestDigest(body), promptVersion, model]);
 
+/** The helper name every shared reply is generated with. A request with any other name never uses the shared cache. */
+export const CANONICAL_COMPANION = "Rumi";
+
 /**
  * The shared key, or null when the reply is not user-independent. Only a say-it scenario at level 2 or 3 qualifies, and
- * only when the request carries no user text (no concern, no symptoms) and no stated preferences are in the prompt:
- * `sayit|scenario|level|promptVersion|model`. Bump the prompt version to invalidate.
+ * only when the request carries no user text (no concern, no symptoms, no clinician question), no stated preferences
+ * are in the prompt, and the helper name is the canonical one (that name is written into the system prompt, so it is
+ * attacker-controlled text: a shared reply must have been made with the constant). The key is
+ * `sayit|<digest of the whole sanitized request>|promptVersion|model`, so no field can be forgotten. Bump the prompt version to invalidate.
  */
 export function sharedCacheKey(task: TaskName, r: unknown, memoryItems: number, promptVersion: string, model: string): string | null {
   if (task !== "sayit" || memoryItems > 0 || typeof r !== "object" || r === null) return null;
-  const q = r as { scenario?: unknown; level?: unknown; clinicianQuestion?: unknown; mainConcern?: unknown; symptomsInMyWords?: unknown };
+  const q = r as { scenario?: unknown; level?: unknown; clinicianQuestion?: unknown; mainConcern?: unknown; symptomsInMyWords?: unknown; companionName?: unknown };
   const hasText = (typeof q.mainConcern === "string" && q.mainConcern.trim() !== "") || (Array.isArray(q.symptomsInMyWords) && q.symptomsInMyWords.length > 0);
   if (typeof q.scenario !== "string" || q.clinicianQuestion !== undefined || hasText || (q.level !== 2 && q.level !== 3)) return null;
-  return `sayit|${q.scenario}|${q.level}|${promptVersion}|${model}`;
+  if (q.companionName !== CANONICAL_COMPANION) return null;
+  return `sayit|${requestDigest(r)}|${promptVersion}|${model}`;
 }

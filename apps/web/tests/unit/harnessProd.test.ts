@@ -67,7 +67,7 @@ describe("identity (08 section 1.1)", () => {
     const checkAndBump = vi.fn().mockResolvedValue({ ok: true });
     const res = await runTask(spec, post(okBody()), base(fakeProvider([say("fine")]), { checkAndBump }));
     expect(await bodyOf(res)).toEqual({ say: "fine", degraded: false });
-    expect(checkAndBump).toHaveBeenCalledWith({ userHash: null, ipHash: expect.stringMatching(/^[0-9a-f]{16}$/), task: "plan" });
+    expect(checkAndBump).toHaveBeenCalledWith({ userHash: null, isAnonymous: true, ipHash: expect.stringMatching(/^[0-9a-f]{16}$/), task: "plan" });
   });
 
   it("passes a signed-in caller's hash, never the user id, to the limiter", async () => {
@@ -191,10 +191,12 @@ describe("daily usage limit", () => {
     expect(toDbOutcome(records[0].e.outcome, records[0].e.errorCode)).toBe("rate_limited");
   });
 
-  it("caps Retry-After at one hour", async () => {
+  it("a daily limit says how long: the seconds to midnight go out in Retry-After, up to a day", async () => {
     const { spec } = fakeTask();
     const res = await runTask(spec, post(okBody()), base(fakeProvider([]), { checkAndBump: () => Promise.resolve({ ok: false, retryAfterSec: 80_000 }) }));
-    expect(res.headers.get("retry-after")).toBe("3600");
+    expect(res.headers.get("retry-after")).toBe("80000");
+    const longer = await runTask(spec, post(okBody()), base(fakeProvider([]), { checkAndBump: () => Promise.resolve({ ok: false, retryAfterSec: 500_000 }) }));
+    expect(longer.headers.get("retry-after")).toBe("86400");
   });
 
   it("a cache hit spends no limit", async () => {
@@ -206,11 +208,11 @@ describe("daily usage limit", () => {
     expect(checkAndBump).toHaveBeenCalledTimes(1);
   });
 
-  it("the classification call before the limit is the only provider use when the text is a crisis: the limit is not spent", async () => {
+  it("a crisis answer from the classifier spends the classify counter, not the model quota", async () => {
     const { spec } = fakeTask();
-    const checkAndBump = vi.fn();
+    const checkAndBump = vi.fn().mockResolvedValue({ ok: true });
     await runTask(spec, post(okBody("I hate myself.")), base(fakeProvider([JSON.stringify({ crisis: true })]), { checkAndBump }));
-    expect(checkAndBump).not.toHaveBeenCalled();
+    expect(checkAndBump.mock.calls.map((c) => (c[0] as { task: string }).task)).toEqual(["classify"]);
   });
 });
 

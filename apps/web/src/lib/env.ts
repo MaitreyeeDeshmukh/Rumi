@@ -29,6 +29,10 @@ const schema = z.object({
   SENTRY_DSN: nonEmpty.optional(),
   AI_DAILY_USER_LIMIT: z.coerce.number().int().positive().optional(),
   AI_DAILY_GLOBAL_SPEND_CAP_USD: z.coerce.number().positive().optional(),
+  AI_DAILY_ANON_LIMIT: z.coerce.number().int().positive().optional(),
+  AI_FORCE_OFF: flag.optional(),
+  ALLOW_MOCK_IN_PROD: flag.optional(),
+  VERCEL_ENV: z.string().min(1).optional(),
   MOCK_AI: flag.optional(),
   EVAL_MODE: flag.optional(),
 });
@@ -62,8 +66,21 @@ export function invalidEnvNames(source: Record<string, string | undefined> = pro
   return result.success ? [] : [...new Set(result.error.issues.map((i) => String(i.path[0])))];
 }
 
-/** MOCK_AI is on only for the exact value "1". Any other value, including a typo, is off and breaks nothing. */
-export const mockAiEnabled = (): boolean => process.env.MOCK_AI === "1";
+/** True on a Vercel production deployment. */
+export const isVercelProduction = (): boolean => process.env.VERCEL_ENV === "production";
+
+/**
+ * MOCK_AI is on only for the exact value "1". Any other value, including a typo, is off and breaks nothing.
+ * On a Vercel production deployment it is off whatever the variable says, unless ALLOW_MOCK_IN_PROD=1 is also set:
+ * a leftover MOCK_AI=1 must never serve canned answers to real users.
+ */
+export const mockAiEnabled = (): boolean => process.env.MOCK_AI === "1" && (!isVercelProduction() || process.env.ALLOW_MOCK_IN_PROD === "1");
+
+/** Mock answers outside a plain local run (any Vercel deployment, or NODE_ENV=production). Such answers carry x-rumi-mock and raise an app event. */
+export const mockOutsideLocalDev = (): boolean => mockAiEnabled() && ((process.env.VERCEL_ENV ?? "") !== "" || isProduction());
+
+/** AI_FORCE_OFF=1 behaves like ai_enabled=false and does not need Supabase: the kill-switch that still works when the database is down. */
+export const aiForceOff = (): boolean => process.env.AI_FORCE_OFF === "1";
 
 /** EVAL_MODE relaxes limits and is ignored in production. */
 export const evalModeEnabled = (): boolean => process.env.EVAL_MODE === "1" && process.env.NODE_ENV !== "production";
@@ -115,13 +132,17 @@ export function getGroqConfig(): GroqConfig {
 export interface UsageLimits {
   dailyUserLimit: number | undefined;
   dailyGlobalSpendCapUsd: number | undefined;
+  /** Daily calls for an anonymous (not email-upgraded) user. */
+  dailyAnonLimit: number | undefined;
 }
 
 /** A bad value is treated as unset for that one limit; the names of bad variables come from invalidEnvNames. */
 export function getLimits(): UsageLimits {
   const user = z.coerce.number().int().positive().safeParse(process.env.AI_DAILY_USER_LIMIT);
   const spend = z.coerce.number().positive().safeParse(process.env.AI_DAILY_GLOBAL_SPEND_CAP_USD);
+  const anon = z.coerce.number().int().positive().safeParse(process.env.AI_DAILY_ANON_LIMIT);
   return {
+    dailyAnonLimit: anon.success ? anon.data : undefined,
     dailyUserLimit: user.success ? user.data : undefined,
     dailyGlobalSpendCapUsd: spend.success ? spend.data : undefined,
   };
@@ -151,4 +172,23 @@ export function assertRuntimeEnv(): void {
     if (!secretOk) missing.push("SESSION_SECRET");
   }
   if (missing.length > 0) throw new ConfigError(missing);
+}
+
+/**
+ * Everything wrong with the AI configuration, as names only (never a value), for /api/ready and a startup log line.
+ * Empty means ready. Includes variables that fail validation and the mock guard: MOCK_AI=1 on a Vercel production
+ * deployment is reported as MOCK_AI_BLOCKED_IN_PRODUCTION (the guard already ignores it), and mock answers being served on
+ * any deployment as MOCK_AI_ACTIVE.
+ */
+export function runtimeConfigProblems(): string[] {
+  const problems = new Set<string>(invalidEnvNames());
+  try {
+    assertRuntimeEnv();
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e;
+    for (const n of e.names) problems.add(n);
+  }
+  if (process.env.MOCK_AI === "1" && isVercelProduction() && process.env.ALLOW_MOCK_IN_PROD !== "1") problems.add("MOCK_AI_BLOCKED_IN_PRODUCTION");
+  if (mockOutsideLocalDev()) problems.add("MOCK_AI_ACTIVE");
+  return [...problems];
 }

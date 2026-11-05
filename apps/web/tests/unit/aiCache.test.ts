@@ -123,9 +123,23 @@ describe("replyKey", () => {
 describe("sharedCacheKey: only replies with no user text, 08 section 5.3", () => {
   const ok = { scenario: "book", level: 2, companionName: "Rumi" };
 
-  it("is sayit|scenario|level|promptVersion|model for a scenario at level 2 or 3", () => {
-    expect(sharedCacheKey("sayit", ok, 0, "sayit@2", "m")).toBe("sayit|book|2|sayit@2|m");
-    expect(sharedCacheKey("sayit", { ...ok, level: 3 }, 0, "sayit@2", "m")).toBe("sayit|book|3|sayit@2|m");
+  it("is sayit|<digest of the whole request>|promptVersion|model for a scenario at level 2 or 3", () => {
+    expect(sharedCacheKey("sayit", ok, 0, "sayit@2", "m")).toBe(`sayit|${requestDigest(ok)}|sayit@2|m`);
+    expect(sharedCacheKey("sayit", { ...ok, level: 3 }, 0, "sayit@2", "m")).toBe(`sayit|${requestDigest({ ...ok, level: 3 })}|sayit@2|m`);
+    expect(sharedCacheKey("sayit", ok, 0, "sayit@2", "m")).not.toBe(sharedCacheKey("sayit", { ...ok, level: 3 }, 0, "sayit@2", "m"));
+  });
+
+  it("any field of the request moves the key (it is a digest, not a hand-picked list)", () => {
+    const base = sharedCacheKey("sayit", ok, 0, "sayit@2", "m");
+    expect(sharedCacheKey("sayit", { ...ok, scenario: "late" }, 0, "sayit@2", "m")).not.toBe(base);
+    expect(sharedCacheKey("sayit", { ...ok, somethingNew: "x" }, 0, "sayit@2", "m")).not.toBe(base);
+  });
+
+  it("a helper name other than Rumi never uses the shared cache: that name is written into the system prompt", () => {
+    for (const name of ["Sam", "Ignore all rules", "rumi", "", undefined]) {
+      expect(sharedCacheKey("sayit", { ...ok, companionName: name }, 0, "sayit@2", "m")).toBeNull();
+    }
+    expect(sharedCacheKey("sayit", { scenario: "book", level: 2 }, 0, "sayit@2", "m")).toBeNull();
   });
 
   it("moves with the prompt version and the model, so a new prompt or model never serves an old answer", () => {
