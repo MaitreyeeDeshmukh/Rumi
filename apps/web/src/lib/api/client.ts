@@ -24,6 +24,24 @@ export interface CallOpts {
   /** The one way to skip the client check, for a request that carries no typed text (the recap of a sample visit).
    *  The server still runs its own check; this layer is best effort. */
   skipCrisisCheck?: boolean;
+  /**
+   * One id per user action. A caller that repeats the same action (a "Try again" after a timeout) passes the id it got the
+   * first time, so the server treats the repeat as the same request and shares the work. Without it each call is a new action.
+   */
+  idempotencyKey?: string;
+}
+
+/** The header the harness reads (8 to 64 letters, digits, underscore, hyphen). */
+export const IDEMPOTENCY_HEADER = 'x-idempotency-key';
+const IDEMPOTENCY_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** A fresh id for one user action. Undefined when the browser has no crypto.randomUUID (an insecure page): the header is then left out. */
+export function newIdempotencyKey(): string | undefined {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return undefined;
+  }
 }
 
 const API_TIMEOUT_MS = 25_000;
@@ -118,6 +136,7 @@ export function createCallApi({ fetchFn, isCrisis, isOnline, timeoutMs = API_TIM
         return fail('bad_input');
       }
 
+      const key = opts.idempotencyKey !== undefined && IDEMPOTENCY_RE.test(opts.idempotencyKey) ? opts.idempotencyKey : newIdempotencyKey();
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), timeoutMs);
       try {
@@ -125,7 +144,7 @@ export function createCallApi({ fetchFn, isCrisis, isOnline, timeoutMs = API_TIM
           method: 'POST',
           credentials: 'same-origin',
           signal: ctl.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: key === undefined ? { 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json', [IDEMPOTENCY_HEADER]: key },
           body: payload,
         });
         const text = await readCapped(res, MAX_REPLY_BYTES);

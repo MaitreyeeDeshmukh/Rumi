@@ -161,7 +161,7 @@ describe("callApi: request shape and the x-rumi-key header", () => {
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("same-origin");
     expect(init.body).toBe(JSON.stringify({ turns: [] }));
-    expect(headersOf(fetchFn)).toEqual({ "Content-Type": "application/json" });
+    expect(headersOf(fetchFn)).toEqual({ "Content-Type": "application/json", "x-idempotency-key": expect.stringMatching(/^[0-9a-f-]{36}$/) });
   });
 
   it("degraded survives the reply parse", async () => {
@@ -169,10 +169,10 @@ describe("callApi: request shape and the x-rumi-key header", () => {
     expect(r).toEqual({ ok: true, data: { ...REPLY, degraded: true } });
   });
 
-  it("sends no identity header at all: who the person is comes from the sign-in cookie", async () => {
+  it("sends no identity header at all (only the content type and the per-action idempotency key): who the person is comes from the sign-in cookie", async () => {
     const s = setup();
     await s.go({}, {});
-    expect(Object.keys(headersOf(s.fetchFn))).toEqual(["Content-Type"]);
+    expect(Object.keys(headersOf(s.fetchFn))).toEqual(["Content-Type", "x-idempotency-key"]);
   });
 });
 
@@ -281,5 +281,55 @@ describe("callApi: never throws on odd bodies", () => {
     });
     expect((await go({ n: BigInt(10) })).ok).toBe(false);
     expect((await go({ get x(): string { throw new Error("g"); } })).ok).toBe(false);
+  });
+});
+
+describe("callApi: one idempotency key per user action", () => {
+  const keyOf = (fetchFn: ReturnType<typeof setup>["fetchFn"], n = 0) => ((fetchFn.mock.calls[n][1] as RequestInit).headers as Record<string, string>)["x-idempotency-key"];
+  const SHAPE = /^[A-Za-z0-9_-]{8,64}$/;
+
+  it("sends a fresh uuid in x-idempotency-key, in the shape the server accepts", async () => {
+    const { fetchFn, go } = setup();
+    await go();
+    expect(keyOf(fetchFn)).toMatch(SHAPE);
+    expect(keyOf(fetchFn)).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("two different user actions get two different keys", async () => {
+    const { fetchFn, go } = setup();
+    await go();
+    await go();
+    expect(keyOf(fetchFn, 0)).not.toBe(keyOf(fetchFn, 1));
+  });
+
+  it("a repeat of the same action passes the key it got first, and every try then carries that one key", async () => {
+    const { fetchFn, go } = setup({ fetchFn: vi.fn().mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValue(res(200, REPLY)) as unknown as typeof fetch });
+    const action = crypto.randomUUID();
+    expect(await go(undefined, { idempotencyKey: action })).toMatchObject({ ok: false });
+    expect(await go(undefined, { idempotencyKey: action })).toMatchObject({ ok: true });
+    expect(keyOf(fetchFn, 0)).toBe(action);
+    expect(keyOf(fetchFn, 1)).toBe(action);
+  });
+
+  it("a key of the wrong shape is replaced, never copied into a header", async () => {
+    const { fetchFn, go } = setup();
+    await go(undefined, { idempotencyKey: "bad key\nwith newline" });
+    expect(keyOf(fetchFn)).toMatch(SHAPE);
+    expect(keyOf(fetchFn)).not.toContain("bad");
+  });
+
+  it("without crypto.randomUUID the request still goes, with no key", async () => {
+    const real = crypto.randomUUID;
+    vi.spyOn(crypto, "randomUUID").mockImplementation(() => {
+      throw new Error("insecure context");
+    });
+    try {
+      const { fetchFn, go } = setup();
+      expect(await go()).toMatchObject({ ok: true });
+      expect(keyOf(fetchFn)).toBeUndefined();
+    } finally {
+      vi.mocked(crypto.randomUUID).mockRestore();
+      expect(crypto.randomUUID).toBe(real);
+    }
   });
 });
