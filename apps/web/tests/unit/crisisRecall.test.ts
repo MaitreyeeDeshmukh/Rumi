@@ -121,3 +121,96 @@ describe("the scan cap", () => {
     expect(crisisTier("I like walking my dog. ".repeat(100))).toBe("none");
   });
 });
+
+describe("each rule family added in fix round 1 shows the card on its own phrase", () => {
+  it.each([
+    // passive wishes, permanence
+    "i want to turn myself off permanently",
+    "i dont want to continue living",
+    "i do not see why i should keep going",
+    "i just want to rest forever",
+    "i feel like there is no way out",
+    "i want to quit life",
+    "i hope i do not wake up tomorrow",
+    "i have no reason to be here",
+    "i am done being alive",
+    "i have decided this is my last week",
+    "i will not be alive next week",
+    "i want it to all be over",
+    "i want to leave this world",
+    "there is nothing left for me here",
+    "i see no future for myself",
+    "life has no meaning for me anymore",
+    "i cant do life anymore",
+    "i am tired of existing",
+    "i want to stop being a person",
+    "i keep wishing i would fall asleep and never come back",
+    "i want to be gone for good",
+    "i wish i could vanish permanently",
+    // harm to others
+    "i am going to make him bleed",
+    "i have thoughts of hurting my kids",
+    "i will find him and hurt him",
+    "i am angry enough to kill",
+    "i would like to see them dead",
+    "i want to smash his face in",
+    "i want to shoot up the school",
+    "i want to burn the house down with them inside",
+    "i am thinking about killing my brother",
+    "i keep imagining hurting my roommate",
+    "i have been having thoughts about hurting the nurse",
+    // medical
+    "i am throwing up blood",
+    "my child stopped breathing",
+    "my baby is not responding",
+    "he collapsed and is unconscious",
+    "i cannot get any air",
+    "she is choking and turning blue",
+    "my son swallowed a battery",
+    "i think i took too much medicine",
+    "she is having a seizure",
+    "i have been stabbed",
+    "someone shot me",
+    "i got hit by a car",
+    "there is blood in my vomit",
+    "the bleeding will not stop",
+    "my father is not breathing",
+    "my toddler is limp",
+    "my face feels numb on one side",
+    "i have crushing pressure in my chest",
+    "i have chest pain and my left arm is numb",
+    "my chest is crushing and my arm tingles",
+    "he grabbed his chest and fell on the floor",
+    // plans and literal
+    "i intend to die",
+    "my plan is to overdose this weekend",
+    "i plan to end my life",
+    "i am not dramatic and i will not be alive next week",
+  ])("%j", (text) => {
+    expect(crisisTier(text)).toBe("certain");
+  });
+
+  it("but the neighbouring ordinary sentences do not", () => {
+    for (const s of [
+      "I was hit by a car last year and my knee still hurts.",
+      "I will hit the road after the visit.",
+      "I might hurt my back if I lift that.",
+      "I could hit the gym after work.",
+      "My baby is not sleeping well at night.",
+      "My son is not eating much lately.",
+      "I want to see them at the clinic tomorrow.",
+      "I am going to find him a chair in the waiting room.",
+      "I dont want to hurt my sister so I will tell her calmly.",
+      "I am not going to hit anyone, I only want to ask a question.",
+      "Life has no spare time for me this month.",
+      "I am done being late to my visits.",
+    ]) {
+      expect(crisisTier(s), s).not.toBe("certain");
+    }
+  });
+
+  it("typos and leet together are read: k1l myslef", () => {
+    expect(crisisTier("i want to k1l myslef")).toBe("certain");
+    expect(crisisTier("i want to k!l myslef")).toBe("certain");
+  });
+});

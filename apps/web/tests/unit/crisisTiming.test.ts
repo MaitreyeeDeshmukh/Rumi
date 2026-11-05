@@ -38,6 +38,12 @@ const ADVERSARIAL: Array<[string, string]> = [
   ["commas only", repeatTo("took,ate,drank,", 2000)],
   ["he she they my brother", repeatTo("my brother he she they was is keeps has been always sometimes ", 2000)],
   ["one long word", "a".repeat(2000)],
+  ["digits with spaces and dashes", repeatTo("12 34-56 7 ", 2000)],
+  ["capitalised words (names and street names)", repeatTo("My name is John Smith Mary Jones Old Main ", 2000)],
+  ["a house number then capitalised words", repeatTo("1234 Aa Bb Cc Dd Ee Ff ", 2000)],
+  ["dots between letters and numbers", repeatTo("a.b.c.d.e.f.g.1.2.3 ", 2000)],
+  ["email-like runs", repeatTo("a.b-c+d@e.f-g.h ", 2000)],
+  ["you are probably going to take two and one ", repeatTo("you are probably likely going to take take take two of one ", 2000)],
   ["leet and symbols", repeatTo("w4nt t0 d1e $ @ ! ", 2000)],
 ];
 
