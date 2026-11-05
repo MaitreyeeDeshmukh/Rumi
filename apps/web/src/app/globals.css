@@ -241,3 +241,25 @@ dialog.crisis h2 { margin-top: 0; }
 .transcript mark { background: var(--primary-soft); color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; border-radius: 4px; padding: 0 2px; }
 .ln { font-family: ui-monospace, monospace; font-size: .78rem; color: var(--muted); min-width: 2.2em; padding-top: 3px; font-variant-numeric: tabular-nums; }
 .who { font-weight: 800; flex: none; }
+
+/* ===== Calm layer: more space, fewer boxes, one thing at a time ===== */
+.screen-body > .lead { margin-bottom: 1.5rem; }
+.screen-body .card { box-shadow: none; }
+.section { margin-top: 36px; }
+.steps { display: flex; flex-direction: column; gap: 6px; font-weight: 800; color: var(--muted); font-size: .9rem; margin: 0 0 10px; }
+.steps-dots { display: flex; gap: 6px; }
+.steps-dots span { width: 28px; height: 6px; border-radius: 999px; background: var(--line); }
+.steps-dots span.on { background: var(--primary); }
+.disclosure { border: var(--bw) solid var(--line-strong); border-radius: 16px; background: var(--surface); }
+.disclosure + .disclosure { margin-top: 10px; }
+.disclosure > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 56px; padding: 0 16px; font-weight: 800; cursor: pointer; border-radius: 16px; }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary .ic { transition: transform .2s ease; }
+.disclosure[open] > summary .ic { transform: rotate(180deg); }
+.disclosure-body { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.plan-item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--surface); border: var(--bw) solid var(--line); }
+.plan-item.suggested { border: 2px dashed var(--line-strong); }
+.plan-item .toggle-row { border-bottom: 0; padding: 4px 0 0; }
+.plan-item-text { font-weight: 700; font-size: 1.05rem; margin: 0; }
+.back-link { margin-bottom: 4px; }
+.one-q { min-height: 40vh; display: flex; flex-direction: column; gap: 14px; }

@@ -5,10 +5,11 @@ import type { SupportCard } from '@/features/shared/types';
 import { COPY } from '../copy';
 import { addCustomItem, buildSupportCardText, newSupportCard, syncPersona, useRumi } from '../deps';
 import { copyText } from '../speech';
-import { Button, Field, Status, Toggle } from '../ui';
+import { Button, Disclosure, Field, Icon, Status, Toggle } from '../ui';
 
 const c = COPY.support;
 
+/** Step 3 of Get ready. The switches show first; extras stay closed until opened. */
 export function SupportCardEditor() {
   const { state, update } = useRumi();
   const [own, setOwn] = useState('');
@@ -43,45 +44,57 @@ export function SupportCardEditor() {
   }
 
   return (
-    <section className="section" aria-labelledby="support-h">
-      <h2 id="support-h">{c.title}</h2>
-      <p className="hint">{c.lead}</p>
+    <div className="stack-lg">
+      <p className="ok-line"><Icon name="check" />{COPY.getReady.saved}</p>
       <div>
+        <p className="lbl">{c.title}</p>
+        <p className="hint">{c.lead}</p>
         {card.items.map((item) => (
           <Toggle key={item.id} label={item.text} checked={item.enabled}
             onChange={(v) => setCard({ ...card, items: card.items.map((i) => (i.id === item.id ? { ...i, enabled: v } : i)) })} />
         ))}
       </div>
-      <Field label={c.addOwn} error={ownErr}>
-        {(p) => (
-          <div className="compose-row">
-            <input {...p} className="input" value={own} maxLength={120} onChange={(e) => setOwn(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOwn(); } }} />
-            <Button icon="plus" onClick={addOwn}>{c.add}</Button>
+
+      <div>
+        <Disclosure summary={c.addOwn}>
+          <Field label={c.addOwn} error={ownErr}>
+            {(p) => (
+              <div className="compose-row">
+                <input {...p} className="input" value={own} maxLength={120} onChange={(e) => setOwn(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOwn(); } }} />
+                <Button icon="plus" onClick={addOwn}>{c.add}</Button>
+              </div>
+            )}
+          </Field>
+        </Disclosure>
+        <Disclosure summary={c.topLabel}>
+          {questions.length === 0 ? <p className="hint">{c.noQuestions}</p> : (
+            <fieldset className="field">
+              <legend className="sr-only">{c.topLabel}</legend>
+              {questions.map((q) => {
+                const on = card.topQuestionIds.includes(q.id);
+                const full = !on && card.topQuestionIds.length >= 2;
+                return (
+                  <label key={q.id} className="check-row">
+                    <input type="checkbox" checked={on} disabled={full} onChange={(e) => toggleTop(q.id, e.target.checked)} />
+                    <span>{q.text}</span>
+                    {full ? <span className="hint">{c.topLimit}</span> : null}
+                  </label>
+                );
+              })}
+            </fieldset>
+          )}
+        </Disclosure>
+        <Disclosure summary={c.seeCard}>
+          <pre ref={preRef} className="printable">{text}</pre>
+          <div className="btn-row">
+            <Button icon="copy" onClick={() => void copy()}>{c.copy}</Button>
+            <Button onClick={() => window.print()}>{c.print}</Button>
           </div>
-        )}
-      </Field>
-      <fieldset className="field">
-        <legend className="lbl">{c.topLabel}</legend>
-        {questions.length === 0 ? <p className="hint">{c.noQuestions}</p> : questions.map((q) => {
-          const on = card.topQuestionIds.includes(q.id);
-          const full = !on && card.topQuestionIds.length >= 2;
-          return (
-            <label key={q.id} className="check-row">
-              <input type="checkbox" checked={on} disabled={full} onChange={(e) => toggleTop(q.id, e.target.checked)} />
-              <span>{q.text}</span>
-              {full ? <span className="hint">{c.topLimit}</span> : null}
-            </label>
-          );
-        })}
-      </fieldset>
-      <p className="hint">{c.preview}</p>
-      <pre ref={preRef} className="printable">{text}</pre>
-      <div className="btn-row">
-        <Button icon="copy" onClick={() => void copy()}>{c.copy}</Button>
-        <Button onClick={() => window.print()}>{c.print}</Button>
+          <Status>{copyMsg}</Status>
+        </Disclosure>
       </div>
-      <Status>{copyMsg}</Status>
-      <div className="primary-slot"><Link className="btn btn-primary big" href="/practice">{c.goPractice}</Link></div>
-    </section>
+
+      <Link className="btn btn-primary big" href="/practice">{c.goPractice}</Link>
+    </div>
   );
 }

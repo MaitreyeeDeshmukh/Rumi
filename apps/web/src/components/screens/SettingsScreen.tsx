@@ -5,7 +5,7 @@ import type { Settings, ThemeName } from '@/features/shared/types';
 import { COPY } from '../copy';
 import { useMemoryControls, useRumi } from '../deps';
 import { copyText } from '../speech';
-import { Button, ChoiceCard, Field, Screen, Segmented, Sheet, Status, Toggle } from '../ui';
+import { Button, ChoiceCard, Disclosure, Field, Screen, Segmented, Sheet, Status, Toggle } from '../ui';
 
 const c = COPY.settings;
 const w = COPY.welcome;
@@ -42,22 +42,28 @@ export function SettingsScreen() {
 
   return (
     <Screen title={c.title} lead={c.lead}>
-      <fieldset className="field section">
-        <legend className="lbl"><h2 style={{ margin: 0 }}>{c.about}</h2></legend>
+      <div>
+      <Disclosure summary={c.about}>
+        <fieldset className="field">
+        <legend className="sr-only">{c.about}</legend>
         <Field label={w.nameLabel} hint={w.nameHint}>{(p) => <input {...p} className="input" maxLength={40} value={s.name} onChange={(e) => set('name', e.target.value)} />}</Field>
         <Field label={w.helperLabel}>{(p) => <input {...p} className="input" maxLength={30} value={s.companionName} onChange={(e) => set('companionName', e.target.value)} onBlur={(e) => { if (!e.target.value.trim()) set('companionName', 'Rumi'); }} />}</Field>
       </fieldset>
+      </Disclosure>
 
-      <fieldset className="field section">
-        <legend className="lbl"><h2 style={{ margin: 0 }}>{c.reading}</h2></legend>
+      <Disclosure summary={c.reading}>
+        <fieldset className="field">
+        <legend className="sr-only">{c.reading}</legend>
         <Segmented label={w.infoLabel} value={s.outputMode} onChange={(v) => set('outputMode', v)}
           options={[{ value: 'read', label: w.read }, { value: 'listen', label: w.listen }, { value: 'both', label: w.both }]} />
         <Segmented label={w.infoLabel} value={s.detail} onChange={(v) => set('detail', v)}
           options={[{ value: 'short', label: w.short }, { value: 'detailed', label: w.detailed }]} />
       </fieldset>
+      </Disclosure>
 
-      <fieldset className="field section">
-        <legend className="lbl"><h2 style={{ margin: 0 }}>{c.look}</h2></legend>
+      <Disclosure summary={c.look}>
+        <fieldset className="field">
+        <legend className="sr-only">{c.look}</legend>
         <div className="stack">
           {THEMES.map((t) => <ChoiceCard key={t} title={COPY.themes[t].title} description={COPY.themes[t].text} pressed={s.theme === t} onPress={() => set('theme', t)} />)}
         </div>
@@ -65,15 +71,19 @@ export function SettingsScreen() {
         <Segmented label={c.textSize} value={s.textScale} onChange={(v) => set('textScale', v)} options={SCALES} />
         <Toggle label={c.reduceMotion} description={c.reduceMotionHint} checked={s.reducedMotion} onChange={(v) => set('reducedMotion', v)} />
       </fieldset>
+      </Disclosure>
 
-      <fieldset className="field section">
-        <legend className="lbl"><h2 style={{ margin: 0 }}>{c.sound}</h2></legend>
+      <Disclosure summary={c.sound}>
+        <fieldset className="field">
+        <legend className="sr-only">{c.sound}</legend>
         <Toggle label={c.finishSound} checked={s.finishSound} onChange={(v) => set('finishSound', v)} />
       </fieldset>
+      </Disclosure>
 
       {MEMORY_RETENTION_SENTENCE ? (
-        <fieldset className="field section">
-          <legend className="lbl"><h2 style={{ margin: 0 }}>{c.memTitle}</h2></legend>
+        <Disclosure summary={c.memTitle}>
+          <fieldset className="field">
+          <legend className="sr-only">{c.memTitle}</legend>
           <p>{`Rumi can save short sentences you chose, like “Please speak slowly.”, and how much help you needed. Then you do not start over each time. This is off. If you turn it on, these short sentences are saved with a service called Supermemory. ${MEMORY_RETENTION_SENTENCE} Rumi does not save your health details, your name, or what you write in your plan. You can delete everything at any time.`}</p>
           <Toggle label={c.memToggle} checked={mem.enabled} onChange={(v) => void mem.setEnabled(v)} />
           {mem.enabled && mem.code ? (
@@ -92,12 +102,13 @@ export function SettingsScreen() {
           <Status>{mem.status === 'saved' ? c.memSaved : mem.status === 'error' ? c.memError : ''}</Status>
           <Button variant="secondary" onClick={() => setForgetOpen(true)}>{c.memForget}</Button>
         </fieldset>
+      </Disclosure>
       ) : null}
 
-      <section className="section" aria-labelledby="data-h">
-        <h2 id="data-h">{c.data}</h2>
+      <Disclosure summary={c.data}>
         <ul className="list">{c.dataLines.map((l) => <li key={l}>{l}</li>)}</ul>
-      </section>
+      </Disclosure>
+      </div>
 
       <section className="section" aria-labelledby="del-h">
         <h2 id="del-h">{c.deleteTitle}</h2>

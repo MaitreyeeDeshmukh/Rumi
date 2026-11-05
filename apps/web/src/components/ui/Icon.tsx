@@ -26,6 +26,8 @@ const ICONS = {
   info: [{ t: 'circle', cx: 12, cy: 12, r: 9 }, { t: 'path', d: 'M12 16v-4M12 8h.01' }],
   undo: [{ t: 'path', d: 'M9 17 4 12l5-5' }, { t: 'path', d: 'M20 18v-2a4 4 0 0 0-4-4H4' }],
   heart: [{ t: 'path', d: 'M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7Z' }],
+  chevron: [{ t: 'path', d: 'm6 9 6 6 6-6' }],
+  more: [{ t: 'circle', cx: 5, cy: 12, r: 1.2, fill: true }, { t: 'circle', cx: 12, cy: 12, r: 1.2, fill: true }, { t: 'circle', cx: 19, cy: 12, r: 1.2, fill: true }],
   slow: [{ t: 'circle', cx: 12, cy: 12, r: 9 }, { t: 'path', d: 'M12 7v5l3 2' }],
 } as const satisfies Record<string, readonly Shape[]>;
 

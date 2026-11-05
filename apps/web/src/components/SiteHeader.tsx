@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { MAIN_NAV, SITE } from "@/lib/site";
+import { OutsideApp } from "./AppNav";
 
 export function SiteHeader() {
   return (
@@ -16,6 +17,7 @@ export function SiteHeader() {
         </svg>
         <span>{SITE.name}</span>
       </Link>
+      <OutsideApp>
       <nav aria-label="Main" className="main-nav">
         {MAIN_NAV.map((l) => (
           <Link key={l.href} href={l.href}>
@@ -23,6 +25,7 @@ export function SiteHeader() {
           </Link>
         ))}
       </nav>
+      </OutsideApp>
     </header>
   );
 }

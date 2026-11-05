@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Nunito_Sans } from "next/font/google";
 import Script from "next/script";
-import { AppNav } from "@/components/AppNav";
+import { AppNav, OutsideApp } from "@/components/AppNav";
 import { CrisisProvider } from "@/components/CrisisProvider";
 import { RumiProvider } from "@/components/deps";
 import { ThemeSync } from "@/components/ThemeSync";
@@ -50,7 +50,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
             </main>
             <AppNav />
-            <SiteFooter />
+            <OutsideApp>
+              <SiteFooter />
+            </OutsideApp>
           </CrisisProvider>
         </RumiProvider>
       </body>

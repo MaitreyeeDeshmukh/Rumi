@@ -89,6 +89,7 @@ function CallScreen({ plan, initial, onEnd }: { plan: VisitPlan; initial: Practi
   const [speaking, setSpeaking] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [help, setHelp] = useState<HelpState | null>(null);
   const [listening, setListening] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
@@ -245,15 +246,22 @@ function CallScreen({ plan, initial, onEnd }: { plan: VisitPlan; initial: Practi
           </form>
         )}
       </div>
+      {/* Three main controls plus More, so the bottom of the call stays quiet. */}
       <div className="call-controls">
-        <button type="button" onClick={() => setPaused(true)}><Icon name="pause" />{c.pause}</button>
-        <button type="button" onClick={repeat} disabled={!lastClinician}><Icon name="repeat" />{c.repeat}</button>
-        {voiceOn ? <button type="button" onClick={slowDown} disabled={rate <= 0.7}><Icon name="slow" />{c.slow}</button> : null}
         <button type="button" onClick={openHelp} disabled={busy}><Icon name="hand" />{c.help}</button>
-        <button type="button" onClick={() => setPlanOpen(true)}><Icon name="list" />{c.showPlan}</button>
-        <button type="button" onClick={tryAgain} disabled={busy || !s.turns.some((t) => t.role === 'me')}><Icon name="undo" />{c.tryAgainTurn}</button>
+        <button type="button" onClick={() => setPaused(true)}><Icon name="pause" />{c.pause}</button>
+        <button type="button" onClick={() => setMoreOpen(true)}><Icon name="more" />{c.more}</button>
         <button type="button" className="end" onClick={() => setEndOpen(true)}><Icon name="end" />{c.end}</button>
       </div>
+
+      <Sheet open={moreOpen} title={c.moreTitle} onClose={() => setMoreOpen(false)}>
+        <div className="stack">
+          <Button icon="repeat" disabled={!lastClinician} onClick={() => { setMoreOpen(false); repeat(); }}>{c.repeat}</Button>
+          {voiceOn ? <Button icon="slow" disabled={rate <= 0.7} onClick={() => { setMoreOpen(false); slowDown(); }}>{c.slow}</Button> : null}
+          <Button icon="list" onClick={() => { setMoreOpen(false); setPlanOpen(true); }}>{c.showPlan}</Button>
+          <Button icon="undo" disabled={busy || !s.turns.some((t) => t.role === 'me')} onClick={() => { setMoreOpen(false); tryAgain(); }}>{c.tryAgainTurn}</Button>
+        </div>
+      </Sheet>
 
       {paused ? (
         <div className="pause-overlay" role="dialog" aria-modal="true" aria-labelledby="paused-t">

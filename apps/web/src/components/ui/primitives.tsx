@@ -1,5 +1,6 @@
 'use client';
 import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { COPY } from '../copy';
 import { Icon, type IconName } from './Icon';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -95,5 +96,27 @@ export function Status({ children, busy }: { children?: ReactNode; busy?: boolea
       {busy && children ? <span className="spinner" aria-hidden="true" /> : null}
       {children}
     </p>
+  );
+}
+
+/** "Step 2 of 3" with the step name. Text, not a progress bar, so it never feels like a countdown. */
+export function Steps({ current, total, name }: { current: number; total: number; name: string }) {
+  return (
+    <p className="steps">
+      <span className="steps-dots" aria-hidden="true">
+        {Array.from({ length: total }, (_, i) => <span key={i} className={i < current ? 'on' : undefined} />)}
+      </span>
+      <span>{COPY.common.step(current, total, name)}</span>
+    </p>
+  );
+}
+
+/** A section that stays closed until the person opens it. Native <details>, so it works with keyboard and screen readers. */
+export function Disclosure({ summary, children, open, onToggle }: { summary: string; children: ReactNode; open?: boolean; onToggle?: (open: boolean) => void }) {
+  return (
+    <details className="disclosure" open={open} onToggle={onToggle ? (e) => onToggle((e.currentTarget as HTMLDetailsElement).open) : undefined}>
+      <summary><span>{summary}</span><Icon name="chevron" size={20} /></summary>
+      <div className="disclosure-body">{children}</div>
+    </details>
   );
 }

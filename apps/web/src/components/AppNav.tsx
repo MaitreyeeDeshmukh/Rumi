@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { COPY } from './copy';
 import { Icon, type IconName } from './ui';
 
@@ -12,6 +13,14 @@ const TABS: readonly { href: string; label: string; icon: IconName }[] = [
   { href: '/settings', label: COPY.nav.settings, icon: 'sliders' },
 ];
 const SHOW_ON = new Set([...TABS.map((t) => t.href), '/share', '/kit', '/say-it']);
+/** App screens (plus /welcome) show only the bottom tabs, so there is one way to move around. */
+const APP_ROUTES = new Set([...SHOW_ON, '/welcome']);
+
+/** Renders its children only outside the app screens (marketing, safety, help, privacy). */
+export function OutsideApp({ children }: { children: ReactNode }) {
+  const path = usePathname();
+  return APP_ROUTES.has(path) ? null : <>{children}</>;
+}
 
 /** Bottom tab bar. Only on app screens, never on /welcome or the marketing pages. */
 export function AppNav() {

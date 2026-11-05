@@ -7,7 +7,7 @@ import type { PlanStatus, Recap, RecapSection, Speaker } from '@/features/shared
 import { useCrisis } from '../CrisisProvider';
 import { COPY } from '../copy';
 import { callApi, DEMO_PLAN, SAMPLE_VISIT, SAVED_RECAP_REPLY, useRumi } from '../deps';
-import { Banner, Button, ChoiceCard, Icon, Notice, Screen, Status } from '../ui';
+import { Banner, Button, ChoiceCard, Disclosure, Icon, Notice, Screen, Status } from '../ui';
 
 const c = COPY.remember;
 const SECTIONS: readonly RecapSection[] = ['discussed', 'instructions', 'medications', 'next_steps'];
@@ -79,6 +79,7 @@ export function RememberScreen() {
 
 function RecapView({ recap, headingRef, onRestart }: { recap: Recap; headingRef: React.RefObject<HTMLHeadingElement | null>; onRestart: () => void }) {
   const [selected, setSelected] = useState<number | null>(null);
+  const [showTr, setShowTr] = useState(false);
   const hl = new Set(selected !== null ? recap.items[selected]?.evidence ?? [] : []);
   const lineNo = new Map(recap.transcript.map((l, i) => [l.id, i + 1]));
   const enabledIds = new Set(DEMO_PLAN.items.filter((i) => i.enabled).map((i) => i.id));
@@ -87,7 +88,10 @@ function RecapView({ recap, headingRef, onRestart }: { recap: Recap; headingRef:
     const next = selected === i ? null : i;
     setSelected(next);
     const first = next !== null ? recap.items[next].evidence[0] : undefined;
-    if (first) document.getElementById(`line-${first}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!first) return;
+    // Open the transcript so the highlighted line is visible, then scroll to it.
+    setShowTr(true);
+    requestAnimationFrame(() => document.getElementById(`line-${first}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
   }
 
   return (
@@ -124,8 +128,8 @@ function RecapView({ recap, headingRef, onRestart }: { recap: Recap; headingRef:
         ) : null}
       </div>
 
-      <section className="section" aria-labelledby="said-h">
-        <h2 id="said-h">{c.saidTitle}</h2>
+      <div className="section">
+      <Disclosure summary={c.showSaid}>
         {STATUS_ORDER.map((st) => {
           const rows = recap.planStatus.filter((p) => p.status === st && enabledIds.has(p.itemId));
           if (!rows.length) return null;
@@ -136,10 +140,9 @@ function RecapView({ recap, headingRef, onRestart }: { recap: Recap; headingRef:
             </div>
           );
         })}
-      </section>
+      </Disclosure>
 
-      <section className="section" aria-labelledby="tr-h">
-        <h2 id="tr-h">{c.transcript}</h2>
+      <Disclosure summary={c.showTranscript} open={showTr} onToggle={setShowTr}>
         <ol className="transcript">
           {recap.transcript.map((l, i) => (
             <li key={l.id} id={`line-${l.id}`} className={hl.has(l.id) ? 'hl' : undefined}>
@@ -151,7 +154,8 @@ function RecapView({ recap, headingRef, onRestart }: { recap: Recap; headingRef:
             </li>
           ))}
         </ol>
-      </section>
+      </Disclosure>
+      </div>
       <p className="hint"><strong>{c.footer}</strong></p>
       <div className="primary-slot stack">
         <Link className="btn btn-primary big" href="/share">{c.goShare}</Link>

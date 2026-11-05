@@ -7,7 +7,9 @@ import { COPY, LINT_EXEMPT } from "@/components/copy";
 function walk(node: unknown, key: string, out: Map<string, string>): void {
   if (typeof node === "string") { out.set(key, node); return; }
   if (typeof node === "function") {
-    const sample = (node as (...a: unknown[]) => unknown).length === 2 ? (node as (a: unknown, b: unknown) => unknown)(2, 4) : (node as (a: unknown) => unknown)("Sam");
+    const fn = node as (...a: unknown[]) => unknown;
+    const args: Record<number, unknown[]> = { 1: ["Sam"], 2: [2, 4], 3: [1, 3, "Check your plan"] };
+    const sample = fn(...(args[fn.length] ?? []));
     if (typeof sample === "string") out.set(key, sample);
     return;
   }
