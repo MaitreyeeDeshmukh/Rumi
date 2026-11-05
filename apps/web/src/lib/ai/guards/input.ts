@@ -119,8 +119,8 @@ export function matchForm(s: string): MatchForm {
   const lowered = promptForm(s).normalize("NFKD").toLowerCase().replace(MARKS, "").replace(INVISIBLE, "");
   const folded = foldConfusables(stripRegionTokens(lowered))
     .replace(/['’‘`´ʼʻ′‛]/g, "")
-    // "kill my$elf", "wh@t": a symbol standing between two letters is read as the letter it imitates
-    .replace(/(\p{L})([$@])(?=\p{L})/gu, (_m, a: string, sym: string) => a + (sym === "$" ? "s" : "a"));
+    // "kill my$elf", "wh@t", "d!e": a symbol standing between two letters is read as the letter it imitates
+    .replace(/(\p{L})([$@!])(?=\p{L})/gu, (_m, a: string, sym: string) => a + (sym === "$" ? "s" : sym === "@" ? "a" : "i"));
   // A lone "." marks a sentence boundary, so patterns cannot join the end of one sentence to the start of the next.
   const punct = folded
     .replace(/[.!?;\n]+/g, " . ")

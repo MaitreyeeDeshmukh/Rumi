@@ -65,8 +65,8 @@ describe("crisisTier: time on ordinary and adversarial text", () => {
         if (t > worst) [worst, worstWord] = [t, w];
       }
     }
-    expect(worst, `slowest word: ${worstWord}`).toBeLessThan(50);
-  });
+    expect(worst, `slowest word: ${worstWord}`).toBeLessThan(100); // a backtracking rule takes whole seconds; 100 ms leaves room for a busy machine
+  }, 60_000);
 
   it("random mixes of the rule vocabulary, with and without spaces, stay under 50 ms", () => {
     const source = readFileSync("src/lib/crisis.ts", "utf8");

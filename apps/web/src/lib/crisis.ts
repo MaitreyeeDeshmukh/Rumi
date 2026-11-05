@@ -239,6 +239,71 @@ const RULES: readonly Rule[] = [
   rule("(?:wont|cant|doesnt|dont) stop bleeding|bleeding out|cant stop the bleeding|bleeding and (?:it |i )?(?:wont|cant|doesnt|dont) (?:stop|slow down)", { negatable: true }),
   rule("(?:im|i am) choking", { negatable: true }),
 
+
+  // ---- passive wishes, permanence and "no future" (fix round 1; wording written independently of the tuned set)
+  rule("(?:turn|switch|shut) (?:myself|me) (?:off|down) (?:permanently|forever|for good)"),
+  rule("(?:want|wanna|wish|need|going|gonna|could) (?:to )?(?:just )?(?:turn|switch|shut) (?:myself|me) (?:off|down)"),
+  rule("(?:dont|do not|didnt|no longer|never) (?:wanna|want to|want) (?:to )?(?:continue (?:living|to live)|keep on living|stay alive|be alive anymore|live anymore|live any longer|live much longer|exist anymore)"),
+  rule("(?:fall|go) (?:to )?(?:asleep|sleep) and (?:stay|be|remain) (?:asleep|sleeping|gone) forever|(?:sleep|sleeping) forever and never (?:wake|wake up)"),
+  rule("(?:tired|sick|exhausted|done|weary) (?:of|with) (?:existing|existence|being here|being a person|being human|being me)"),
+  rule("(?:stop|quit) being (?:a person|alive|human)|not be (?:a person|alive|human) (?:anymore|any more)"),
+  rule("(?:want|wanna|wish|need|going|gonna|ready) (?:to )?(?:just )?(?:be )?(?:gone|vanish|disappear|leave|vanished) (?:for good|forever|permanently)|(?:want|wanna|wish|ready|going|gonna) (?:to )?leave (?:this|the) world|(?:wish|want|wanna) (?:i|to) (?:could )?(?:just )?(?:vanish|disappear) (?:permanently|forever|for good)"),
+  rule("(?:life|living|everything|it all) (?:has|holds|is) (?:no|nothing|without) (?:meaning|point|purpose)|no (?:meaning|purpose|point) (?:left )?(?:in|to) (?:my )?(?:life|anything|existence)|(?:dont|do not|cant|cannot) do (?:life|this life|living) (?:anymore|any more)"),
+  rule("(?:i )?(?:see|have) no future (?:for me|for myself|ahead)|(?:there is |theres )?nothing (?:is )?left for me (?:here|anymore|in this life)|(?:im|i am) done being alive"),
+  rule("(?:decided|decision) (?:this is|it is|its|that this is) my last (?:week|day|night|weekend|month)"),
+  rule("(?:dont|do not) want to wake up anymore|(?:wish|hope) (?:i|id) (?:could|would) (?:just )?(?:never|not) (?:wake|waking) up (?:anymore|again)"),
+  rule("(?:happier|better|safer|easier) (?:off )?(?:if i (?:was|were) not (?:around|here|alive|born|gone))"),
+  rule("(?:wont|will not) be alive(?: next| tomorrow| after| by| in| for)?"),
+  rule("(?:wish|hope|want) (?:i|id|to) (?:could )?(?:just )?(?:vanish|vanished)"),
+
+  // ---- harm to someone else, with an intent word and a person (fix round 1)
+  rule(
+    "(?:want(?:ed|s)? to|wanna|going to|gonna|about to|plan(?:ning)? to|planning on|thinking (?:about|of)|thought about|thoughts? (?:of|about)|urges? to|impulses? to|decided to|need to|might|could|will|would|keep imagining|imagining|imagine|feel like|felt like|ready to|trying to) (?:just |really |finally |actually |easily )?(?:kill|killing|murder|murdering|stab|stabbing|shoot|shooting|strangle|strangling|choke|choking|poison|poisoning|beat up|beating up|beat|beating|hurt|hurting|harm|harming|hit|hitting|punch|punching|attack|attacking|burn|burning|suffocate|drown|drowning|push|pushing|shove|shoving|kick|kicking|smash|smashing|slap|slapping|cut|cutting|throw|throwing) (?:my |the |a |an |our |his |her |their )?(?:\\w+ )?(?:kids|children|family|parents|pets|dog|cat|students|patients|his (?:face|head|skull|neck|throat)|her (?:face|head|skull|neck|throat)|their (?:face|head|skull|neck|throat)|brother|sister|mom|mum|mother|dad|father|boss|teacher|caregiver|carer|roommate|neighbou?r|husband|wife|partner|son|daughter|kid|child|baby|ex|him|her|them|someone|somebody|everyone|people|coworker|colleague|doctor|nurse|girlfriend|boyfriend|friend|landlord|classmate|grandma|grandpa|uncle|aunt|cousin|stepdad|stepmom|stepfather|stepmother)",
+    { squash: false, negatable: true },
+  ),
+  rule(
+    "(?:want to|wanna|going to|gonna|about to|plan(?:ning)? to|thinking (?:about|of)|decided to|need to|might|will) (?:shoot(?:ing)? up|blow(?:ing)? up|bomb(?:ing)?|burn(?:ing)? down|set(?:ting)? fire to) (?:the |my |a |this )?(?:school|class|classroom|office|clinic|hospital|building|house|church|mall|store|workplace|place)",
+    { squash: false, negatable: true },
+  ),
+  rule("(?:burn|burning|set fire to) (?:the |my )?house down with (?:them|everyone|him|her|people) inside|(?:make|making) (?:them|him|her|everyone) (?:pay|suffer|bleed) with (?:violence|blood)", { squash: false }),
+
+  // ---- medical emergencies, other forms (fix round 1)
+  rule("(?:throwing up|throw up|threw up|vomiting|vomited|vomit|coughing up|coughed up|cough up|spitting up|spat up|puking|puked|passing|peeing|pooping) (?:a lot of |some |bright red |lots of )?blood", { negatable: true, squash: false }),
+  rule("blood (?:everywhere|wont stop|will not stop|is pouring|keeps coming|gushing|is gushing)|(?:the )?bleeding (?:wont|will not|doesnt|does not) (?:stop|slow)", { negatable: true, squash: false }),
+  rule(
+    "(?:my |our )?(?:child|baby|son|daughter|kid|toddler|infant|dad|mom|mum|father|mother|husband|wife|friend|brother|sister|grandma|grandpa|grandmother|grandfather|he|she|they) (?:has |have |just |is |are )?(?:stopped|isnt|is not|not|stops|wont|cant|cannot|will not) (?:breathing|breathe|responding|waking up|wake up|moving)|(?:unresponsive|not responding|wont wake up|not waking up|isnt responding|is not responding|collapsed|is unconscious|are unconscious)",
+    { squash: false },
+  ),
+  rule("(?:swallowed|ate|drank|ingested|inhaled) (?:a |an |some |the )?(?:battery|batteries|magnets?|bleach|poison|detergent|cleaning (?:fluid|product))", { squash: false }),
+  rule("(?:took|taken|take|swallowed|had) too much (?:of my )?(?:medicine|medication|meds|insulin|painkillers|paracetamol|tylenol|aspirin|sleeping pills)", { squash: false }),
+  rule("(?:face|one side of my (?:face|body)) (?:feels |is |went |suddenly )?(?:numb|droopy|drooping|paralyzed|paralysed)(?: on one side)?", { negatable: true, squash: false }),
+  rule("(?:crushing|heavy|severe|intense) (?:pressure|weight) (?:in|on) (?:my )?chest|pressure in my chest (?:and|with)|chest pain (?:and|with) (?:my |the )?(?:left )?(?:arm|jaw|hand)", { negatable: true, squash: false }),
+  rule("(?:he|she|they|someone|somebody|my \\w+) (?:is|are|just|has) (?:having|had) (?:a |an )?(?:seizure|heart attack|stroke|allergic reaction)", { negatable: true, squash: false }),
+
+  // ---- second round of widening (after the first tuning set was measured): more shapes, same care
+  rule("(?:dont|do not|cant|cannot) (?:see|know) (?:why|how) (?:i|to) (?:should |can |could )?(?:keep going|go on|continue|carry on|keep living|stay)", { squash: false }),
+  rule("(?:want|wish|need|hope) it to all (?:be )?(?:over|end|stop)|(?:want|wanna) to (?:just )?(?:rest|sleep) forever|(?:fall|go) (?:to )?(?:asleep|sleep) and never (?:come back|wake|wake up|get up|open my eyes)", { squash: false }),
+  rule("(?:there is|theres|feel like there is|feel like theres) no (?:way out|escape|way forward|way to go on)", { squash: false }),
+  rule("(?:want|wanna|wish|ready|going|gonna|need) (?:to )?(?:quit|leave|exit) (?:life|living)", { squash: false }),
+  rule("(?:hope|wish) (?:i|id) (?:do not|dont|wont|will not|never) (?:wake up|wake)", { squash: false }),
+  rule("(?:intend|intending|plan|planning|aim|aiming|mean|meaning) (?:to|on) (?:die|dying|kill myself|end my life|hurt myself|harm myself|end it)", { squash: false }),
+  rule("(?:going to|gonna|want to|wanna|will|about to) make (?:him|her|them|everyone|you) (?:bleed|suffer|regret it with)", { squash: false, negatable: true }),
+  rule("(?:will|going to|gonna|want to|wanna|plan to) (?:go )?(?:find|hunt|track) (?:him|her|them|you)(?: down)? and (?:hurt|kill|hit|beat|stab|shoot|harm|punch|strangle)", { squash: false, negatable: true }),
+  rule("(?:angry|mad|furious|enraged) enough to (?:kill|murder|hurt|stab|hit|strangle|shoot)", { squash: false }),
+  rule("(?:would like|want|wish|hope|wanna) (?:to see )?(?:them|him|her|everyone|people|my \\w+) (?:dead|gone forever|suffer)|(?:wish|hope) (?:them|him|her) (?:dead|were dead|was dead)", { squash: false, negatable: true }),
+  rule("(?:cant|cannot|can not|couldnt) (?:get|catch|take|draw) (?:any |enough |a )?(?:air|breath)", { squash: false, negatable: true, veto: catchBreathVeto }),
+  rule("(?:turning|turned|going|gone) (?:blue|purple|grey|gray)|blue lips|lips (?:are |turning )?blue", { squash: false, negatable: true }),
+  rule("(?:he|she|they|my \\w+|someone|somebody) (?:is|are|was) choking", { squash: false, negatable: true }),
+  rule("(?:is|are|went|goes|became|feels) limp|(?:is|are) (?:not|no longer) (?:moving|breathing|responding|waking up)|isnt (?:moving|breathing|responding|waking up)", { squash: false }),
+  rule("blood in (?:my|his|her|the) vomit", { squash: false, negatable: true }),
+  rule("(?:my )?chest (?:is |feels )?(?:crushing|tight|squeezing|burning)(?: and| with) (?:my )?(?:left |right )?(?:arm|jaw|shoulder|hand)s?", { squash: false, negatable: true }),
+  rule("(?:i|ive|i have|i was|im|i got|i am) (?:been |got )?(?:stabbed|shot|run over|poisoned)|(?:someone|somebody|he|she|they) (?:stabbed|shot|ran over|poisoned) me", { squash: false, negatable: true }),
+  rule("(?:i )?(?:got|been|was|have been) (?:hit|run over|struck) by (?:a |an )(?:car|truck|bus|bike|train|motorcycle)", { squash: false, veto: (h) => /^(?:last|when|years?|months?|weeks?|ago|once|as a|in )/.test(h.after) }),
+
+  rule("(?:plan|plans) (?:is |are )?to (?:overdose|die|end it|kill myself|end my life|take (?:all )?my pills)", { squash: false }),
+  rule("(?:no|not any) reason (?:to be here|for me to be here|to be around|to stay)|(?:cant|cannot|do not think i can|dont think i can) (?:stay|stick around|remain) (?:in this world|here|alive)(?: much longer| any longer)?", { squash: false }),
+  rule("(?:clutch\\w*|grabb?\\w*) (?:his|her|their|my) chest and (?:fell|collapsed|dropped|went down)", { squash: false }),
+
   // ---- Spanish
   rule("me quiero morir|quiero morir(?:me)?|quiero matarme|me quiero matar|me voy a matar|voy a matarme|me quiero suicidar"),
   rule("(?:quiero|voy a|quisiera) (?:quitarme|acabar con) (?:la|mi) vida|no quiero (?:vivir|seguir viviendo|estar aqui|seguir)|(?:quisiera|ojala) (?:estar muert[oa]|no despertar|morir)|(?:mejor|estaria mejor) muert[oa]"),
@@ -264,6 +329,18 @@ const TIER2: readonly RegExp[] = [
   /\b(?:severe chest pain|chest (?:hurts|is tight|feels tight)|chest pain (?:and|with)|trouble breathing|short(?:ness)? of breath|(?:is|am|im|are) bleeding|bleeding (?:a lot|heavily|badly|everywhere)|bled|seizure|faint\w*|unconscious|passed out|allergic reaction|lips? (?:are|is) swell)/,
   /\b(?:abus\w*|beats? me|hits? me|hurts? me|threat\w*|locks? me|touch\w* me|stalk\w*|forced to|not safe|unsafe|scared to go home|afraid to go home|(?:dont|do not) feel safe)\b/,
   /\b(?:quiero morir|me quiero|matar|desaparecer|no quiero vivir|dolor de pecho|no puedo respirar|me pega)/,
+  // ---- fix round 1: every category the roaster named must at least reach the classifier. Noisy on purpose.
+  /\b(?:never (?:been )?(?:born|borne)|turn(?:ing)? (?:my ?self|me) off|shut (?:my ?self|me) down|continue (?:living|to live)|keep (?:on )?living|stay (?:alive|asleep)|being alive|existing|existence|be gone|gone for good|permanently|leave this world|asleep forever|sleep forever|without me|happier (?:if|without)|not be around|stop being|done being|no future|nothing left|no meaning|meaningless|no purpose|do life|nobody (?:would|will) (?:notice|care|miss)|no one (?:would|will) (?:notice|care|miss)|last (?:week|day|night|weekend|month) (?:of|alive|here)|my last (?:week|day|night))\b/,
+  /\b(?:kill|killing|murder|murdering|stab|stabbing|shoot|shooting|strangl\w*|chok\w*|poison\w*|beat(?:ing)? up|attack\w*|assault\w*|hurt|hurting|harm|harming|hit|hitting|punch\w*|burn(?:ing)? down|violen\w*|revenge|make (?:them|him|her) pay|pay for it) (?:my |the |a |an |our |his |her |their )?(?:\w+ )?(?:brother|sister|mom|mum|mother|dad|father|boss|teacher|caregiver|carer|roommate|neighbou?r|husband|wife|partner|son|daughter|kid|child|baby|ex|him|her|them|someone|somebody|everyone|people|coworker|colleague|doctor|nurse|girlfriend|boyfriend|friend|landlord|classmate|school|house)\b|\b(?:shoot up|blow up|bomb\w*|weapon|massacre|school shooting)\b|\bwith (?:violence|them inside)\b/,
+  /\b(?:throwing up|threw up|vomit\w*|coughing up|coughed up|spitting up|puk\w*) (?:\w+ )?blood\b|\bblood (?:in|on|everywhere|wont|keeps|is coming|loss|pouring|gushing)\b|\b(?:stopped|stops|isnt|not|wont|cant) (?:breathing|breathe|responding|waking|moving)\b|\b(?:unresponsive|collaps\w*|unconscious|paralyz\w*|paralys\w*|droop\w*|slurred|swallowed (?:a )?(?:battery|magnet|bleach|poison)|too much (?:medicine|medication|insulin|meds)|pass(?:ing)? out|pressure in my chest|crushing|numb (?:on|in|and)|(?:arm|face|leg|hand|side) (?:is |feels |went )?numb|ambulance|911|emergency)\b/,
+  /\b(?:fact,? not (?:a )?feeling|not (?:a )?feeling|stating (?:a )?fact|this is (?:a )?fact|(?:mean|meant) (?:it|this) literally|taking (?:this|it) literally|not (?:a )?(?:figure of speech|joke|metaphor|exaggerat\w*|kidding)|not exaggerating|being literal|to be (?:clear|literal)|i am serious|im serious|plainly)\b/,
+  /\b(?:have|got|bought) (?:the |my |a |some )?(?:pills|rope|gun|razor|knife|blade)s?\b.{0,40}\b(?:will|going to|gonna|plan to|tonight|today|tomorrow)\b|\boverdo(?:es|se|ze)\b|\b(?:alve|alie|lfe|lyfe)\b/,
+  /\b(?:rest forever|sleep forever|want it to (?:all )?(?:be )?(?:over|end|stop)|no way out|quit life|burden|planning my goodbye|goodbye|a car hit me|ready to (?:go|leave|die)(?: now| soon)?$|bleed|see them dead|angry enough|find (?:him|her|them)|limp|wont wake up|will not wake up|turning blue|blue lips|not moving|choking|stabbed|shot me|hit by a (?:car|truck|bus)|cant get any air|any air|chest (?:tightness|pressure))\b/,
+  /\b(?:in this world|hope (?:that )?(?:this |it )?is the end|funeral|given away my|giving away my|written letters|letters for my family|no reason to be here|reason to be here|stay alive|erased|calm when i think|waking up when|point of waking)\b/,
+  /\b(?:getting|get|buy|bought|grab|grabbing|find) (?:a |the |my )?(?:knife|gun|weapon|bat|hammer|blade)\b|\b(?:break|breaking|smash|smashing|crush|crushing|snap|snapping) (?:someones?|his|her|their|a)? ?(?:arm|leg|neck|face|nose|jaw|bones?)\b|\b(?:picture|picturing|imagin\w+) (?:my \w+|him|her|them|someone) (?:falling|dead|hurt|bleeding|dying)\b/,
+  /\b(?:grabb?\w*|clutch\w*) (?:his|her|their|my) chest\b|\b(?:floppy|will not feed|wont feed|will not answer|wont answer|cannot see out of|cant see out of|lost (?:my )?vision|worst headache|(?:took|taken|swallowed) (?:a lot|lots|many|loads) of (?:pills|tablets|meds)|(?:wont|will not) be (?:here|around|alive) (?:after|next|past|by|beyond))\b/,
+  /\b(?:not (?:a )?mood|for the record|read this literally|not hyperbole|not (?:being )?dramatic|not asking for a metaphor|is a plan)\b/,
+  /\b(?:i intend|sentence is literal|literal\w*,? (?:i|this)|exactly what i say|not an expression|not speaking in a figure|stating objectively|factual statement|telling you directly|do not interpret|reporting a fact)\b/,
 ];
 
 /** Characters of one string that crisisTier scans. */
@@ -273,6 +350,77 @@ const BLANKS = /[\u2800\u180e]/;
 const BLANKS_ALL = /[\u2800\u180e]/g;
 
 const LEET_DIGITS =new Map<string, string>([["0", "o"], ["3", "e"], ["4", "a"], ["5", "s"], ["7", "t"]]);
+
+/**
+ * Typos and phonetic spellings of the few words the rules cannot do without ("kil", "myslef", "suiside", "borne").
+ * An explicit list for short words (a distance rule would turn "will" into "kill"), and an edit distance only for the
+ * long, distinctive ones, where almost no ordinary word is that close.
+ */
+const TYPO_WORDS = new Map<string, string>([
+  ...["dai", "diee", "dieee", "dyie", "dei", "diie"].map((w): [string, string] => [w, "die"]),
+  ...["dyin", "dyng", "dieing", "dyying"].map((w): [string, string] => [w, "dying"]),
+  ...["kil", "kll", "kiil", "killl", "kilil", "kiill"].map((w): [string, string] => [w, "kill"]),
+  ...["kiling", "killng", "killin", "killling"].map((w): [string, string] => [w, "killing"]),
+  ...["kiled", "killd"].map((w): [string, string] => [w, "killed"]),
+  ...["hurtng", "hurtin", "hurtig"].map((w): [string, string] => [w, "hurting"]),
+  ...["wnt", "wnat", "wanr", "wantt", "wan"].map((w): [string, string] => [w, "want"]),
+  ...["gona", "gonnna", "gunna", "gonaa"].map((w): [string, string] => [w, "gonna"]),
+  ...["alve", "aliv", "alvie", "alivee"].map((w): [string, string] => [w, "alive"]),
+  ...["lfe", "lyfe"].map((w): [string, string] => [w, "life"]),
+  ["borne", "born"],
+  ...["evrything", "everthing", "everyting", "evrythng"].map((w): [string, string] => [w, "everything"]),
+  ...["liv", "livv"].map((w): [string, string] => [w, "live"]),
+  ...["ded", "deadd"].map((w): [string, string] => [w, "dead"]),
+  ...["cuting", "cuttin"].map((w): [string, string] => [w, "cutting"]),
+  ...["overdosin", "overdosng"].map((w): [string, string] => [w, "overdosing"]),
+  ...["whant", "whnat", "wwant"].map((w): [string, string] => [w, "want"]),
+  ["ende", "end"],
+  ...["overdoze", "overdoos"].map((w): [string, string] => [w, "overdose"]),
+]);
+const FUZZY: ReadonlyArray<{ target: string; first: string; max: number }> = [
+  { target: "myself", first: "m", max: 1 },
+  { target: "suicide", first: "s", max: 2 },
+  { target: "suicidal", first: "s", max: 2 },
+];
+/** Real words that are close to a target but mean something else. */
+const FUZZY_GUARD = new Set(["subside", "subsides", "subsided", "suicides", "myselfs"]);
+
+/** Optimal-string-alignment distance (insert, delete, replace, swap of two neighbours), at most `max` or else max + 1. */
+function editDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+function fuzzToken(tok: string): string {
+  const direct = TYPO_WORDS.get(tok);
+  if (direct !== undefined) return direct;
+  if (tok.length < 5 || tok.length > 9 || FUZZY_GUARD.has(tok)) return tok;
+  let best = tok;
+  let bestDistance = Infinity;
+  for (const { target, first, max } of FUZZY) {
+    if (tok[0] !== first || tok === target) continue;
+    const dist = editDistance(tok, target, max);
+    if (dist <= max && dist < bestDistance) [best, bestDistance] = [target, dist];
+  }
+  return best;
+}
+
+/** The text with typos of the key words put right. The same words, in the same order, so every rule still reads it normally. */
+const fuzzed = (punct: string): string =>
+  punct
+    .split(" ")
+    .map(fuzzToken)
+    .join(" ")
+    .replace(/\b(want|wanna|wana|going|gonna|need|wish|ready) too\b/g, "$1 to") // "i want too die"
+    .replace(/\bit al\b/g, "it all"); // "ending it al"
 
 /** The text as is, with "2" read as "to" ("want 2 die"), and with digits inside words read as letters ("w4nt", "d1e", "ki11"). */
 function variants(punct: string): string[] {
@@ -284,7 +432,8 @@ function variants(punct: string): string[] {
         /\p{L}/u.test(tok) && /\d/.test(tok) ? Array.from(tok, (c) => (c === "1" ? one : (LEET_DIGITS.get(c) ?? c))).join("") : tok,
       )
       .join(" ");
-  return [...new Set([base, readDigits("i"), readDigits("l")])];
+  const read = readDigits("i");
+  return [...new Set([base, read, readDigits("l"), fuzzed(base), fuzzed(read)])];
 }
 
 const WORDS = (s: string): number => s.replace(/,/g, " ").split(" ").filter(Boolean).length;
@@ -334,6 +483,8 @@ export function crisisTier(input: string): CrisisTier {
   // (they sit between words); a phrase is judged both ways.
   const forms = [matchForm(text)];
   if (BLANKS.test(text)) forms.push(matchForm(text.replace(BLANKS_ALL, " ")));
+  // "h*rt", "k*ll": a star between letters hides a vowel, which could be one of two. Both are tried.
+  if (/\p{L}\*\p{L}/u.test(text)) for (const vowel of ["u", "i"]) forms.push(matchForm(text.replace(/(\p{L})\*(?=\p{L})/gu, `$1${vowel}`)));
   let check = false;
   for (const form of forms) {
     if (form.text === "") continue;
