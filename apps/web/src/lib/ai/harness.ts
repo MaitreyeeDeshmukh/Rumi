@@ -265,6 +265,37 @@ function companionOf(r: unknown): string {
 
 const withDegraded = (reply: unknown, degraded: boolean): unknown => ({ ...(reply as object), degraded });
 
+/** A refused body is scanned this deep, for this many strings, and each string for this many characters (tier 1 only). */
+const RAW_SCAN_DEPTH = 6;
+const RAW_SCAN_LEAVES = 100;
+const RAW_SCAN_CHARS = 4_000;
+
+/**
+ * True when any string in a body that was refused before the crisis check (400 or 413) is a certain crisis phrase.
+ * A person who writes a long message that also breaks a field limit must still get the card, not "I could not read that".
+ * Any shape is allowed (the body failed the schema); nothing here can throw.
+ */
+function rawBodyHasCrisis(body: unknown): boolean {
+  let leaves = 0;
+  const walk = (v: unknown, depth: number): boolean => {
+    if (typeof v === "string") {
+      leaves += 1;
+      return crisisTier(v.slice(0, RAW_SCAN_CHARS)) === "certain";
+    }
+    if (typeof v !== "object" || v === null || depth >= RAW_SCAN_DEPTH) return false;
+    for (const child of Object.values(v)) {
+      if (leaves >= RAW_SCAN_LEAVES) return false;
+      if (walk(child, depth + 1)) return true;
+    }
+    return false;
+  };
+  try {
+    return walk(body, 0);
+  } catch {
+    return false;
+  }
+}
+
 export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, req: Request, deps: HarnessDeps = {}): Promise<Response> {
   const now = deps.now ?? Date.now;
   const rand = deps.rand ?? newNonce;
@@ -293,6 +324,9 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   const ev = run.ev;
   let stage: Stage = "guard";
   let cookie: string | null = null;
+  /** The parsed body, once it has been read. Only a refused body (400, 413) is looked at again, for the crisis scan. */
+  let body: unknown;
+  let bodyRead = false;
   /** The sanitized request, once it exists. The fallback and the mock use it (not the redacted copy). */
   let clean: Req | undefined;
 
@@ -329,7 +363,8 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
     // 2. body with a byte cap, then the request schema
     stage = "body";
-    const body = await readJson(req, LIMITS.bodyBytesMax);
+    body = await readJson(req, LIMITS.bodyBytesMax);
+    bodyRead = true;
     stage = "request";
     const parsed = spec.request.safeParse(body);
     if (!parsed.success) throw new HttpError(400, "bad_input");
@@ -457,6 +492,8 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     stage = "reply";
     return finish(degrade(failure));
   } catch (e) {
+    // Refused after the body was read (does not fit the schema, or a string is over the size limit): a certain crisis phrase still wins.
+    if (e instanceof HttpError && bodyRead && (stage === "request" || stage === "sanitize") && rawBodyHasCrisis(body)) return finish(crisis());
     ev.stage = stage;
     if (e instanceof HttpError) {
       ev.outcome = "error";
