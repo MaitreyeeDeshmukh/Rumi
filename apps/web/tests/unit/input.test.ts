@@ -308,3 +308,18 @@ describe("redactPii: bare UK postcode", () => {
     expect(redactPii("my GP is at M1 1AE").text).toBe("my GP is at [postcode]");
   });
 });
+
+describe("redactPii with names: false (the crisis classifier input)", () => {
+  it("keeps a word that looks like a name after 'I am', but still removes phone numbers and emails", async () => {
+    const { redactPii } = await import("@/lib/ai/guards/input");
+    const text = "I am Hopeless. My name is Anna. Call 602-555-0123 or a.b@example.com.";
+    expect(redactPii(text).text).toContain("[name]");
+    const kept = redactPii(text, { names: false });
+    expect(kept.text).toContain("I am Hopeless");
+    expect(kept.text).toContain("My name is Anna");
+    expect(kept.text).toContain("[phone]");
+    expect(kept.text).toContain("[email]");
+    expect(kept.text).not.toMatch(/602|example/);
+    expect(kept.count).toBe(2);
+  });
+});

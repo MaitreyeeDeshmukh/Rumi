@@ -253,7 +253,7 @@ const NAME_RULES: readonly RegExp[] = [
  * Personal identifiers are replaced with a bracketed label before text reaches a model. Never logged.
  * Over MAX_GUARD_CHARS nothing is scanned: the result has `tooLarge: true` and empty text, and the caller must refuse.
  */
-export function redactPii(s: string): { text: string; count: number; tooLarge: boolean } {
+export function redactPii(s: string, options: { names?: boolean } = {}): { text: string; count: number; tooLarge: boolean } {
   if (s.length > MAX_GUARD_CHARS) return { text: "", count: 0, tooLarge: true };
   let count = 0;
   let text = s;
@@ -268,7 +268,8 @@ export function redactPii(s: string): { text: string; count: number; tooLarge: b
       return label;
     });
   }
-  for (const re of NAME_RULES) {
+  // names: false keeps words after "I am" / "my name is". The crisis classifier needs them ("I am Hopeless").
+  for (const re of options.names === false ? [] : NAME_RULES) {
     text = text.replace(re, (match: string, lead: string, name: string) => {
       const first = name.replace(/^Dr\.?\s+/, "").split(/\s+/)[0].toLowerCase();
       if (NAME_STOP.has(first)) return match;

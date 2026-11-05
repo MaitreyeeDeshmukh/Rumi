@@ -40,8 +40,9 @@ export function errorResponse(e: HttpError): Response {
 /**
  * Reads a JSON body with a hard byte cap. The declared Content-Length is checked first, then the stream is read
  * chunk by chunk and cancelled the moment the cap is passed, so a body without a length header cannot fill memory.
+ * A body that is not finished after `timeoutMs` is cancelled and refused (a slow-body client cannot hold the request open).
  */
-export async function readJson(req: Request, maxBytes: number): Promise<unknown> {
+export async function readJson(req: Request, maxBytes: number, timeoutMs = 10_000): Promise<unknown> {
   const declared = req.headers.get("content-length");
   if (declared !== null) {
     if (!/^\d+$/.test(declared)) throw new HttpError(400, "bad_input");
@@ -52,16 +53,33 @@ export async function readJson(req: Request, maxBytes: number): Promise<unknown>
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reader.cancel().catch(() => undefined); // best effort: the request is refused either way
+      reject(new HttpError(400, "bad_input"));
+    }, timeoutMs);
+  });
+  stalled.catch(() => undefined); // the race below handles it; this stops a late rejection from being reported as unhandled
   for (;;) {
-    const { done, value } = await reader.read();
+    let step: ReadableStreamReadResult<Uint8Array>;
+    try {
+      step = await Promise.race([reader.read(), stalled]);
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+    const { done, value } = step;
     if (done) break;
     total += value.byteLength;
     if (total > maxBytes) {
+      clearTimeout(timer);
       await reader.cancel();
       throw new HttpError(413, "too_large");
     }
     chunks.push(value);
   }
+  clearTimeout(timer);
 
   const bytes = new Uint8Array(total);
   let offset = 0;

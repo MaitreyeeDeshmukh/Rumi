@@ -68,10 +68,21 @@ describe("createGroqProvider: request shape", () => {
       temperature: 0.2,
       max_completion_tokens: 900,
       response_format: { type: "json_object" },
-      reasoning_effort: "low",
       stream: false,
     });
     expect(res).toEqual({ text: '{"a":1}', modelUsed: "model-quality-x", inTokens: 120, outTokens: 45 });
+  });
+
+  it("sends a low reasoning effort only to a gpt-oss model (other models reject the parameter)", async () => {
+    vi.stubEnv("GROQ_MODEL_QUALITY", "openai/gpt-oss-120b");
+    vi.stubEnv("GROQ_MODEL_FAST", "llama-3.1-8b-instant");
+    const { fetchFn, seen } = fakeFetch(() => new Response(okBody("{}")));
+    const p = createGroqProvider({ fetchFn });
+    await p.complete(call({ tier: "quality" }));
+    await p.complete(call({ tier: "fast" }));
+    expect(seen[0].body.reasoning_effort).toBe("low");
+    expect(seen[1]).toBeDefined();
+    expect("reasoning_effort" in seen[1].body).toBe(false);
   });
 
   it("uses the fast model for the fast tier and reports the configured name, never the name the server echoes", async () => {
@@ -118,6 +129,19 @@ describe("createGroqProvider: failures", () => {
   it.each([400, 401, 429, 500, 503])("a %i answer is 'http'", async (status) => {
     const { fetchFn } = fakeFetch(() => new Response("{}", { status }));
     expect(await kindOf(createGroqProvider({ fetchFn }).complete(call()))).toBe("http");
+  });
+
+  it("a 400 that names an unsupported parameter is still just 'http', and none of its words reach the error", async () => {
+    const body = JSON.stringify({ error: { message: "reasoning_effort is not supported with this model", type: "invalid_request_error" } });
+    const { fetchFn } = fakeFetch(() => new Response(body, { status: 400 }));
+    try {
+      await createGroqProvider({ fetchFn }).complete(call());
+      throw new Error("expected a ProviderError");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ProviderError);
+      expect((e as ProviderError).kind).toBe("http");
+      expect(`${(e as Error).message}${JSON.stringify(e)}`).not.toContain("reasoning_effort");
+    }
   });
 
   it("a network failure is 'http'", async () => {
