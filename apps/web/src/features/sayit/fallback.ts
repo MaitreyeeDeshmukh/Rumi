@@ -16,6 +16,8 @@ const GENERIC: Levels = {
   3: "I am not sure how to say this. Can you ask me one question at a time?",
 };
 
+// The five scenarios of SAY_SCENARIOS only. The prototype also had a "directions" preset: it is not a say-it scenario,
+// the request schema rejects it, and the UI must not send it (tested in fixRound.test.ts).
 export const SCENARIO_TEMPLATES: Readonly<Record<NonNullable<SayItRequestT["scenario"]>, Levels>> = {
   book: {
     1: "What do you want to book the visit for? You can start with: I need to book ...",
