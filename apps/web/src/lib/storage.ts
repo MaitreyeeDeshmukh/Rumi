@@ -3,7 +3,6 @@
  * Writing tells the caller what happened (a full disk is reported, not swallowed).
  */
 import type { RumiState } from '@/features/shared/types';
-import { isRecoveryCode } from '@/features/memory/recoveryCode';
 import { MAX_SESSIONS, defaultSettings, defaultState, parseState } from './storage-schema';
 
 export { MAX_SESSIONS, defaultSettings, defaultState };
@@ -19,8 +18,7 @@ export type SaveResult = { ok: true } | { ok: false; reason: 'quota' | 'blocked'
  *  - ok: a version 1 blob, parsed field by field;
  *  - corrupt: not JSON, not an object, or an unknown version marker;
  *  - future: a numeric version above 1, written by a newer app. It must be left untouched (read-only mode).
- *    The state is the default one, except that a valid persona.recoveryCode in the blob is read on a best-effort
- *    basis, so "delete everything" can still erase the remote copy before the blob is removed.
+ *    The state is the default one.
  */
 export type StoredStatus = 'missing' | 'ok' | 'corrupt' | 'future';
 
@@ -33,24 +31,13 @@ export function browserStorage(): StorageLike | null {
   }
 }
 
-/** Best-effort read of persona.recoveryCode from a blob we do not understand. Only a valid code counts. */
-function futureCode(parsed: unknown): string | undefined {
-  const persona = typeof parsed === 'object' && parsed !== null ? (parsed as { persona?: unknown }).persona : undefined;
-  const code = typeof persona === 'object' && persona !== null ? (persona as { recoveryCode?: unknown }).recoveryCode : undefined;
-  return typeof code === 'string' && isRecoveryCode(code) ? code : undefined;
-}
-
-function withCode(state: RumiState, recoveryCode: string | undefined): RumiState {
-  return recoveryCode ? { ...state, persona: { ...state.persona, recoveryCode } } : state;
-}
-
 export function inspectStorage(store: Pick<Storage, 'getItem'> | null = browserStorage()): { status: StoredStatus; state: RumiState } {
   try {
     const raw = store?.getItem(KEY);
     if (!raw) return { status: 'missing', state: defaultState() };
     const parsed: unknown = JSON.parse(raw);
     const version = typeof parsed === 'object' && parsed !== null ? (parsed as { version?: unknown }).version : undefined;
-    if (typeof version === 'number' && version > 1) return { status: 'future', state: withCode(defaultState(), futureCode(parsed)) };
+    if (typeof version === 'number' && version > 1) return { status: 'future', state: defaultState() };
     if (version !== 1) return { status: 'corrupt', state: defaultState() };
     return { status: 'ok', state: parseState(parsed) };
   } catch {

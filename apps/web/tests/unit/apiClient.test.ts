@@ -3,7 +3,6 @@ import { createCallApi, type ApiPath } from "@/lib/api/client";
 import { PracticeReply } from "@/features/shared/schemas";
 import { z } from "zod";
 
-const CODE = "ABCDE-FGHJK-LMNPQ-RSTUV";
 const REPLY = { clinicianSay: "What brings you in today?", coveredItemIds: [], isLastTurn: false };
 const isCrisis = (t: string) => /end it all/i.test(t);
 
@@ -170,18 +169,10 @@ describe("callApi: request shape and the x-rumi-key header", () => {
     expect(r).toEqual({ ok: true, data: { ...REPLY, degraded: true } });
   });
 
-  it("sends the header only for a valid code", async () => {
-    const ok = setup();
-    await ok.go({}, { memoryCode: CODE });
-    expect(headersOf(ok.fetchFn)["x-rumi-key"]).toBe(CODE);
-    for (const bad of [CODE + "\n", "\n" + CODE, CODE.toLowerCase(), CODE + " ", "abc", "", "ABCDE-FGHJK-LMNPQ-RSTUV\r\nX-Evil: 1"]) {
-      const s = setup();
-      await s.go({}, { memoryCode: bad });
-      expect(Object.keys(headersOf(s.fetchFn))).toEqual(["Content-Type"]);
-    }
-    const none = setup();
-    await none.go({}, { memoryCode: undefined });
-    expect(Object.keys(headersOf(none.fetchFn))).toEqual(["Content-Type"]);
+  it("sends no identity header at all: who the person is comes from the sign-in cookie", async () => {
+    const s = setup();
+    await s.go({}, {});
+    expect(Object.keys(headersOf(s.fetchFn))).toEqual(["Content-Type"]);
   });
 });
 

@@ -124,11 +124,20 @@ export interface PersonaFact {
   key: string;
   level?: HelpLevel;
   createdAt: string;
+  /** When the person last changed this fact (ISO). Last write wins on this time, on every device. */
+  updatedAt: string;
+}
+
+/** A stated fact the person turned off here and the database may still hold. Sent once, then dropped. */
+export interface PersonaRemoval {
+  id: string;
+  /** When it was turned off (ISO). Only a stored copy older than this is deleted. */
+  at: string;
 }
 
 export interface Persona {
   facts: PersonaFact[];
-  recoveryCode?: string;
+  removed?: PersonaRemoval[];
 }
 
 export interface RumiState {

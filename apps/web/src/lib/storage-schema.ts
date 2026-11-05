@@ -8,6 +8,7 @@ import { ID_RE, LIMITS, PLAN_ITEM_KINDS } from '@/features/shared/constants';
 import {
   FocusSchema,
   HelpLevelSchema,
+  PersonaFactRemoval,
   PersonaFactWire,
   PlanItemSchema,
   RecapReply,
@@ -18,6 +19,7 @@ import {
 } from '@/features/shared/schemas';
 import type {
   PersonaFact,
+  PersonaRemoval,
   PracticeSession,
   Recap,
   RumiState,
@@ -26,7 +28,6 @@ import type {
   SupportItem,
   VisitPlan,
 } from '@/features/shared/types';
-import { isRecoveryCode } from '@/features/memory/recoveryCode';
 import { presetText } from '@/features/support/presets';
 
 export const MAX_SESSIONS = 20;
@@ -181,6 +182,13 @@ function parseRecap(raw: unknown): Recap | undefined {
   };
 }
 
+const iso = (v: unknown): string => (typeof v === 'string' ? v.slice(0, 40) : '');
+/** A change time in the one form the server accepts (with Z), or '' when it is not a time. */
+const isoTime = (v: unknown): string => {
+  const ms = typeof v === 'string' ? Date.parse(v) : Number.NaN;
+  return Number.isNaN(ms) ? '' : new Date(ms).toISOString();
+};
+
 /** Facts are rebuilt from (kind, key, level) only. Any stored id or free text is thrown away. */
 function parseFacts(raw: unknown): PersonaFact[] {
   if (!Array.isArray(raw)) return [];
@@ -191,16 +199,34 @@ function parseFacts(raw: unknown): PersonaFact[] {
     const wire = PersonaFactWire.safeParse({ kind: own(entry, 'kind'), key: own(entry, 'key'), ...(level === undefined ? {} : { level }) });
     if (!wire.success) continue;
     const { kind, key } = wire.data;
-    const createdAt = own(entry, 'createdAt');
+    const createdAt = iso(own(entry, 'createdAt'));
     facts.push({
       id: `${kind}:${key}`,
       kind,
       key,
       ...(wire.data.level === undefined ? {} : { level: wire.data.level }),
-      createdAt: typeof createdAt === 'string' ? createdAt.slice(0, 40) : '',
+      createdAt,
+      // Data saved before updatedAt existed falls back to its creation time.
+      updatedAt: isoTime(own(entry, 'updatedAt')) || createdAt,
     });
   }
   return uniqueBy(facts, (f) => f.id).slice(0, LIMITS.factsMax);
+}
+
+/** Pending removals: only stated facts with a real id and a time. Rebuilt from kind and key, never trusted as stored. */
+function parseRemoved(raw: unknown): PersonaRemoval[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PersonaRemoval[] = [];
+  for (const entry of raw) {
+    if (!isObject(entry)) continue;
+    const id = own(entry, 'id');
+    const at = isoTime(own(entry, 'at'));
+    if (typeof id !== 'string' || at === '') continue;
+    const [kind, key, extra] = id.split(':');
+    if (extra !== undefined || !PersonaFactRemoval.safeParse({ kind, key, client_updated_at: '2026-01-01T00:00:00.000Z' }).success) continue;
+    out.push({ id: `${kind}:${key}`, at });
+  }
+  return uniqueBy(out, (r) => r.id).slice(0, LIMITS.factsMax);
 }
 
 /** Turns untrusted parsed JSON into a valid state. Never throws. */
@@ -208,16 +234,15 @@ export function parseState(raw: unknown): RumiState {
   if (!isObject(raw) || raw.version !== 1) return defaultState();
   const settings = SettingsSchema.parse(raw.settings);
   const persona = isObject(raw.persona) ? raw.persona : {};
-  const recoveryCode = typeof persona.recoveryCode === 'string' && isRecoveryCode(persona.recoveryCode) ? persona.recoveryCode : undefined;
+  const removed = parseRemoved(own(persona, 'removed'));
   const supportCard = parseSupportCard(raw.supportCard);
   const plan = parsePlan(raw.plan);
   const recap = parseRecap(raw.recap);
   return {
     version: 1,
-    // Memory on without a usable code would look on but save nothing, so it is switched off.
-    settings: { ...settings, memoryOptIn: settings.memoryOptIn && recoveryCode !== undefined },
+    settings,
     sessions: validItems(SessionSchema, raw.sessions).slice(-MAX_SESSIONS),
-    persona: { facts: parseFacts(persona.facts), ...(recoveryCode ? { recoveryCode } : {}) },
+    persona: { facts: parseFacts(persona.facts), ...(removed.length > 0 ? { removed } : {}) },
     ...(plan ? { plan } : {}),
     ...(supportCard ? { supportCard } : {}),
     ...(recap ? { recap } : {}),

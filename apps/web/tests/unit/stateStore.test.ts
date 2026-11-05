@@ -4,8 +4,6 @@ import { KEY, MAX_SESSIONS, defaultState, loadState, saveState } from "@/lib/sto
 import { fakeStorage } from "./helpers/fakeStorage";
 import type { RumiState } from "@/features/shared/types";
 
-const CODE = "ABCDE-FGHJK-LMNPQ-RSTUV";
-const CODE2 = "ABCDE-FGHJK-LMNPQ-RSTUW";
 
 function fakeEvents() {
   const listeners = new Set<(e: StorageEventLike) => void>();
@@ -215,60 +213,6 @@ describe("stateStore storage events (other tabs)", () => {
   });
 });
 
-describe("stateStore.verifiedRecoveryCode", () => {
-  const setCode = (code: string) => (d: RumiState) => void (d.persona.recoveryCode = code);
-
-  it("is undefined before hydration, with no code, or with no storage", () => {
-    const store = createStateStore({ storage: fakeStorage() });
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-    store.hydrate();
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-    const none = createStateStore({ storage: null });
-    none.hydrate();
-    none.update(setCode(CODE));
-    expect(none.verifiedRecoveryCode()).toBeUndefined();
-  });
-
-  it("returns the code only when it can be read back from storage", () => {
-    const storage = fakeStorage();
-    const store = createStateStore({ storage });
-    store.hydrate();
-    store.update(setCode(CODE));
-    expect(store.verifiedRecoveryCode()).toBe(CODE);
-  });
-
-  it("is undefined when the save failed, so no remote write can create an orphan namespace", () => {
-    const storage = fakeStorage();
-    const store = createStateStore({ storage });
-    store.hydrate();
-    storage.failWrites = new DOMException("full", "QuotaExceededError");
-    store.update(setCode(CODE));
-    expect(store.getSnapshot().state.persona.recoveryCode).toBe(CODE);
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-  });
-
-  it("is undefined when another tab replaced or removed the code", () => {
-    const storage = fakeStorage();
-    const store = createStateStore({ storage });
-    store.hydrate();
-    store.update(setCode(CODE));
-    const raw = JSON.parse(storage.data.get(KEY) as string);
-    raw.persona.recoveryCode = CODE2;
-    storage.data.set(KEY, JSON.stringify(raw));
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-    storage.data.delete(KEY);
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-  });
-
-  it("is undefined for a code that is not valid", () => {
-    const storage = fakeStorage();
-    const store = createStateStore({ storage });
-    store.hydrate();
-    store.update(setCode(CODE + "\n"));
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-  });
-});
-
 describe("stateStore: updates that do not fit, nesting, reset", () => {
   it("the update after the queue is full is reported as dropped and counted, not lost silently", () => {
     const store = createStateStore({ storage: fakeStorage() });
@@ -396,13 +340,6 @@ describe("stateStore: data from a newer app version", () => {
     expect(storage.data.get(KEY)).toBe(future);
   });
 
-  it("a recovery code cannot be verified in read-only mode, so no remote write can start", () => {
-    const store = createStateStore({ storage: fakeStorage({ [KEY]: future }) });
-    store.hydrate();
-    store.update((d) => void (d.persona.recoveryCode = "ABCDE-FGHJK-LMNPQ-RSTUV"));
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-  });
-
   it("an ordinary version 1 blob is not read-only", () => {
     const store = createStateStore({ storage: fakeStorage({ [KEY]: JSON.stringify(defaultState()) }) });
     store.hydrate();
@@ -450,39 +387,27 @@ describe("stateStore: updates dropped for a reason", () => {
   });
 });
 
-describe("stateStore: a recovery code inside newer-version data", () => {
-  const CODE_IN_FUTURE = "ABCDE-FGHJK-LMNPQ-RSTUV";
-  const blob = (code: unknown) => JSON.stringify({ version: 2, persona: { recoveryCode: code }, plan: { keep: "me" } });
+describe("stateStore: newer-version data", () => {
+  const blob = JSON.stringify({ version: 2, persona: { facts: [{ kind: "support_pref", key: "p1" }], recoveryCode: "ABCDE-FGHJK-LMNPQ-RSTUV" }, plan: { keep: "me" } });
 
-  it("a valid code is read best-effort, the blob stays untouched and remote writes stay locked", () => {
-    const storage = fakeStorage({ [KEY]: blob(CODE_IN_FUTURE) });
+  it("is read-only, stays untouched, and nothing in it becomes persona state", () => {
+    const storage = fakeStorage({ [KEY]: blob });
     const store = createStateStore({ storage });
     store.hydrate();
     expect(store.getSnapshot().readOnly).toBe(true);
-    expect(store.getSnapshot().state.persona.recoveryCode).toBe(CODE_IN_FUTURE);
-    expect(store.verifiedRecoveryCode()).toBeUndefined();
-    expect(storage.data.get(KEY)).toBe(blob(CODE_IN_FUTURE));
+    expect(store.getSnapshot().state.persona).toEqual({ facts: [] });
+    expect(storage.data.get(KEY)).toBe(blob);
   });
 
-  it("an invalid code, a non-string and a missing persona are ignored", () => {
-    for (const code of [CODE_IN_FUTURE + "\n", "abc", 42, null, { x: 1 }]) {
-      const store = createStateStore({ storage: fakeStorage({ [KEY]: blob(code) }) });
-      store.hydrate();
-      expect(store.getSnapshot().state.persona.recoveryCode).toBeUndefined();
-    }
-    const bare = createStateStore({ storage: fakeStorage({ [KEY]: JSON.stringify({ version: 3 }) }) });
-    bare.hydrate();
-    expect(bare.getSnapshot().state.persona.recoveryCode).toBeUndefined();
-  });
-
-  it("a newer app version appearing in another tab brings its code in too", () => {
+  it("a newer app version appearing in another tab turns this tab read-only and keeps its own state", () => {
     const storage = fakeStorage();
     const events = fakeEvents();
     const store = createStateStore({ storage, events });
     store.start();
-    storage.data.set(KEY, blob(CODE_IN_FUTURE));
+    store.update((d) => void (d.settings.name = "mine"));
+    storage.data.set(KEY, blob);
     events.fire({ key: KEY });
     expect(store.getSnapshot().readOnly).toBe(true);
-    expect(store.getSnapshot().state.persona.recoveryCode).toBe(CODE_IN_FUTURE);
+    expect(store.getSnapshot().state.settings.name).toBe("mine");
   });
 });

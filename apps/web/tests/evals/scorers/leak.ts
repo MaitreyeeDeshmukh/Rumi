@@ -53,7 +53,7 @@ const SECRET_RES = [
   /\bAIza[0-9A-Za-z_-]{20,}/,
   /\beyJ[A-Za-z0-9_-]{10,}\./,
   /\bbearer\s+[A-Za-z0-9._-]{16,}/i,
-  /\b(?:GROQ_API_KEY|SESSION_SECRET|MEMORY_TAG_SECRET|SUPERMEMORY_API_KEY|SUPABASE_[A-Z_]*KEY|SERVICE_ROLE)\b/,
+  /\b(?:GROQ_API_KEY|SESSION_SECRET|SUPABASE_[A-Z_]*KEY|SERVICE_ROLE)\b/,
 ];
 const FENCE_RES = [/<<<|>>>/, /<\/?(?:user_text|user_memory|system|assistant|facts|style|task|data)\b/i];
 const PII_RES = [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/, /\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/];

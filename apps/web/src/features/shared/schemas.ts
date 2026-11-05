@@ -6,7 +6,9 @@
 import { z } from 'zod';
 import {
   COMPANION_RE,
+  FACTS_BATCH_MAX,
   FACT_KEY_RE,
+  FACT_KINDS,
   FOCUS_VALUES,
   HELP_LEVELS,
   ID_RE,
@@ -15,6 +17,7 @@ import {
   PLAN_ITEM_KINDS,
   SAY_SCENARIOS,
   SPEAKERS,
+  STATED_FACT_KINDS,
   SUPPORT_PRESET_IDS,
 } from './constants';
 
@@ -159,28 +162,53 @@ export const RecapReply = z.object({
 
 // ---- memory wire format: facts carry no free text; the server derives the sentence from fixed tables
 const FactKey = z.string().regex(FACT_KEY_RE);
+/** Is (kind, key, level) one of the facts Rumi can make? Shared by every fact schema below. */
+const knownFact = (f: { kind: string; key: string; level?: number }): boolean => {
+  if (f.kind === 'support_pref') return (SUPPORT_PRESET_IDS as readonly string[]).includes(f.key) && f.level === undefined;
+  if (f.kind === 'pacing') return (PACING_KEYS as readonly string[]).includes(f.key) && f.level === undefined;
+  return (PLAN_ITEM_KINDS as readonly string[]).includes(f.key) && (HELP_LEVELS as readonly number[]).includes(f.level as number);
+};
+const UNKNOWN_FACT = { message: 'unknown fact key or level for kind' };
+const IsoTime = z.iso.datetime();
+
 export const PersonaFactWire = z
   .strictObject({
-    kind: z.enum(['support_pref', 'pacing', 'help_level']),
+    kind: z.enum(FACT_KINDS),
     key: FactKey,
     level: HelpLevelSchema.optional(),
   })
-  .refine(
-    (f) => {
-      if (f.kind === 'support_pref') return (SUPPORT_PRESET_IDS as readonly string[]).includes(f.key) && f.level === undefined;
-      if (f.kind === 'pacing') return (PACING_KEYS as readonly string[]).includes(f.key) && f.level === undefined;
-      return (PLAN_ITEM_KINDS as readonly string[]).includes(f.key) && (HELP_LEVELS as readonly number[]).includes(f.level as number);
-    },
-    { message: 'unknown fact key or level for kind' },
-  );
+  .refine(knownFact, UNKNOWN_FACT);
+/** A fact on its way to or from the database: the wire fact plus the time the person last changed it. */
+export const PersonaFactSync = z
+  .strictObject({
+    kind: z.enum(FACT_KINDS),
+    key: FactKey,
+    level: HelpLevelSchema.optional(),
+    client_updated_at: IsoTime,
+  })
+  .refine(knownFact, UNKNOWN_FACT);
+/** "This stated fact was turned off at this time." Only stated kinds can be removed one by one. */
+export const PersonaFactRemoval = z
+  .strictObject({ kind: z.enum(STATED_FACT_KINDS), key: FactKey, client_updated_at: IsoTime })
+  .refine(knownFact, UNKNOWN_FACT);
 export const FactsRequest = z.strictObject({
   facts: z
-    .array(PersonaFactWire)
-    .max(LIMITS.factsMax)
+    .array(PersonaFactSync)
+    .max(FACTS_BATCH_MAX)
     .refine((facts) => unique(facts.map((f) => `${f.kind}:${f.key}`)), { message: 'duplicate fact' }),
+  removed: z
+    .array(PersonaFactRemoval)
+    .max(FACTS_BATCH_MAX)
+    .refine((removed) => unique(removed.map((f) => `${f.kind}:${f.key}`)), { message: 'duplicate removal' })
+    .optional(),
 });
 export const ForgetReply = z.object({ status: z.enum(['ok', 'failed']) });
-export const FactsReply = z.object({ saved: z.number().int().min(0), rejected: z.number().int().min(0) });
+/** `facts` is what the database holds after the write, so a second device can merge it. `rejected` counts stored rows we ignored. */
+export const FactsReply = z.object({
+  saved: z.number().int().min(0),
+  rejected: z.number().int().min(0),
+  facts: z.array(PersonaFactSync).max(FACTS_BATCH_MAX),
+});
 
 export type PlanRequestT = z.infer<typeof PlanRequest>;
 export type PlanModelOutT = z.infer<typeof PlanModelOut>;
@@ -195,3 +223,5 @@ export type RecapRequestT = z.infer<typeof RecapRequest>;
 export type RecapModelOutT = z.infer<typeof RecapModelOut>;
 export type RecapReplyT = z.infer<typeof RecapReply>;
 export type PersonaFactWireT = z.infer<typeof PersonaFactWire>;
+export type PersonaFactSyncT = z.infer<typeof PersonaFactSync>;
+export type PersonaFactRemovalT = z.infer<typeof PersonaFactRemoval>;
