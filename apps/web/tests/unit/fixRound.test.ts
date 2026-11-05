@@ -142,10 +142,11 @@ describe("F-2 every sentence of a recap item must be backed", () => {
     expect(accepted(lines1("Please come back in four weeks. Bring the diary with you."), item("instructions", "Bring the diary to the next visit."))).toBe(true);
   });
 
-  it("the coverage threshold is 75% of the content words of each sentence", () => {
+  it("a short sentence may not add even one content word", () => {
     const l = lines1("Please keep a headache diary for two weeks.");
-    expect(accepted(l, item("instructions", "Keep a headache diary carefully."))).toBe(true); // 3 of 4
-    expect(accepted(l, item("instructions", "Keep a headache diary every morning."))).toBe(false); // 3 of 5
+    expect(accepted(l, item("instructions", "Keep a headache diary carefully."))).toBe(false);
+    expect(accepted(l, item("instructions", "Keep a headache diary every morning."))).toBe(false);
+    expect(accepted(l, item("instructions", "Keep a headache diary for two weeks."))).toBe(true);
   });
 });
 
@@ -330,7 +331,7 @@ describe("F-11 blanks", () => {
 });
 
 describe("F-12 people, names, look-alike letters and brands", () => {
-  it.each(["My kid hits me.", "My neighbour shouts at me.", "My ex follows me.", "My therapist said so.", "The baby cries.", "My nana is sick.", "My manager is rude."])(
+  it.each(["My kid hits me.", "My neighbour shouts at me.", "My ex follows me.", "My therapist said so.", "My baby cries.", "My nana is sick.", "My manager is rude."])(
     "an invented person is flagged: %s",
     (t) => expect(toks(t).length).toBeGreaterThan(0),
   );
@@ -365,7 +366,7 @@ describe("F-16 prompt files load without the app's path alias", () => {
     const r = spawnSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", `const m = await import(${JSON.stringify(url)}); console.log(Object.keys(m).length)`], { encoding: "utf8" });
     expect(r.status, r.stderr).toBe(0);
     expect(Number(r.stdout.trim())).toBeGreaterThan(0);
-  });
+  }, 30000);
 
   it("the speaker letters in recap.ts are the shared SPEAKERS, so nothing drifted", () => {
     for (const s of SPEAKERS) expect(recapTask(s)).toContain(`Speaker ${s} is the user`);

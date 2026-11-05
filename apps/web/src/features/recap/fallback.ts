@@ -27,10 +27,13 @@ function itemsFrom(lines: readonly TranscriptLine[], mySpeaker: Speaker): RecapI
     const text = truncateAtWord(line.text, 300);
     const mine = line.speaker === mySpeaker;
     // What the clinician said (medicines, instructions, next steps) never comes from the user's own line.
-    const drug = mine ? undefined : wordList(line.text).find(isDrugWord);
-    if (drug) {
-      const sentence = splitSentences(line.text).find((s) => wordList(s).includes(drug)) ?? line.text;
-      items.push({ section: "medications", text: truncateAtWord(`${drug[0].toUpperCase()}${drug.slice(1)}: ${sentence}`, 300), evidence: [line.id] });
+    const drugs = mine ? [] : [...new Set(wordList(line.text).filter(isDrugWord))];
+    if (drugs.length > 0) {
+      // One item per medicine named in the line, each with the sentence that names it.
+      for (const drug of drugs) {
+        const sentence = splitSentences(line.text).find((s) => wordList(s).includes(drug)) ?? line.text;
+        items.push({ section: "medications", text: truncateAtWord(`${drug[0].toUpperCase()}${drug.slice(1)}: ${sentence}`, 300), evidence: [line.id] });
+      }
     } else if (contentWords(line.text).length >= 3) {
       const section = mine ? "discussed" : NEXT_STEP.test(line.text) ? "next_steps" : INSTRUCTION.test(line.text) ? "instructions" : "discussed";
       items.push({ section, text, evidence: [line.id] });

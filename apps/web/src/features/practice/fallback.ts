@@ -33,20 +33,29 @@ export const SCRIPT: Record<Focus, readonly string[]> = {
 const norm = (s: string): string => s.replace(/[’‘]/g, "'").toLowerCase();
 
 /**
- * A request to stop (rule, tested in both directions):
- * - "stop" as a whole word is a request, EXCEPT when it is about the person's own life: "should/can/do I stop ...",
- *   "I can't stop coughing", "stop taking/eating/doing ..." (any -ing word other than asking/talking/questioning),
- *   "bus stop", "non-stop".
+ * A request to stop (rules, tested in both directions):
+ * - CONTINUE wins: "don't stop", "keep going", "carry on", "continue", "let's continue" mean the person wants more.
+ * - "stop" as a whole word is a request, EXCEPT when it is about the person's own life or something else: "should/can/do I
+ *   stop ...", "I can't stop coughing", "stop taking/eating/doing ..." (any -ing word other than asking/talking/questioning),
+ *   "bus stop", "non-stop", "my doctor said stop", "a stop sign". "stopwatch" is a different word.
+ * - "enough" counts only as "that's enough", "enough questions", "enough now", "I've had enough"; "I have enough pills" and
+ *   "not enough sleep" do not.
+ * - quit, finish, end: "I want to quit", "I want to end this", "I'd like to finish now" (the turn ends there); "quit smoking" does not.
+ * - "I'm done", "that's all" (as the turn), "too many questions", "no more questions", "I need a break" (not "a break from work").
  * - "tired" is a request only as "I'm/I am/we're (so) tired" in a short turn (6 words or fewer) that gives no symptom or
- *   time context ("all the time", "after class", "of these headaches"). "I feel tired", "tired of these headaches" are content.
- * - enough, too many questions, no more questions, a break.
+ *   time context ("all the time", "after class", "today", "of these headaches"). "I feel tired", "tired of these headaches" are content.
  */
 const REQUEST_ING = new Set(["asking", "talking", "questioning", "quizzing"]);
 const TIRED_CONTEXT =
-  /\b(headaches?|pain|hurts?|aches?|dizz\w*|sleep\w*|cough\w*|nause\w*|all the time|all day|every|lately|since|after|when|during|because|in the (morning|afternoon|evening)|at night|of (these|my|the)|weeks?|months?|days?)\b/;
+  /\b(headaches?|pain|hurts?|aches?|dizz\w*|sleep\w*|cough\w*|nause\w*|all the time|all day|every|lately|since|after|when|during|because|in the (morning|afternoon|evening)|at night|of (these|my|the)|weeks?|months?|days?|today|tonight|yesterday)\b/;
+const CONTINUE = /\b(don't|do not|dont)\s+stop\b|\b(keep going|carry on|continue|go on|go ahead)\b/;
+const STOP_PHRASES =
+  /\b(that'?s|that is|it'?s|this is) enough\b|\benough (questions|now|for today|please)\b|\bi'?ve had enough\b|\bi have had enough\b|\btoo many questions\b|\bno more questions\b|\b(need|take|have|want) a (break|pause)\b(?! from)|\bend the practice\b|^\s*(i'm|i am) done\b|^\s*that'?s all\b|\b(i want to|i'd like to|i would like to|let's|can we|we can|i'm going to|i need to) (quit|finish|end|wrap up)( this| it| now| here| the practice| the session| for today)*\s*[.!?]*\s*$/;
+const NOT_A_REQUEST_NEXT = new Set(["sign", "signs", "light", "lights", "button", "motion", "watch"]);
 function isStopRequest(text: string): boolean {
   const t = norm(text);
-  if (/\b(enough( questions)?|too many questions|no more questions|(need|take|have|want) a (break|pause)|end the practice)\b/.test(t)) return true;
+  if (CONTINUE.test(t)) return false;
+  if (STOP_PHRASES.test(t)) return true;
   for (const m of t.matchAll(/\bstop\b/g)) {
     const before = t.slice(0, m.index);
     const next = t.slice((m.index ?? 0) + 4).match(/^\s*([a-z']+)/)?.[1];
@@ -55,7 +64,8 @@ function isStopRequest(text: string): boolean {
       /\b(can't|cannot|couldn't|won't|unable to|not able to)\s+(seem to\s+)?$/.test(before) ||
       /\b(bus|train|tram)\s+$/.test(before) ||
       /non-?$/.test(before) ||
-      (next !== undefined && next.endsWith("ing") && !REQUEST_ING.has(next));
+      /\b(said|says|told me|told us|tells me)\s+(to\s+)?$/.test(before) ||
+      (next !== undefined && (NOT_A_REQUEST_NEXT.has(next) || (next.endsWith("ing") && !REQUEST_ING.has(next))));
     if (!aboutOwnLife) return true;
   }
   return /\b(i'm|i am|im|we're|we are)\s+(so |too |really |very |just )?tired\b/.test(t) && t.split(/\s+/).length <= 6 && !TIRED_CONTEXT.test(t);

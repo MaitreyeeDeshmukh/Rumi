@@ -6,7 +6,8 @@
  * `validateGrounding` runs both so a smuggled blank can not be forgotten.
  */
 import type { GuardCode } from "@/features/shared/guards";
-import { COMMON_DRUGS, MONTHS, NUMBER_WORDS, RELATIVE_TIME, SENTENCE_STARTERS, UNITS, WEEKDAYS, toSet } from "@/features/shared/lists";
+import { COMMON_DRUGS, MONTHS, NUMBER_WORDS, RELATIVE_TIME, SENTENCE_STARTERS, STOPWORDS, UNITS, WEEKDAYS, toSet } from "@/features/shared/lists";
+import { EXTRA_DRUGS } from "@/lib/text/extraDrugs";
 import type { EvidenceLedger } from "@/features/shared/task";
 import { normalizeText, splitSentences, wordList } from "@/lib/text/tokens";
 
@@ -18,16 +19,8 @@ export interface SpecificsResult {
 
 const MONTH_SET = toSet(MONTHS);
 const WEEKDAY_SET = toSet(WEEKDAYS);
-/** Brands and generics the shared list lacks. Lowercase only. */
-const EXTRA_DRUGS = [
-  "panadol", "percocet", "hydroxychloroquine", "excedrin", "nurofen", "voltaren", "zyrtec", "claritin", "prilosec", "nexium",
-  "zantac", "imodium", "lipitor", "ozempic", "wegovy", "viagra", "cialis", "oxycontin", "vicodin", "dilaudid", "suboxone",
-  "methadone", "prednisolone", "dexamethasone", "hydrocortisone", "ranitidine", "famotidine", "fexofenadine", "ventolin",
-  "salbutamol", "amitriptyline", "propranolol", "buspirone", "hydroxyzine", "modafinil", "vyvanse", "lisdexamfetamine",
-  "dexamfetamine", "dextroamphetamine", "concerta", "strattera", "ketamine", "codamol", "cocodamol", "metoclopramide",
-  "ondansetron", "loperamide", "gaviscon", "benzonatate", "sildenafil",
-];
 const DRUG_SET: ReadonlySet<string> = new Set([...COMMON_DRUGS, ...EXTRA_DRUGS]);
+const STOP = toSet(STOPWORDS);
 export const isDrugWord = (w: string): boolean => DRUG_SET.has(w.toLowerCase());
 const NUMBER_WORD_SET = toSet(NUMBER_WORDS);
 /** Spelled-out units the shared list lacks. Each maps to the same canonical unit as its symbol (UNIT_CANON). */
@@ -42,7 +35,7 @@ const WORD_UNIT_SET = new Set([...UNIT_SET].filter((u) => !["x", "g", "l", "st",
 
 const KEEP = new Set(["i", "rumi"]);
 /** Pronouns and place words that start a sentence with a verb after them ("She asked ...") without being a person's name. */
-const NOT_NAMES = new Set(["he", "she", "they", "we", "you", "it", "there", "here", "everyone", "someone", "nobody", "somebody", "anyone", "people", "one"]);
+const NOT_NAMES = new Set(["doctors", "nurses", "doctor", "nurse", "clinician", "clinicians", "staff", "patients", "others", "he", "she", "they", "we", "you", "it", "there", "here", "everyone", "someone", "nobody", "somebody", "anyone", "people", "one"]);
 const STARTERS = toSet(SENTENCE_STARTERS);
 /** Characters after which a word begins a new clause, like a sentence start: "I want to ask: Why ...", "Hello, Thank you", She asked, "Why ...". */
 const CLAUSE_OPENERS = new Set([":", ",", '"', "“", "‘", "(", "["]);
@@ -118,6 +111,10 @@ const prep = (s: string): string =>
     String(TENS[t.toLowerCase()] + ONES[o.toLowerCase()]),
   );
 const BLANK_RE = /\[[^[\]]*\]/g;
+const DATE = /(?<!\d)(\d{1,4})\/(\d{1,2})(?:\/(\d{1,4}))?(?!\d)/g;
+/** Words before a person word that make it a general idea ("a friend", "your family"), not a claim about the user's life. */
+const GENERIC_BEFORE = new Set(["a", "an", "any", "another", "your", "some", "one", "each", "every", "no"]);
+const FAMILY_TERMS = new Set(["history", "doctor", "medicine", "practice", "planning", "member", "members"]);
 const TOKEN = /(\p{Nd}+(?:[.,]\p{Nd}+)*)([\p{L}\p{M}%]*)|([\p{L}\p{M}]+(?:'[\p{L}\p{M}]+)?)/gu;
 const canonNumber = (n: string): string => n.replace(/,(?=\d{3}(?:\D|$))/g, "");
 
@@ -143,10 +140,17 @@ const amount = (value: string, unit: string, raw: string, sentence: number): Cla
 };
 const word = (lower: string, raw: string, sentence: number): Claim => ({ need: `w:${lower}`, keys: [`w:${lower}`], raw, sentence });
 
-function scan(text: string, extraDrugs: ReadonlySet<string> = new Set()): Claim[] {
-  const claims: Claim[] = [];
-  const phrases: Claim[] = [];
-  splitSentences(prep(text).replace(BLANK_RE, " ")).forEach((sentence, si) => {
+interface ScannedSentence {
+  text: string;
+  /** In token order. */
+  claims: Claim[];
+  phrases: Claim[];
+}
+
+function scanSentences(text: string, extraDrugs: ReadonlySet<string> = new Set()): ScannedSentence[] {
+  return splitSentences(prep(text).replace(BLANK_RE, " ")).map((sentence, si) => {
+    const claims: Claim[] = [];
+    const phrases: Claim[] = [];
     const toks = [...sentence.matchAll(TOKEN)];
     const nextWord = (i: number, from: number, units: ReadonlySet<string>): RegExpMatchArray | undefined => {
       const n = toks[i + 1];
@@ -192,7 +196,14 @@ function scan(text: string, extraDrugs: ReadonlySet<string> = new Set()): Claim[
       if (/\p{Script=Latin}/u.test(raw) && /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(raw)) return void claims.push(word(lower, raw, si));
       const month = MONTH_SET.has(lower) && (!AMBIGUOUS_MONTHS.has(lower) || (capital && i > 0));
       if (DRUG_SET.has(lower) || extraDrugs.has(lower)) return void claims.push({ ...word(lower, raw, si), drug: lower });
-      if (WEEKDAY_SET.has(lower) || month || PERSON_WORDS.has(lower)) return void claims.push(word(lower, raw, si));
+      if (WEEKDAY_SET.has(lower) || month) return void claims.push(word(lower, raw, si));
+      if (PERSON_WORDS.has(lower)) {
+        // "a friend", "your family" are asks and "ex-smoker", "family history" are not people; "my kid", "Mom hits me" are claims.
+        const prev = toks[i - 1]?.[3]?.toLowerCase();
+        const generic = (prev !== undefined && GENERIC_BEFORE.has(prev)) || sentence[start + raw.length] === "-" || (lower === "family" && FAMILY_TERMS.has(toks[i + 1]?.[3]?.toLowerCase() ?? ""));
+        if (!generic) return void claims.push(word(lower, raw, si));
+        return;
+      }
       if (base.length >= 2 && base === base.toUpperCase() && base !== base.toLowerCase() && !CAPS_OK.has(base)) return void claims.push(word(lower, raw, si));
       if (!capital || KEEP.has(lower) || TITLES.has(lower) || CAPS_OK.has(base) || KNOWN_CAPITALS.has(lower)) return;
       const opener = sentence.slice(0, start).trimEnd().slice(-1);
@@ -207,9 +218,19 @@ function scan(text: string, extraDrugs: ReadonlySet<string> = new Set()): Claim[
       phrases.push({ need: `p:${p}`, keys: one ? [`p:${p}`, `a:1|${one[1]}`] : [`p:${p}`], raw: p, sentence: -1 });
     }
     for (const v of flat.matchAll(VAGUE)) phrases.push({ need: `v:${v[0].trim()}`, keys: [`v:${v[0].trim()}`], raw: v[0].trim(), sentence: -1 });
+    // Dates keep their order: 5/11 is not 11/5.
+    for (const d of sentence.matchAll(DATE)) {
+      const key = [d[1], d[2], d[3]].filter(Boolean).map(canonNumber).join("/");
+      phrases.push({ need: `d:${key}`, keys: [`d:${key}`], raw: d[0], sentence: -1 });
+    }
+    return { text: sentence, claims, phrases };
   });
-  return [...claims, ...phrases];
 }
+
+const scan = (text: string, extraDrugs?: ReadonlySet<string>): Claim[] => {
+  const all = scanSentences(text, extraDrugs);
+  return [...all.flatMap((s) => s.claims), ...all.flatMap((s) => s.phrases)];
+};
 
 const ledgerKeys = (ledger: EvidenceLedger): Set<string> => {
   const text = ledger.items.map((i) => i.text).join("\n");
@@ -230,26 +251,73 @@ export function specificsCodes(text: string | readonly string[], ledger: Evidenc
   return texts.some((t) => !ungroundedSpecifics(t, ledger).ok) ? ["invented_specific"] : [];
 }
 
+/** Words that sit before a dose without being a medicine name ("Take 5 mg", "Dose 5 mg", "only 5 mg"). */
+const DOSE_WORDS = new Set([
+  "take", "takes", "taking", "dose", "doses", "give", "gives", "given", "daily", "tablet", "tablets", "pill", "pills", "capsule",
+  "capsules", "about", "around", "another", "extra", "only", "maximum", "minimum", "total", "every", "each", "twice", "once",
+  "thrice", "medicine", "medication", "drug", "drugs", "dosage", "within", "after", "before", "until",
+]);
+const isNameCandidate = (w: string): boolean =>
+  /^\p{L}{4,}$/u.test(w) && !isDrugWord(w) && !STOP.has(w) && !DOSE_WORDS.has(w) && !UNIT_SET.has(w) && !NUMBER_WORD_SET.has(w) && !MONTH_SET.has(w) && !WEEKDAY_SET.has(w);
+
+interface DoseItem {
+  drug?: string;
+  amount?: string;
+  at: number;
+  end: number;
+}
+
 /**
- * Doses bound to medicines: "drug|amount" pairs. An amount belongs to the nearest medicine BEFORE it in its sentence,
- * else the nearest one AFTER it in the same sentence ("Take 400 mg of ibuprofen"), else the last medicine of an earlier
- * sentence. `extraNames` are medicine names the lists do not know (a name taken from a "Name: details" item).
+ * Doses bound to medicines: "drug|amount" pairs, bound by position, one rule for every amount:
+ * 1. "5 mg of warfarin", "5 mg for warfarin": the medicine right after "of/for" owns the amount.
+ * 2. Otherwise the nearest medicine BEFORE it ("warfarin 5 mg"), unless another amount sits between them (then it is unbound).
+ * 3. With no medicine before: the nearest one after it ("Take 400 mg ibuprofen"), with no other amount between.
+ * 4. With no medicine in the sentence at all: the last medicine of an earlier sentence.
+ * An unbound amount supports no pair, so an item that needs it is demoted (ambiguity means demotion).
+ * A word that sits next to a dose amount and is not an ordinary word ("Quillan 10 mg", "5 mg of Zorbex") counts as a
+ * medicine too, so an unlisted second medicine can not lend its dose to the first. `extraNames` are medicine names the
+ * lists do not know (the name taken from a "Name: details" item).
+ * KNOWN LIMIT: a medicine written in a way none of this sees ("the blue one", "it") owns nothing.
  */
 export function dosesByDrug(text: string, extraNames: readonly string[] = []): Set<string> {
+  const extras = new Set(extraNames.map((n) => n.toLowerCase()));
   const out = new Set<string>();
-  const claims = scan(text, new Set(extraNames.map((n) => n.toLowerCase()))).filter((c) => c.sentence >= 0 && (c.drug || c.amount));
   let last: string | undefined;
-  for (const sentence of new Set(claims.map((c) => c.sentence))) {
-    const here = claims.filter((c) => c.sentence === sentence);
-    let before: string | undefined;
-    here.forEach((c, i) => {
-      if (c.drug) before = c.drug;
-      else if (c.amount) {
-        const bound = before ?? here.slice(i + 1).find((d) => d.drug)?.drug ?? last;
-        if (bound) out.add(`${bound}|${c.amount}`);
-      }
+  for (const { text: s, claims } of scanSentences(text, extras)) {
+    const items: DoseItem[] = [];
+    let cursor = 0;
+    for (const c of claims) {
+      if (!c.drug && !c.amount) continue;
+      const at = s.indexOf(c.raw, cursor);
+      if (at < 0) continue;
+      cursor = at + c.raw.length;
+      items.push({ drug: c.drug, amount: c.amount, at, end: cursor });
+    }
+    const candidate = (word: string, at: number): void => {
+      const w = word.toLowerCase();
+      if (isNameCandidate(w) && !extras.has(w) && !items.some((x) => x.drug && x.at === at)) items.push({ drug: w, at, end: at + word.length });
+    };
+    for (const a of [...items]) {
+      if (!a.amount || measureUnit(a.amount.split("|")[1]) === undefined) continue;
+      const before = /(\p{L}+)\s+$/u.exec(s.slice(0, a.at));
+      if (before) candidate(before[1], a.at - before[0].length);
+      const after = /^(\s+(?:of|for)\s+(?:the\s+)?)(\p{L}+)/u.exec(s.slice(a.end));
+      if (after) candidate(after[2], a.end + after[1].length);
+    }
+    items.sort((x, y) => x.at - y.at);
+    items.forEach((a, i) => {
+      if (!a.amount) return;
+      const prevIdx = items.findLastIndex((x, k) => k < i && x.drug);
+      const nextIdx = items.findIndex((x, k) => k > i && x.drug);
+      const clear = (from: number, to: number): boolean => !items.slice(from + 1, to).some((x) => x.amount);
+      let bound: string | undefined;
+      if (nextIdx >= 0 && /^\s*(?:of|for)\s+(?:the\s+)?$/.test(s.slice(a.end, items[nextIdx].at))) bound = items[nextIdx].drug;
+      else if (prevIdx >= 0) bound = clear(prevIdx, i) ? items[prevIdx].drug : undefined;
+      else if (nextIdx >= 0) bound = clear(i, nextIdx) ? items[nextIdx].drug : undefined;
+      else bound = last;
+      if (bound) out.add(`${bound}|${a.amount}`);
     });
-    last = [...here].reverse().find((c) => c.drug)?.drug ?? last;
+    last = items.findLast((x) => x.drug)?.drug ?? last;
   }
   return out;
 }

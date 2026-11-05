@@ -30,20 +30,30 @@ const MAX_UNCONFIRMED = 10;
 const MAX_UNCONFIRMED_CHARS = 300;
 const PREFIX = "I could not confirm this: ";
 const UNCLEAR = /\[\s*unclear\s*\]/i;
-/** Each sentence of an item must have at least this share of its content words in the cited lines. */
-const SENTENCE_COVERAGE = 0.75;
 /**
- * Ordinary connecting words an item may use without the line saying them (a paraphrase, not a new fact), and negators and
- * contraction heads (their meaning is checked by the yes/no parity, so "Never skip" may stand for "Do not skip").
+ * Ordinary connecting and reporting words an item may use without the line saying them (a paraphrase, not a new fact):
+ * "The clinician asked if you have allergies." for "Do you have allergies?". Negators and contraction heads are left out
+ * of the coverage count because their meaning is checked by the yes/no parity below.
  */
 const SAFE_ABSENT = new Set([
-  "next", "again", "also", "soon", "later", "never", "none", "without", "cannot", "nor", "don", "doesn", "didn", "won", "shouldn", "mustn",
-  "isn", "aren", "wasn", "couldn", "wouldn",
+  "next", "again", "also", "soon", "later", "cannot", "don", "doesn", "didn", "won", "shouldn", "mustn", "isn", "aren", "wasn", "couldn",
+  "wouldn", "clinician", "doctor", "nurse", "asked", "asks", "said", "told", "mentioned", "answered", "wants", "wondered", "whether",
+  "medicine", "medicines", "medication", "medications",
 ]);
-/** The content words of a sentence that the cited lines must back: no measure units (the amount check covers those), no safe words. */
+/** Words that say "do not" or flip a meaning. An even count (do NOT SKIP) means the sentence is positive. */
+const NEGATORS = new Set([
+  "not", "never", "no", "nor", "none", "cannot", "can't", "cant", "don't", "dont", "doesn't", "didn't", "won't", "wont", "shouldn't",
+  "mustn't", "isn't", "aren't", "wasn't", "avoid", "stop", "skip", "without", "discontinue", "quit", "refrain", "unless", "except", "unable",
+  "fail", "forget", "hesitate",
+]);
+/** The content words of a sentence that the cited lines must back: no measure units (the amount check covers those), no safe words, no negators. */
 const needed = (sentence: string): string[] => [
-  ...new Set(contentWords(sentence).filter((w) => !SAFE_ABSENT.has(w) && measureUnit(w) === undefined).map(stem)),
+  ...new Set(contentWords(sentence).filter((w) => !SAFE_ABSENT.has(w) && !NEGATORS.has(w) && measureUnit(w) === undefined).map(stem)),
 ];
+/** How many content words of a sentence the lines may leave unsaid: none in a short sentence, one per six words in a long one. */
+const allowedMissing = (count: number): number => (count < 8 ? 0 : Math.floor(count / 6));
+/** Clauses that follow these words are judged on their own: every content word of them must be backed. */
+const CLAUSE_SPLIT = /\s+(?:and|but|because|caused by|due to|so)\s+/i;
 /** Sections that say what the clinician told the user: the user's own words can not be their source. */
 const CLINICIAN_SECTIONS = new Set(["instructions", "next_steps", "medications"]);
 const CONDITION_LIST = CONDITIONS.filter((c) => c !== "add");
@@ -71,23 +81,42 @@ function containsPhrase(haystack: string, phrase: string): boolean {
   return escaped.length > 0 && new RegExp(`(?<![\\p{L}\\p{N}-])${escaped}(?![\\p{L}\\p{N}-])`, "u").test(lower(haystack).replace(/[^\p{L}\p{N}'-]+/gu, " "));
 }
 
-/** Words that say "do not" or flip a meaning. An even count (do NOT SKIP) means the sentence is positive. */
-const NEGATORS = new Set([
-  "not", "never", "no", "nor", "none", "cannot", "can't", "cant", "don't", "dont", "doesn't", "didn't", "won't", "wont", "shouldn't",
-  "mustn't", "isn't", "aren't", "wasn't", "avoid", "stop", "skip", "without", "discontinue", "quit",
-]);
+/**
+ * Phrases whose double negation is plain advice: "do not forget to bring" means "bring", "do not skip" means "take".
+ * Applied to the item and to the lines alike, before counting negators.
+ */
+const meaning = (s: string): string =>
+  lower(s)
+    .replace(/\b(?:do not|don't|dont|never)\s+(?:forget|hesitate)\s+to\b/g, " ")
+    .replace(/\b(?:do not|don't|dont|never)\s+(?:skip|miss)\b/g, "take");
 const NEGATOR_PHRASES = /\b(hold off|stay away from|give up)\b/g;
-const negationCount = (sentence: string): number =>
-  words(sentence).filter((w) => NEGATORS.has(w)).length + (lower(sentence).match(NEGATOR_PHRASES) ?? []).length;
+const negationCount = (sentence: string): number => words(sentence).filter((w) => NEGATORS.has(w)).length + (sentence.match(NEGATOR_PHRASES) ?? []).length;
 const OPPOSITES: readonly (readonly [string, string])[] = [
   ["start", "stop"], ["begin", "stop"], ["increase", "decrease"], ["more", "less"], ["before", "after"], ["raise", "lower"],
 ];
+/** "must" and "may" are different promises. Only a disagreement between the two sentences counts; an item may drop the modal word. */
+const OBLIGATION = /\b(must|should|shall|ought|have to|has to|need to|needs to)\b/;
+const PERMISSION = /\b(may|can|could|might|allowed)\b/;
+const modality = (s: string): "must" | "may" | undefined => {
+  const must = OBLIGATION.test(s);
+  const may = PERMISSION.test(s);
+  return must === may ? undefined : must ? "must" : "may";
+};
+const REPORTING = /\b(asked|asks|asking|wondered|wonders|wants? to know|whether|question)\b/;
 
+/** Does the item sentence say something else than the cited sentence: yes/no, opposite word, must/may, question/statement? */
 function flipped(itemSentence: string, citedSentence: string): boolean {
-  if (negationCount(itemSentence) % 2 !== negationCount(citedSentence) % 2) return true;
-  const a = new Set(words(itemSentence));
-  const b = new Set(words(citedSentence));
-  return OPPOSITES.some(([x, y]) => (a.has(x) && b.has(y) && !b.has(x)) || (a.has(y) && b.has(x) && !b.has(y)));
+  const item = meaning(itemSentence);
+  const cited = meaning(citedSentence);
+  if (negationCount(item) % 2 !== negationCount(cited) % 2) return true;
+  const a = new Set(words(item));
+  const b = new Set(words(cited));
+  if (OPPOSITES.some(([x, y]) => (a.has(x) && b.has(y) && !b.has(x)) || (a.has(y) && b.has(x) && !b.has(y)))) return true;
+  const [mi, mc] = [modality(item), modality(cited)];
+  if (mi && mc && mi !== mc) return true;
+  // A question in the lines may be reported ("The clinician asked if ..."), never turned into a statement, or the reverse.
+  const asks = citedSentence.trim().endsWith("?");
+  return asks ? !(itemSentence.trim().endsWith("?") || REPORTING.test(item)) : itemSentence.trim().endsWith("?");
 }
 
 const overlap = (a: string, b: string): number => {
@@ -103,14 +132,18 @@ function supported(item: RecapItem, byId: Map<string, TranscriptLine>, mySpeaker
   if (CLINICIAN_SECTIONS.has(item.section) && !lines.some((l) => l.speaker !== mySpeaker)) return false;
   const texts = lines.map((l) => l.text);
   const joined = texts.join(" ");
-  if (!lineOverlaps(item.text, joined)) return false;
 
-  // Every sentence of the item must be backed by the cited lines, and mean the same (yes or no).
-  const have = allStems(joined);
+  // Every sentence of the item must be backed by the cited lines, and mean the same.
+  const have = allStems(meaning(joined));
+  // The item must say something of its own that a cited line backs (reporting words and negators alone are not content).
+  const own = needed(meaning(item.text));
+  if (!own.some((w) => have.has(w))) return false;
   const citedSentences = texts.flatMap((t) => splitSentences(t));
   for (const sentence of splitSentences(item.text)) {
-    const need = needed(sentence);
-    if (need.length > 0 && need.filter((w) => have.has(w)).length < Math.ceil(need.length * SENTENCE_COVERAGE)) return false;
+    const need = needed(meaning(sentence));
+    if (need.filter((w) => !have.has(w)).length > allowedMissing(need.length)) return false;
+    // A clause added with and/but/because/caused by must be backed word for word.
+    if (sentence.split(CLAUSE_SPLIT).slice(1).some((clause) => needed(meaning(clause)).some((w) => !have.has(w)))) return false;
     let best = citedSentences[0];
     let bestScore = -1;
     for (const c of citedSentences) {

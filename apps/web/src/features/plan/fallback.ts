@@ -25,7 +25,12 @@ function fnv1a(s: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-const itemFor = (sentence: string, n: number) => {
+const LEADING_COURTESY = /^(?:(?:hi|hello|hey|thanks|thank you|good (?:morning|afternoon|evening)|sorry|please|okay|ok)\b[\s,!.]*)+/i;
+const THANKS_FOR = /^for (?:seeing|helping|your time|having|meeting|taking|listening)\b.*$/i;
+/** A sentence is a concern when something is left after greetings and thanks ("Thanks for seeing me." is not one). */
+const hasConcern = (s: string): boolean => contentWords(s.replace(LEADING_COURTESY, "").replace(THANKS_FOR, "")).length > 0;
+
+const itemFor =(sentence: string, n: number) => {
   const question = sentence.endsWith("?");
   const prefix = question ? ASK : TELL;
   const text = prefix.length + sentence.length <= FALLBACK_ITEM_MAX ? prefix + sentence : truncateAtWord(sentence, FALLBACK_ITEM_MAX);
@@ -37,7 +42,7 @@ export function planFallback(r: PlanRequestT, createdAt: string = DEMO_PLAN.crea
   // Copied text is cleaned here too (bidi overrides, zero-width and control characters), not only by the harness.
   const clean = r.rawText.replace(/\p{Cf}/gu, "").replace(/(?![\n\t])\p{Cc}/gu, "");
   // A greeting or an "ok" is not a concern: only sentences with at least one content word become items.
-  const sentences = splitSentences(clean).filter((s) => contentWords(s).length > 0);
+  const sentences = splitSentences(clean).filter(hasConcern);
   const id = `plan-${fnv1a(clean)}`;
   const base = { id, title: "Visit plan", createdAt, symptomsInMyWords: [] };
   if (sentences.length === 0) {
