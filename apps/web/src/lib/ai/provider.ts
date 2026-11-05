@@ -82,7 +82,7 @@ export function createGroqProvider(deps: { fetchFn?: typeof fetch } = {}): Provi
             max_completion_tokens: call.maxOutputTokens,
             response_format: { type: "json_object" },
             // Only the gpt-oss models take this parameter; any other model answers 400 to it.
-            ...(model.includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
+            ...(model.toLowerCase().includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
             stream: false,
           }),
           signal: call.signal,

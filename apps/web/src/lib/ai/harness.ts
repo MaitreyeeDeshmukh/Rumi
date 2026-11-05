@@ -49,6 +49,9 @@ const BREAKER_FAILS = 3;
 const BREAKER_PAUSE_MS = 30_000;
 /** The tier 2 crisis question needs a one-word answer; the cap is for the reasoning tokens of a small model. */
 const CLASSIFY_MAX_TOKENS = 400;
+/** Text the regex layer found nothing in (tier none) is still asked about when it holds this much text, and only while this much time is left. */
+const CLASSIFY_NONE_MIN_CHARS = 12;
+const CLASSIFY_NONE_MIN_LEFT_MS = 6_000;
 const MAX_MODEL_TEXT = 100_000;
 
 /** Keys whose values are ids or enum values (checked by Zod): never redacted, scanned or stripped as free text. */
@@ -150,7 +153,9 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
     // Anything that is not a ProviderError is a bug in a provider; it counts as a failed call like any other.
     const kind = e instanceof ProviderError ? e.kind : "http";
     run.ev.providerKind = kind;
-    if (kind !== "config" && kind !== "aborted") {
+    // Only a provider that is down counts. An empty answer (a reasoning model that spent its tokens thinking) or an abort says nothing
+    // about the provider, and must not open the breaker for every user.
+    if (kind === "http" || kind === "timeout") {
       breaker.fails += 1;
       breaker.version += 1;
       // The pause is counted from this failure, which is when it is noticed (a call that hangs fails at its timeout).
@@ -164,10 +169,17 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
 
 // ---------------------------------------------------------------- model text
 
-/** JSON.parse that accepts one ``` fence around the JSON and drops a __proto__ key. undefined when it is not JSON. */
-/** The model's own crisis flag in any shape: prose around it, a fence, nested, quoted, any case. Matching the raw text is deliberate. */
-const MODEL_CRISIS_FLAG = /["']?crisis["']?\s*[:=]\s*["']?true\b/i;
+/**
+ * The model's own crisis flag in any shape: prose around it, a fence, nested, any case, straight or curly quotes, and the values
+ * true, 1 and yes. Matching the raw text is deliberate. It is read after NFKC (fullwidth letters, colons and quotes become plain)
+ * and with invisible characters removed, so neither hides it.
+ */
+const FLAG_QUOTE = "[\"'“”‘’]";
+const MODEL_CRISIS_FLAG = new RegExp(`${FLAG_QUOTE}?crisis${FLAG_QUOTE}?\\s*[:=]\\s*${FLAG_QUOTE}?(?:true|1|yes)\\b`, "i");
+const FLAG_INVISIBLE = /[­​-‏⁠-⁤﻿]/g;
+const modelFlagsCrisis = (text: string): boolean => MODEL_CRISIS_FLAG.test(text.slice(0, MAX_MODEL_TEXT).normalize("NFKC").replace(FLAG_INVISIBLE, ""));
 
+/** JSON.parse that accepts one ``` fence around the JSON and drops a __proto__ key. undefined when it is not JSON. */
 function parseModelJson(text: string): unknown {
   if (text.length > MAX_MODEL_TEXT) return undefined;
   let body = text.trim();
@@ -184,13 +196,16 @@ function parseModelJson(text: string): unknown {
   }
 }
 
-/** Tier 2 (07 D43): true means show the crisis card. A failed call, an unreadable answer or a wrong shape all mean yes. */
-async function modelSaysCrisis(run: Run, provider: Provider | undefined, nonce: string, text: string): Promise<boolean> {
+/** The classifier's answer. "failed": the call failed, or the answer was unreadable or in the wrong shape. */
+type Classified = "yes" | "no" | "failed";
+
+/** Tier 2 (07 D43), one cheap call. The caller decides what a failure means: the card for tier check, nothing for tier none. */
+async function classify(run: Run, provider: Provider | undefined, nonce: string, text: string): Promise<Classified> {
   const prompt = buildCrisisCheckPrompt(nonce, text);
   const call = await callProvider(run, provider, { tier: "fast", ...prompt, temperature: 0, maxOutputTokens: CLASSIFY_MAX_TOKENS });
-  if (!call.ok) return true;
+  if (!call.ok) return "failed";
   const answer = ClassifierAnswer.safeParse(parseModelJson(call.result.text));
-  return !answer.success || answer.data.crisis;
+  return !answer.success ? "failed" : answer.data.crisis ? "yes" : "no";
 }
 
 type Verdict<Reply> = { kind: "crisis" } | { kind: "checked"; codes: GuardCode[]; reply?: Reply };
@@ -200,7 +215,7 @@ const unique = <T>(list: readonly T[]): T[] => [...new Set(list)];
 /** Everything between the model's text and a reply the user may see. Returns codes only, never text. */
 function checkOutput<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req, ledger: EvidenceLedger, text: string, canary: string | undefined): Verdict<Reply> {
   const raw = parseModelJson(text);
-  if ((isRecord(raw) && raw.crisis === true) || MODEL_CRISIS_FLAG.test(text.slice(0, MAX_MODEL_TEXT))) return { kind: "crisis" }; // D5: read before Zod, so a reply of only {"crisis":true} counts
+  if ((isRecord(raw) && raw.crisis === true) || modelFlagsCrisis(text)) return { kind: "crisis" }; // D5: read before Zod, so a reply of only {"crisis":true} counts
   if (canary !== undefined && containsCanary(text, canary)) return { kind: "checked", codes: ["schema"] };
   const parsed = spec.modelOut.safeParse(raw);
   if (!parsed.success) return { kind: "checked", codes: ["schema"] };
@@ -334,21 +349,36 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
     // 4. crisis: deterministic, before any model sees anything
     stage = "crisis";
+    const fields = Object.values(spec.crisisFields(r));
     const flagged: string[] = [];
-    for (const text of Object.values(spec.crisisFields(r))) {
+    for (const text of fields) {
       const tier = crisisTier(text);
       if (tier === "certain") return finish(crisis());
       if (tier === "check") flagged.push(text);
     }
     const nonce = rand();
     const provider = deps.provider ?? (mockAiEnabled() ? undefined : defaultProvider());
+    // MOCK_AI outside production is a demo: no provider is called, not even for the classifier, so harmless sentences get no card.
+    const demo = mockAiEnabled() && !isProduction();
+    // Numbers and contacts are redacted but names are not ("I am Hopeless" must stay readable to the classifier).
+    const classifierText = (texts: string[]): string => redactPii(texts.map((t) => t.slice(0, LIMITS.rawTextMax)).join("\n"), { names: false }).text;
     if (flagged.length > 0) {
       stage = "provider";
       // Text that tries to steer the classifier is not trusted to it: the card is shown.
       if (flagged.some((t) => scanInjection(t) > 0)) return finish(crisis());
-      // Numbers and contacts are redacted but names are not ("I am Hopeless" must stay readable to the classifier).
-      const text = redactPii(flagged.map((t) => t.slice(0, LIMITS.rawTextMax)).join("\n"), { names: false }).text;
-      if (await modelSaysCrisis(run, provider, nonce, text)) return finish(crisis());
+      // Tier check fails safe: a failed call, an unreadable answer and an open breaker all mean the card.
+      if (!demo && (await classify(run, provider, nonce, classifierText(flagged))) !== "no") return finish(crisis());
+    } else if (!demo) {
+      // Tier none fails open: the regex layer misses about a third of real phrasings, so enough text is asked about, but an outage must
+      // not turn every message into a card. Text with an injection hit is not sent (a steered "no" would change nothing here).
+      const typed = fields.filter((t) => t.trim() !== "");
+      const timeLeft = DEADLINE_MS - (now() - run.startedAt);
+      if (typed.reduce((n, t) => n + t.trim().length, 0) >= CLASSIFY_NONE_MIN_CHARS && timeLeft >= CLASSIFY_NONE_MIN_LEFT_MS && !typed.some((t) => scanInjection(t) > 0)) {
+        stage = "provider";
+        const verdict = await classify(run, provider, nonce, classifierText(typed));
+        ev.classifier = verdict === "failed" ? "none_failed" : "none_ok";
+        if (verdict === "yes") return finish(crisis());
+      }
     }
 
     // 5. personal details out, injection counted (never blocked)
