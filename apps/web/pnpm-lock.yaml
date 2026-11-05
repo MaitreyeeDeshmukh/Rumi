@@ -175,6 +175,9 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      supermemory:
+        specifier: 5.1.2
+        version: 5.1.2
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -2203,6 +2206,11 @@ packages:
         optional: true
       babel-plugin-macros:
         optional: true
+
+  supermemory@5.1.2:
+    resolution: {integrity: sha512-dUVDfciBjUpjJ17l01IvWRuNRicUvfSMrtmi9+YDLTQ04yoVdiA+fQNdEu2uKYTWqWf3LsbBH1N3MUDTpSHOMA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
@@ -4508,6 +4516,8 @@ snapshots:
       react: 19.3.0
     optionalDependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
+
+  supermemory@5.1.2: {}
 
   supports-color@7.2.0:
     dependencies:
