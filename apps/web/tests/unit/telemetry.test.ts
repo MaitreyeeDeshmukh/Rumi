@@ -120,3 +120,11 @@ describe("logEvent: narrow shapes", () => {
     }
   });
 });
+
+describe("logEvent: stage", () => {
+  it("is written only when set, and only from the fixed list", () => {
+    expect(JSON.parse(capture({ ...base, stage: "prompt" })[0]).stage).toBe("prompt");
+    expect(JSON.parse(capture({ ...base, stage: "my head hurts" })[0]).stage).toBe("unknown");
+    expect(JSON.parse(capture(base)[0])).not.toHaveProperty("stage");
+  });
+});
