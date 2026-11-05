@@ -193,3 +193,51 @@ describe("P2-8 false demotion: faithful answers are not refused", () => {
     expect([ECHO_OK.length, ECHO_MUST_BLOCK.length, TIME_QUESTIONS.length, PLAN_PARAPHRASES.length, HINTS.length].every((n) => n >= 30 || n === ECHO_MUST_BLOCK.length)).toBe(true);
   });
 });
+
+describe("each rule is needed on its own (survivors of the round 2 mutation run)", () => {
+  it("whatever the crisis check would stop is also hard in an answer, even when the user said the words", () => {
+    for (const t of ["I have chest pain right now.", "I cannot breathe right now."]) {
+      expect(inventedClaimCodes(t, [t]), t).toEqual(["invented_specific"]);
+    }
+  });
+  it("harm wording the crisis check does not know is hard in an answer, even when the user said the words", () => {
+    for (const t of ["Sam's dad hits him.", "He hurt her.", "They are hurting themselves.", "Mom hurts Sam."]) {
+      expect(inventedClaimCodes(t, [t]), t).toEqual(["invented_specific"]);
+    }
+  });
+  it("a topic the clinician asked about may be named in a question, or in a sentence that says nothing about the person", () => {
+    expect(sayHard(3, "Do you smoke?", "Can you ask me about smoking?")).toEqual([]);
+    expect(sayHard(3, "Do you have any allergies?", "I am not sure about allergies.")).toEqual([]);
+    expect(sayHard(3, "Do you have any allergies?", "I want to ask about allergies.")).toEqual([]);
+    expect(sayHard(3, "Do you have any allergies?", "I have allergies.")).toContain("invented_specific");
+  });
+  it("a level 1 question with I or my but no 'you' is about the user", () => {
+    expect(sayHard(1, "How long?", "Do I have headaches? You can start with: I am not sure ...")).toContain("level1_statement");
+    expect(sayHard(1, "How long?", "Is my head sore? You can start with: I am not sure ...")).toContain("level1_statement");
+  });
+  it("the starter has at most four words, counting every word", () => {
+    expect(sayHard(1, "How long?", "What do you want to add? You can start with: It started to feel ...")).toEqual([]);
+    expect(sayHard(1, "How long?", "What do you want to add? You can start with: It started to feel it ...")).toContain("level1_statement");
+  });
+  it("a question that starts like an order (Don't you ...) is still a question", () => {
+    expect(sayDr("Don't you take anything for it?")).toEqual([]);
+    expect(sayDr("Don't take anything for it.")).toContain("advice_treatment");
+  });
+  it("demoted text about sleep or an illness word is shown (a visit is about those); the sensitive classes are not", () => {
+    const L: [string, string][] = [[A, "Hi Sam. What brings you in today?"], ["B", "Okay. Thank you."]];
+    const r: RecapRequestT = { lines: lines(L), mySpeaker: "B" };
+    const shown = (text: string): string =>
+      recapSpec.finalize(r, { items: [{ section: "discussed", text, evidence: ["L2"] }], planStatus: [] }, recapSpec.buildLedger(r)).unconfirmed.join(" | ");
+    expect(shown("Sam has trouble with sleep at night.")).toContain("Sam has trouble with sleep at night.");
+    expect(shown("The condition started in spring.")).toContain("The condition started in spring.");
+    expect(shown("Sam takes medicine at night.")).toContain(GENERIC_UNCONFIRMED);
+  });
+  it("word order is checked only where it can matter: a plain one-clause sentence may be reordered", () => {
+    expect(recapKept([[A, "Take ibuprofen with food at lunch."]], "At lunch take ibuprofen with food.")).toBe(1);
+  });
+  it("an item is kept when ANY of the best-matching cited sentences says the same thing", () => {
+    const rows: [string, string][] = [[A, "Do not take the red pill. Take the red pill."]];
+    expect(recapKept(rows, "Take the red pill.")).toBe(1);
+    expect(recapKept(rows, "Do not take the red pill.")).toBe(1);
+  });
+});

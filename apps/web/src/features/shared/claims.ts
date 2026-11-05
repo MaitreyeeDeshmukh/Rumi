@@ -130,7 +130,7 @@ export function harmWording(text: string): boolean {
   return HARM.test(` ${flat(text)} `);
 }
 
-const INTERROGATIVE = /^(?:what|how|when|where|which|who|whom|whose|why|can|could|do|does|did|would|will|is|are|was|were|have|has|had|shall|may|might|should|any|anything|anyone|anybody)\b/i;
+const INTERROGATIVE = /^(?:what|how|when|where|which|who|whom|whose|why|can|could|do|does|did|would|will|is|are|was|were|have|has|had|shall|may|might|should|any|anything|anyone|anybody|(?:do|does|did|is|are|was|were|have|has|had|can|could|will|would|should)n['’]t|can['’]t|won['’]t)\b/i;
 const WH = /^(?:what|how|when|where|which|who|whom|whose|why)\b/i;
 /** A real question: a question word or an auxiliary first, and a question mark last. */
 export const isQuestion = (sentence: string): boolean => sentence.trim().endsWith("?") && INTERROGATIVE.test(sentence.trim());
