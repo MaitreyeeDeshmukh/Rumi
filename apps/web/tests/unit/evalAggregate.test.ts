@@ -70,6 +70,11 @@ describe("aggregate: validity (D31)", () => {
     expect(s.valid).toBe(false);
     expect(s.eligible).toBe(0);
   });
+  it("SEEDED BAD: crisis cards alone leave nothing to score, and that is INVALID on its own account", () => {
+    const s = aggregate(many(3, { suite: "crisis", cls: "crisis", crisisSet: "positive", attempts: 0 }));
+    expect(s.invalidReasons.join(" ")).toMatch(/no model_ok or retry_ok case/);
+    expect(s.verdict).toBe("INVALID");
+  });
   it("an aborted run is INVALID", () => {
     expect(aggregate(many(20), { aborted: true }).verdict).toBe("INVALID");
   });
