@@ -1,6 +1,8 @@
 /**
  * Text primitives shared by the guards (harness lane) and the grounding checks (features lane).
  * Pure functions. Whole-token matching only: never use `includes` to decide whether a fact is grounded.
+ * No regex lookbehind anywhere: Safari before 16.4 throws a SyntaxError at load on it, and this file is
+ * imported by code that ships to the browser. Every scan is linear in the length of the text.
  */
 import { STOPWORDS, UNITS, toSet } from '@/features/shared/lists';
 
@@ -27,10 +29,18 @@ const ABBREVIATION = /\b(dr|mr|mrs|ms|st|prof|vs|etc|e\.g|i\.e)\./gi;
 /** Splits on . ! ? and newlines, keeping "Dr. Lee" and "e.g." together. */
 export function splitSentences(text: string): string[] {
   const protectedText = normalizeText(text).replace(ABBREVIATION, (m) => m.slice(0, -1) + DOT);
-  return protectedText
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map((s) => s.split(DOT).join('.').trim())
-    .filter(Boolean);
+  const out: string[] = [];
+  for (const line of protectedText.split(/\n+/)) {
+    let start = 0;
+    const boundary = /[.!?]+\s+/g;
+    for (let m = boundary.exec(line); m; m = boundary.exec(line)) {
+      const terminators = (/^[.!?]+/.exec(m[0]) ?? [''])[0].length;
+      out.push(line.slice(start, m.index + terminators));
+      start = m.index + m[0].length;
+    }
+    out.push(line.slice(start));
+  }
+  return out.map((s) => s.split(DOT).join('.').trim()).filter(Boolean);
 }
 
 export interface Amount {
@@ -41,20 +51,27 @@ export interface Amount {
 }
 
 const canonNumber = (n: string): string => n.replace(/,(?=\d{3}(?:\D|$))/g, '');
-const UNIT_ALT = [...UNITS].sort((a, b) => b.length - a.length).map((u) => u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const escapeRe = (u: string): string => u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const UNIT_ALT = [...UNITS].sort((a, b) => b.length - a.length).map(escapeRe).join('|');
 const NUMBER = String.raw`\d+(?:[.,]\d+)*`;
-const AMOUNT_RE = new RegExp(String.raw`(${NUMBER})\s*(${UNIT_ALT})(?![\p{L}\d])`, 'giu');
 const NUMBER_RE = new RegExp(NUMBER, 'g');
+// Anchored at the end of a number that NUMBER_RE already found, so the total work stays linear in the text length.
+const UNIT_AFTER_RE = new RegExp(String.raw`^\s{0,8}(${UNIT_ALT})(?![\p{L}\d])`, 'iu');
 
 /** Every number token in the text (`500mg` gives `500`, `1,000` gives `1000`, `2.5` stays `2.5`). */
 export function numberTokens(text: string): string[] {
   return (normalizeText(text).match(NUMBER_RE) ?? []).map(canonNumber);
 }
 
-/** Number plus known unit, glued or spaced: `500mg`, `500 mg`, `5pm`, `3rd`, `20mins`, `3x`, `2 weeks`. */
+/** Number plus known unit, glued or spaced: `500mg`, `500 mg`, `5pm`, `3rd`, `20mins`, `3x`, `2 weeks`. Linear time. */
 export function extractAmounts(text: string): Amount[] {
+  const t = normalizeText(text);
   const out: Amount[] = [];
-  for (const m of normalizeText(text).matchAll(AMOUNT_RE)) out.push({ value: canonNumber(m[1]), unit: m[2].toLowerCase() });
+  for (const m of t.matchAll(NUMBER_RE)) {
+    const from = (m.index ?? 0) + m[0].length;
+    const unit = UNIT_AFTER_RE.exec(t.slice(from, from + 24));
+    if (unit) out.push({ value: canonNumber(m[0]), unit: unit[1].toLowerCase() });
+  }
   return out;
 }
 
@@ -62,7 +79,7 @@ export const amountKey = (a: Amount): string => `${a.value}|${a.unit}`;
 
 /** Lowercase letter-only tokens. Accents are kept. */
 export function wordList(text: string): string[] {
-  return (normalizeText(text).toLowerCase().match(/\p{L}+/gu) ?? []);
+  return normalizeText(text).toLowerCase().match(/\p{L}+/gu) ?? [];
 }
 
 export const wordSet = (text: string): Set<string> => new Set(wordList(text));
