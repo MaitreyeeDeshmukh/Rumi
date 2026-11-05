@@ -275,7 +275,9 @@ describe("what finalize does with a model answer, through the harness", () => {
     const body = await json(await done);
     expect(provider.calls).toHaveLength(1);
     expect(body).toMatchObject({ items: [], dropped: 1, degraded: false });
-    expect((body.unconfirmed as string[]).some((u) => u === "I could not confirm this: Naproxen: take if needed.")).toBe(true);
+    // The demoted text is an order ("take ..."), so the generic line is shown instead of the model's words.
+    expect(body.unconfirmed).toContain("I could not confirm this: one point from the visit text.");
+    expect(JSON.stringify(body)).not.toContain("Naproxen");
   });
 
   it("recap: a dose the clinician said in the visit is not blocked by the advice guard", async () => {

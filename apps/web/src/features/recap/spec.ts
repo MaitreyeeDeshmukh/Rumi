@@ -46,8 +46,14 @@ export const recapSpec: TaskSpec<RecapRequestT, RecapModelOutT, RecapReplyT> = {
     const lines = lineLabels(r);
     const plan = planLabels(r);
     const ids = (labels: readonly string[]): string[] => labels.flatMap((l) => lines.get(l) ?? []);
+    // The same item said twice is one item.
+    const seen = new Set<string>();
+    const unique = o.items.filter((i) => {
+      const key = JSON.stringify([i.section, i.text.trim().toLowerCase(), [...new Set(i.evidence)].sort()]);
+      return seen.has(key) ? false : (seen.add(key), true);
+    });
     const labelled: RecapModelOutT = {
-      items: o.items.map((i) => ({ ...i, evidence: ids(i.evidence) })),
+      items: unique.map((i) => ({ ...i, evidence: ids(i.evidence) })),
       planStatus: o.planStatus.flatMap((p) => {
         const itemId = plan.get(p.itemId);
         return itemId === undefined ? [] : [{ ...p, itemId, evidence: ids(p.evidence) }];

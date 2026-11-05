@@ -5,7 +5,8 @@
  */
 import { planFallback, planIdFor } from "@/features/plan/fallback";
 import { planMock } from "@/features/plan/mock";
-import { keepSupportedSymptoms, mainConcernCodes, planItemCodes } from "@/features/plan/keepSupportedSymptoms";
+import { keepSupportedSymptoms, mainConcernCodes, planItemCodes, sharesStem } from "@/features/plan/keepSupportedSymptoms";
+import { inventedClaimCodes } from "@/features/shared/claims";
 import type { GuardCode } from "@/features/shared/guards";
 import { PlanModelOut, PlanReply, PlanRequest, type PlanModelOutT, type PlanReplyT, type PlanRequestT } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
@@ -32,10 +33,18 @@ export const planSpec: TaskSpec<PlanRequestT, PlanModelOutT, PlanReplyT> = {
   build: () => ({ system: RUMI_PERSONA, user: PLAN_TASK }),
   validate: (r, o, ledger) => {
     const texts = [o.mainConcern, ...o.symptomsInMyWords, ...o.items.map((i) => i.text)];
+    const said = ledger.items.map((i) => i.text);
+    // Nothing in the user's voice may claim a condition, symptom, habit, history or harm the user did not write.
+    const claims = texts.flatMap((t) => inventedClaimCodes(t, said));
+    // An item marked as the user's own must share a content word with what the user wrote (if they wrote one at all).
+    const hasWords = contentWords(r.rawText).length > 0;
+    const notTheirs = o.items.some((i) => i.source === "user" && hasWords && !sharesStem(r.rawText, i.text));
     const codes: GuardCode[] = [
       ...mainConcernCodes(r.rawText, o.mainConcern),
       ...planItemCodes(o.items),
       ...validateGrounding(texts, ledger),
+      ...claims,
+      ...(notTheirs ? (["invented_specific"] as const) : []),
       ...(o.items.some((i) => i.text.trim() === "") ? (["empty"] as const) : []),
       ...lintCodes([o.mainConcern, ...o.items.map((i) => i.text)]),
     ];

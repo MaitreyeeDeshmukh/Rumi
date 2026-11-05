@@ -1,3 +1,4 @@
+import { claimKeys, harmWording } from "@/features/shared/claims";
 import type { GuardCode } from "@/features/shared/guards";
 import { ledgerFromTexts, ungroundedSpecifics } from "@/lib/text/specifics";
 import { contentWords } from "@/lib/text/tokens";
@@ -6,10 +7,22 @@ import { contentWords } from "@/lib/text/tokens";
 const stem = (w: string): string => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
 const stems = (text: string): Set<string> => new Set(contentWords(text).map(stem));
 
-/** Symptoms the user actually wrote: each must share a content word with their own text. */
+/**
+ * Symptoms the user actually wrote: EVERY content word of the symptom must be in their own text, so "headaches and
+ * nausea" is dropped when only headaches was written. A symptom with no content word is dropped too.
+ */
 export function keepSupportedSymptoms(rawText: string, symptoms: readonly string[]): string[] {
   const have = stems(rawText);
-  return symptoms.filter((s) => [...stems(s)].some((w) => have.has(w)));
+  return symptoms.filter((s) => {
+    const own = [...stems(s)];
+    return own.length > 0 && own.every((w) => have.has(w));
+  });
+}
+
+/** True when the text shares at least one content stem with the user's words. The words of a user item must come from there. */
+export function sharesStem(rawText: string, text: string): boolean {
+  const have = stems(rawText);
+  return [...stems(text)].some((w) => have.has(w));
 }
 
 /**
@@ -36,7 +49,8 @@ export function planItemCodes(items: readonly { text: string; source: "user" | "
   const codes: GuardCode[] = [];
   if (!items.some((i) => i.source === "user")) codes.push("no_user_items");
   // Numbers, names, months and medicines are all "ungrounded" against an empty ledger.
-  const specific = (text: string): boolean => MEDICAL.test(text) || !ungroundedSpecifics(text, EMPTY).ok;
+  // A suggested item may not name a condition, symptom, feeling, medicine, sleep, history or any other claim class either.
+  const specific = (text: string): boolean => MEDICAL.test(text) || !ungroundedSpecifics(text, EMPTY).ok || claimKeys(text).size > 0 || harmWording(text);
   if (items.some((i) => i.source === "suggested" && specific(i.text))) codes.push("specific_suggestion");
   return codes;
 }

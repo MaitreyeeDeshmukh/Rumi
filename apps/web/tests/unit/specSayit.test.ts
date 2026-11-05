@@ -15,7 +15,7 @@ const out = (script: string, blanks: string[] = []): SayItModelOutT => ({ script
 
 describe("sayitSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap", () => {
-    expect(sayitSpec).toMatchObject({ name: "sayit", promptVersion: "sayit@3", tier: "fast", temperature: 0.3, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
+    expect(sayitSpec).toMatchObject({ name: "sayit", promptVersion: "sayit@4", tier: "fast", temperature: 0.3, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
   });
 
   it("accepts a question or a scenario, and mock and fallback satisfy the reply schema at every level", () => {
@@ -76,8 +76,8 @@ describe("sayitSpec validate", () => {
 
   it.each([
     ["L1 without a question mark", 1, "Say what detail you want to add. You can start with: I am not sure ...", "level1_no_question"],
-    ["a sentence over 15 words", 3, "I am not sure how to say this because I get nervous when people look at me and wait.", "lint_too_long"],
-    ["an idiom", 3, "I am a bit nervous. Can you ask me one question at a time?", "lint_idiom"],
+    ["a sentence over 15 words", 3, "I am not sure how to say this because it is hard when people look at me and wait.", "lint_too_long"],
+    ["an idiom", 3, "I am a bit unsure. Can you ask me one question at a time?", "lint_idiom"],
   ] as const)("soft: %s", (_name, level, script, code) => {
     const { hard, soft } = check(sayitSpec, ask(level), out(script));
     expect(soft).toContain(code);

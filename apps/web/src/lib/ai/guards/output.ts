@@ -375,6 +375,8 @@ export function clinicianFindingCodes(text: string, ledger: EvidenceLedger): Gua
 const ROLE = "doctor|nurse|physician|clinician|surgeon|therapist|psychiatrist|psychologist|medical professional|gp";
 const CLAIMS_HUMAN: readonly RegExp[] = [
   new RegExp(String.raw`\b(?:i am|im) (?:really |actually )?(?:an? )?(?:(?:real|actual|human|licensed|qualified|certified|registered) )?(?:${ROLE})\b`),
+  // "I am Dr. Lee, a real physician": a name (with "Dr.") or a few words may sit between "I am" and the claim.
+  new RegExp(String.raw`\b(?:i am|im)\b(?:dr \.|dr\.|[^.?!]){0,40}?\b(?:a|an) (?:real|actual|human|licensed|qualified|certified|registered) (?:${ROLE})\b`),
   /\b(?:i am|im) (?:really |actually )?(?:a |an )?(?:real |actual )?(?:human|person|human being)\b/,
   /\bthis is (?:a |an )?(?:real|actual) (?:visit|appointment|doctor|clinician|consultation|emergency)\b/,
   /\b(?:i am|im) not (?:an? )?(?:ai|bot|robot|machine|computer|program|chatbot|artificial)\b/,

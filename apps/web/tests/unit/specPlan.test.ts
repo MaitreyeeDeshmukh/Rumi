@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { planFallback } from "@/features/plan/fallback";
-import { planMock } from "@/features/plan/mock";
 import { planSpec } from "@/features/plan/spec";
 import type { PlanModelOutT, PlanRequestT } from "@/features/shared/schemas";
 import { DEMO_PLAN } from "@/fixtures/demoPlan";
@@ -48,9 +47,12 @@ describe("planSpec wiring", () => {
     expect(Math.abs(Date.parse(reply.plan.createdAt) - Date.now())).toBeLessThan(60_000);
   });
 
-  it("the mock is the demo plan with suggested items off", () => {
-    expect(planSpec.mock(R)).toEqual(planMock());
-    expect(planSpec.mock(R).degraded).toBeUndefined();
+  it("the mock echoes the user's own sentences and switches the suggested items off", () => {
+    const m = planSpec.mock(R);
+    expect(m.degraded).toBeUndefined();
+    expect(m.plan.items.filter((i) => i.source === "user").map((i) => i.text.includes(R.rawText.split(".")[0]))[0]).toBe(true);
+    expect(m.plan.items.filter((i) => i.source === "suggested").every((i) => !i.enabled)).toBe(true);
+    expect(planSpec.reply.safeParse(m).success).toBe(true);
   });
 
   it("the ledger holds only the user's typed sentences", () => {

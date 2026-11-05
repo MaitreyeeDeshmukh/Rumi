@@ -17,7 +17,9 @@
  * - A dose written after a pronoun or "the blue one" is bound to no medicine, so an item that needs it is demoted.
  */
 import { lineOverlaps, planStatusFallback, type PlanItemRef } from "@/features/recap/planStatusFallback";
+import { claimKeys, harmWording } from "@/features/shared/claims";
 import { CONDITIONS } from "@/features/shared/lists";
+import { adviceCodes } from "@/lib/ai/guards/output";
 import type { GuardCode } from "@/features/shared/guards";
 import type { RecapModelOutT } from "@/features/shared/schemas";
 import type { PlanStatusEntry, RecapItem, Speaker, TranscriptLine } from "@/features/shared/types";
@@ -76,7 +78,21 @@ export const NOTHING_CONFIRMED = `${PREFIX}no clear point was found in this visi
 export const recapEmptyCodes = (r: { items: readonly unknown[]; unconfirmed: readonly unknown[] }): GuardCode[] =>
   r.items.length === 0 && r.unconfirmed.length === 0 ? ["empty"] : [];
 
-const fixedLine = (text: string): string => PREFIX + truncateAtWord(text, MAX_UNCONFIRMED_CHARS - PREFIX.length);
+/** Shown when the text of a demoted item is itself advice, a diagnosis, an order or a safety statement: the text is not repeated. */
+export const GENERIC_UNCONFIRMED = `${PREFIX}one point from the visit text.`;
+const IMPERATIVE = /^(?:please\s+)?(?:[\p{L}-]+:\s*)?(?:take|stop|start|increase|decrease|skip|use|try|avoid|drink|eat|call|go|do not|don't|keep|continue|quit|apply|inject|swallow|double|reduce)\b|\byou (?:should|must|need to|have to|ought to)\b/u;
+const NO_ITEMS = ledgerFromTexts([]);
+
+/**
+ * A demoted item is something the model said that no line backs. Its words are shown only if they could not hurt: the
+ * advice guard (a dose, a diagnosis, a treatment) with an empty ledger, a condition, self-harm or abuse wording, and an
+ * order ("Stop taking ...") all replace the text with the generic line.
+ */
+function risky(text: string): boolean {
+  const t = lower(text);
+  return adviceCodes(text, NO_ITEMS).length > 0 || harmWording(text) || [...claimKeys(text)].some((k) => k.startsWith("condition:")) || IMPERATIVE.test(t);
+}
+const fixedLine = (text: string): string => (risky(text) ? GENERIC_UNCONFIRMED : PREFIX + truncateAtWord(text, MAX_UNCONFIRMED_CHARS - PREFIX.length));
 const lower = (s: string): string => normalizeText(s).replace(/\p{Cf}/gu, "").replace(/[’‘]/g, "'").toLowerCase();
 const words = (s: string): string[] => lower(s).match(/[\p{L}\p{N}'-]+/gu) ?? [];
 
@@ -113,11 +129,45 @@ const modality = (s: string): "must" | "may" | undefined => {
 };
 const REPORTING = /\b(asked|asks|asking|wondered|wonders|wants? to know|whether|question)\b/;
 
+/** Where a sentence changes direction: "can drive today but not tomorrow". Each clause is judged on its own negation. */
+const CLAUSE_BREAK = /;|,\s*(?:and|but|so|then|or)\b|\s+(?:but|and|while|although|though|yet|then)\s+/;
+
+/**
+ * For every content stem of a sentence, whether it sits in a negated clause (true) or a plain one (false), or both.
+ * Moving a "not" to another clause ("drive tomorrow but not today" for "drive today but not tomorrow") keeps the
+ * total count of negators, so the whole-sentence parity cannot see it; this does.
+ */
+function polarity(sentence: string): Map<string, Set<boolean>> {
+  const out = new Map<string, Set<boolean>>();
+  for (const clause of meaning(sentence).split(CLAUSE_BREAK)) {
+    const negated = negationCount(clause) % 2 === 1;
+    for (const w of contentWords(clause)) {
+      if (NEGATORS.has(w)) continue;
+      const key = stem(w);
+      const seen = out.get(key) ?? new Set<boolean>();
+      seen.add(negated);
+      out.set(key, seen);
+    }
+  }
+  return out;
+}
+
+/** A word the item puts in a clause with another polarity than every clause of the cited sentence that has it. */
+function polarityFlipped(item: string, cited: string): boolean {
+  const theirs = polarity(cited);
+  for (const [key, mine] of polarity(item)) {
+    const said = theirs.get(key);
+    if (said !== undefined && [...mine].some((p) => !said.has(p))) return true;
+  }
+  return false;
+}
+
 /** Does the item sentence say something else than the cited sentence: yes/no, opposite word, must/may, question/statement? */
 function flipped(itemSentence: string, citedSentence: string): boolean {
   const item = meaning(itemSentence);
   const cited = meaning(citedSentence);
   if (negationCount(item) % 2 !== negationCount(cited) % 2) return true;
+  if (polarityFlipped(item, cited)) return true;
   const a = new Set(words(item));
   const b = new Set(words(cited));
   if (OPPOSITES.some(([x, y]) => (a.has(x) && b.has(y) && !b.has(x)) || (a.has(y) && b.has(x) && !b.has(y)))) return true;
@@ -193,9 +243,10 @@ export function verifyEvidence(lines: readonly TranscriptLine[], raw: RecapModel
   const items: RecapItem[] = [];
   const lost: RecapItem[] = [];
   for (const it of raw.items) (supported(it, byId, mySpeaker) ? items : lost).push(it);
+  // The [unclear] notices come first: they are about the visit itself, and the cap must never hide them behind demoted items.
   const unconfirmed = [
-    ...lost.map((i) => fixedLine(i.text)),
     ...lines.filter((l) => UNCLEAR.test(l.text)).map((l) => fixedLine(l.text)),
+    ...lost.map((i) => fixedLine(i.text)),
   ];
 
   const fallback = planStatusFallback(lines, mySpeaker, plan);

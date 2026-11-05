@@ -137,11 +137,19 @@ describe("plan fallback", () => {
     }
   });
 
-  it("the mock is the demo plan with the suggested items off", () => {
-    const m = PlanReply.parse(planMock());
-    expect(m.plan.items.map((i) => i.enabled)).toEqual([true, true, false, false]);
-    expect(m.degraded).toBeUndefined();
+  it("the mock shows what the user typed, then the two generic suggested items switched off", () => {
+    const m = PlanReply.parse(planMock({ rawText: "My knee clicks. I cannot sleep.", companionName: "Rumi" }));
+    expect(m.plan.items.map((i) => [i.id, i.source, i.enabled])).toEqual([["q1", "user", true], ["q2", "user", true], ["q3", "suggested", false], ["q4", "suggested", false]]);
+    expect(m.plan.items[0].text).toContain("My knee clicks.");
     expect(m.plan.items.find((i) => i.kind === "accommodation")).toBeDefined();
+    expect(m.degraded).toBeUndefined();
+    expect(JSON.stringify(m)).not.toContain("headache");
+  });
+
+  it("the mock of text with nothing to copy is the fixed prompt, not a demo plan", () => {
+    const m = PlanReply.parse(planMock({ rawText: "ok", companionName: "Rumi" }));
+    expect(m.plan.mainConcern).toBe("I want to talk about my visit");
+    expect(m.degraded).toBeUndefined();
   });
 
   it("works on the parsed request type", () => {
@@ -274,8 +282,11 @@ describe("practice fallback and mock", () => {
     }
     expect(says[0]).toBe("Hi. What brings you in today?");
     expect(says[4]).toBe(CLOSING_LINE);
-    const ids = (n: number) => practiceMock(req("whole", Array.from({ length: n }, () => me("x")))).coveredItemIds;
-    expect([ids(0), ids(1), ids(3)]).toEqual([[], ["q1"], ["q1", "q2"]]);
+    // An id is proposed by the script and kept only when the latest turn of the user touches that item.
+    const said = "I want to tell you about my headaches. I want to ask why I get these headaches.";
+    const ids = (n: number, text: string) => practiceMock(req("whole", Array.from({ length: n }, () => me(text)))).coveredItemIds;
+    expect([ids(0, said), ids(1, said), ids(3, said)]).toEqual([[], ["q1"], ["q1", "q2"]]);
+    expect([ids(1, "x"), ids(3, "x"), ids(3, "Banana.")]).toEqual([[], [], []]);
     expect(practiceMock(req("whole", Array.from({ length: 20 }, () => me("x")))).isLastTurn).toBe(true);
   });
 });
