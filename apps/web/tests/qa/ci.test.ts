@@ -120,6 +120,16 @@ describe(".github/workflows/ci.yml", () => {
     expect(j.indexOf("pnpm build")).toBeLessThan(j.indexOf("next start"));
   });
 
+  it("load-smoke starts the server with VERCEL=1, so the per-address limit sees real addresses, and k6 requires mostly 200 answers", () => {
+    const j = J["load-smoke"];
+    const start = j.slice(j.indexOf("- name: Start the app"), j.indexOf("grafana/setup-k6-action"));
+    expect(start).toMatch(/env:\n\s+VERCEL: "1"/);
+    expect(start).toContain("next start");
+    const k6 = readFileSync(`${REPO_ROOT}apps/web/tests/load/smoke.js`, "utf8");
+    expect(k6).toMatch(/served_200_rate: \["rate>0\.5"\]/);
+    expect(k6).toMatch(/servedRate\.add\(res\.status === 200\)/);
+  });
+
   it("no secret value is written into the workflow", () => {
     // The one allowed key-shaped string is the all-"a" plant that the bundle-scan control writes on purpose.
     expect(text.replace(/gsk_a{20,}/g, "")).not.toMatch(/gsk_[A-Za-z0-9]{20,}|sb_secret_|service_role|eyJ[A-Za-z0-9_-]{20,}/);

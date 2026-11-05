@@ -7,6 +7,7 @@
 //   * 200 virtual users for a minute: p95 under 500 ms.
 //   * Under 1 percent of answers are unexpected. Expected: 200, or 429 WITH a Retry-After header. A 5xx, a 429 without
 //     Retry-After, a missing x-request-id or a cacheable answer all count as unexpected.
+//   * More than half of all answers are 200 (served_200_rate). The server must run with VERCEL=1, or its address limit sees one shared address.
 //   * The rate limiter is exercised on purpose: every tenth user shares one address, so a 429 must appear and must be a 429.
 import http from "k6/http";
 import { check } from "k6";
@@ -20,6 +21,7 @@ const COOKIE = __ENV.AUTH_COOKIE ? { cookie: __ENV.AUTH_COOKIE } : {};
 const unexpected = new Rate("unexpected_answers");
 const limited = new Counter("rate_limited_429");
 const served = new Counter("served_200");
+const servedRate = new Rate("served_200_rate");
 
 export const options = {
   stages: SHORT
@@ -37,6 +39,9 @@ export const options = {
     http_req_duration: ["p(95)<500"],
     unexpected_answers: ["rate<0.01"],
     rate_limited_429: SHORT ? [] : ["count>0"],
+    // Most answers must be real 200s. A run where the address headers are ignored (no VERCEL=1 on the server) answers almost
+    // everything with 429, which "passes" the other thresholds while measuring nothing.
+    served_200_rate: ["rate>0.5"],
     checks: ["rate>0.99"],
   },
 };
@@ -50,6 +55,7 @@ const addressOf = (vu) => (vu % 10 === 0 ? "198.51.100.7" : `10.${(vu >> 8) & 25
 function judge(res, name) {
   const ok = res.status === 200 || (res.status === 429 && !!res.headers["Retry-After"]);
   unexpected.add(!ok);
+  servedRate.add(res.status === 200);
   if (res.status === 200) served.add(1);
   if (res.status === 429) limited.add(1);
   check(res, {
