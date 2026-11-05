@@ -7,7 +7,7 @@ import type { TaskName, Tier } from "@/features/shared/task";
 import type { ApiErrorCode } from "@/features/shared/types";
 
 export type Outcome = "ok" | "mock" | "crisis" | "fallback" | "error";
-export type EventErrorCode = ApiErrorCode | "config" | "unauthorized" | "timeout";
+export type EventErrorCode = ApiErrorCode | "config" | "unauthorized" | "timeout" | "internal" | "store_unavailable";
 /** Where in the pipeline a request stopped or an unexpected error happened. A fixed list, never text. */
 export type Stage = "guard" | "body" | "request" | "sanitize" | "crisis" | "redact" | "config" | "ledger" | "prompt" | "provider" | "output" | "reply" | "auth" | "flags" | "cache" | "limits";
 
@@ -33,6 +33,11 @@ export interface AiEvent {
   outTokens: number;
   ms: number;
   errorCode?: EventErrorCode;
+  /**
+   * True when the fallback was served on purpose and no provider was called: the kill switch (AI_FORCE_OFF or the
+   * ai_enabled flag) or the daily spend cap. Without it a fallback with `ai_unavailable` means the provider failed.
+   */
+  paused?: boolean;
   /** The pipeline stage that failed, set when a request ended with an error or an unexpected exception. */
   stage?: Stage;
   /** Why the crisis card was shown. A fixed list, never text: tier1 regex, the model said yes, the model's own flag, or a fail-safe. */
@@ -51,7 +56,7 @@ const FINISH_REASONS: readonly string[] = ["stop", "length", "other"];
 const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap"];
 const OUTCOMES: readonly string[] = ["ok", "mock", "crisis", "fallback", "error"];
 const TIERS: readonly string[] = ["quality", "fast", "none"];
-const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout"];
+const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout", "internal", "store_unavailable"];
 const GUARD_CODES: readonly string[] = ALL_GUARD_CODES;
 const REQUEST_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12})$/;
 const STAGES: readonly string[] = ["guard", "body", "request", "sanitize", "crisis", "redact", "config", "ledger", "prompt", "provider", "output", "reply", "auth", "flags", "cache", "limits"];
@@ -99,6 +104,7 @@ export function aiRecord(event: AiEvent) {
     outTokens: count(e.outTokens),
     ms: count(e.ms),
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
+    ...(e.paused === true ? { paused: true } : {}),
     ...(e.stage === undefined ? {} : { stage: oneOf(e.stage, STAGES, "unknown") }),
     ...(e.crisisSource === undefined ? {} : { crisisSource: oneOf(e.crisisSource, CRISIS_SOURCES, "unknown") }),
     ...(e.providerError === undefined ? {} : { providerError: oneOf(e.providerError, PROVIDER_ERRORS, "unknown") }),
@@ -113,12 +119,15 @@ export type DbOutcome = "ok" | "degraded" | "crisis" | "rate_limited" | "invalid
 
 /**
  * The one mapping from the harness outcome to the stored outcome, or null when nothing is stored (mock).
- * ok->ok, crisis->crisis, fallback->degraded (a fallback caused by timeouts or by missing configuration is stored as
- * timeout or config_error, because those are the causes an operator needs to see), error by its code:
- * forbidden->unauthorized, unauthorized->unauthorized, rate_limited->rate_limited, bad_input and too_large->invalid_input,
- * ai_unavailable->provider_error, ai_invalid->guard_blocked, config->config_error, timeout->timeout.
+ * ok->ok, crisis->crisis. A fallback is stored by its cause, because the error-rate alert reads provider_error and timeout:
+ * timeout->timeout, config->config_error, ai_unavailable->provider_error (the provider failed), and degraded only when the
+ * fallback was served on purpose (`paused`: kill switch or spend cap) or its cause is an invalid answer or unknown.
+ * error by its code: forbidden and unauthorized->unauthorized, rate_limited->rate_limited, bad_input and too_large->invalid_input,
+ * ai_unavailable->provider_error, ai_invalid->guard_blocked, config->config_error, timeout->timeout. Our own faults
+ * (internal, store_unavailable, anything unknown) are not the provider's: they are stored as degraded and the code stays
+ * in the stdout line. An error with no code at all stays provider_error.
  */
-export function toDbOutcome(outcome: Outcome, errorCode?: EventErrorCode): DbOutcome | null {
+export function toDbOutcome(outcome: Outcome, errorCode?: EventErrorCode | "unknown", paused = false): DbOutcome | null {
   switch (outcome) {
     case "ok":
       return "ok";
@@ -127,7 +136,9 @@ export function toDbOutcome(outcome: Outcome, errorCode?: EventErrorCode): DbOut
     case "mock":
       return null;
     case "fallback":
-      return errorCode === "timeout" ? "timeout" : errorCode === "config" ? "config_error" : "degraded";
+      if (errorCode === "timeout") return "timeout";
+      if (errorCode === "config") return "config_error";
+      return errorCode === "ai_unavailable" && !paused ? "provider_error" : "degraded";
     case "error":
       switch (errorCode) {
         case "forbidden":
@@ -144,6 +155,10 @@ export function toDbOutcome(outcome: Outcome, errorCode?: EventErrorCode): DbOut
           return "config_error";
         case "timeout":
           return "timeout";
+        case "internal":
+        case "store_unavailable":
+        case "unknown":
+          return "degraded";
         default:
           return "provider_error";
       }

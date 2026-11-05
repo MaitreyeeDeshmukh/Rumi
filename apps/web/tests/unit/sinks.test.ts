@@ -92,6 +92,8 @@ describe("outcome mapping (addendum section 2)", () => {
     expect(map("ok")).toBe("ok");
     expect(map("crisis")).toBe("crisis");
     expect(map("fallback")).toBe("degraded");
+    expect(map("fallback", "ai_unavailable")).toBe("provider_error");
+    expect(dbOutcome({ outcome: "fallback", errorCode: "ai_unavailable", paused: true })).toBe("degraded");
     expect(map("mock")).toBeNull();
     expect(map("error", "forbidden")).toBe("unauthorized");
     expect(map("error", "rate_limited")).toBe("rate_limited");
@@ -129,6 +131,36 @@ describe("recordAiEvent", () => {
     });
     const line = JSON.parse(lines[0]) as Record<string, unknown>;
     expect([line.type, line.cacheStatus, line.cachedTokens]).toEqual(["ai_task", "miss", 12]);
+  });
+
+  it("stores a provider outage as provider_error and a deliberate pause as degraded, so the error-rate alert sees outages", async () => {
+    recordAiEvent({ ...base, outcome: "fallback", degraded: true, errorCode: "ai_unavailable" }, extra);
+    recordAiEvent({ ...base, outcome: "fallback", degraded: true, errorCode: "ai_unavailable", paused: true, tier: "none", attempts: 0 }, extra);
+    await settle();
+    expect(h.rows.map((r) => r.row.outcome)).toEqual(["provider_error", "degraded"]);
+    expect(JSON.parse(lines[1])).toMatchObject({ paused: true });
+  });
+
+  it("writes model and cost_micro_usd when they are known, and leaves the columns out when they are not", async () => {
+    recordAiEvent(base, { ...extra, model: "openai/gpt-oss-120b", costMicro: 1234.4 });
+    recordAiEvent(base, extra);
+    recordAiEvent(base, { ...extra, model: "has spaces and SECRETTEXT", costMicro: 0 });
+    await settle();
+    expect(h.rows[0].row).toMatchObject({ model: "openai/gpt-oss-120b", cost_micro_usd: 1234 });
+    expect(h.rows[1].row).not.toHaveProperty("model");
+    expect(h.rows[1].row).not.toHaveProperty("cost_micro_usd");
+    expect(h.rows[2].row).not.toHaveProperty("model");
+    expect(h.rows[2].row).not.toHaveProperty("cost_micro_usd");
+    expect(JSON.stringify(h.rows)).not.toContain("SECRETTEXT");
+  });
+
+  it("clamps a cost to the column's integer range and refuses a negative or non-numeric one", async () => {
+    recordAiEvent(base, { ...extra, costMicro: 9e12 });
+    recordAiEvent(base, { ...extra, costMicro: -5 });
+    recordAiEvent(base, { ...extra, costMicro: Number.NaN });
+    recordAiEvent(base, { ...extra, costMicro: "7" as never });
+    await settle();
+    expect(h.rows.map((r) => r.row.cost_micro_usd)).toEqual([2_147_483_647, undefined, undefined, undefined]);
   });
 
   it("does not store mock events and stores a fallback as degraded with tier fallback", async () => {

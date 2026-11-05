@@ -136,8 +136,10 @@ describe("kill-switch and spend cap (08 section 1.6)", () => {
     expect(await bodyOf(res)).toEqual({ say: "fallback for 25 characters", degraded: true });
     expect(getFlag).toHaveBeenCalledWith("ai_enabled");
     expect(provider.calls).toHaveLength(0);
-    expect(records[0].e).toMatchObject({ outcome: "fallback", degraded: true, errorCode: "ai_unavailable", attempts: 0 });
+    expect(records[0].e).toMatchObject({ outcome: "fallback", degraded: true, errorCode: "ai_unavailable", attempts: 0, paused: true });
     expect(records[0].x.cacheStatus).toBe("bypass");
+    // On purpose, not a provider failure: stored as degraded, so the error-rate alert does not count it.
+    expect(toDbOutcome(records[0].e.outcome, records[0].e.errorCode, records[0].e.paused)).toBe("degraded");
   });
 
   it("the global spend cap reached behaves exactly like the flag off", async () => {
@@ -146,6 +148,7 @@ describe("kill-switch and spend cap (08 section 1.6)", () => {
     const res = await runTask(spec, post(okBody()), base(provider, { spendCapReached: () => Promise.resolve(true) }));
     expect(await bodyOf(res)).toMatchObject({ degraded: true });
     expect(provider.calls).toHaveLength(0);
+    expect(records[0].e.paused).toBe(true);
   });
 
   it("flag off: certain crisis text still shows the crisis card", async () => {
@@ -566,6 +569,9 @@ describe("tier cooldown, Retry-After and the pause before a tier swap (08 sectio
     const a = await runTask(spec, ask("one"), ctx(p));
     expect(await bodyOf(a)).toMatchObject({ degraded: true });
     expect(records[0].e).toMatchObject({ errorCode: "ai_unavailable", attempts: 2 });
+    // The provider failed, so this is a provider error for the alert, not a deliberate fallback.
+    expect(records[0].e.paused).toBeUndefined();
+    expect(toDbOutcome(records[0].e.outcome, records[0].e.errorCode, records[0].e.paused)).toBe("provider_error");
     const b = await runTask(spec, ask("two"), ctx(p));
     expect(await bodyOf(b)).toMatchObject({ degraded: true });
     expect(p.calls).toHaveLength(2);
@@ -676,6 +682,23 @@ describe("structured output and cost", () => {
     expect(records[0].x.cachedTokens).toBe(600);
   });
 
+  it("the event carries the model of the tier that answered and the same cost that was charged", async () => {
+    const { spec } = fakeTask();
+    const recordSpend = vi.fn();
+    const p = fakeProvider([new ProviderError("http"), say("ok")]); // the quality tier fails, the fast tier answers
+    await runTask(spec, post(okBody()), base(p, { recordSpend }));
+    expect(records[0].x.model).toBe("model-fast-y");
+    expect(records[0].x.costMicro).toBe(recordSpend.mock.calls[0][0]);
+    expect(records[0].x.costMicro).toBeGreaterThan(0);
+  });
+
+  it("a fallback without any provider call carries no cost", async () => {
+    const { spec } = fakeTask();
+    await runTask(spec, post(okBody()), base(fakeProvider([]), { getFlag: () => Promise.resolve(false) }));
+    expect(records[0].x.costMicro).toBe(0);
+    expect(records[0].x.model).toBeUndefined();
+  });
+
   it("a cache hit and a fallback without a call record no spend", async () => {
     const { spec } = fakeTask();
     const recordSpend = vi.fn();
@@ -689,7 +712,8 @@ describe("telemetry through recordAiEvent (08 section 3)", () => {
     const { spec } = fakeTask();
     await runTask(spec, post(okBody(), as("abc")), base(fakeProvider([say("ok")])));
     expect(records).toHaveLength(1);
-    expect(records[0].x).toEqual({ cacheStatus: "miss", cachedTokens: 0, bucket: "u:abc0000000000000" });
+    // 100 in and 20 out on an unpriced model: 100*0.15 + 20*0.6 = 27 micro-dollars. The model is the one that answered.
+    expect(records[0].x).toEqual({ cacheStatus: "miss", cachedTokens: 0, bucket: "u:abc0000000000000", model: "model-quality-x", costMicro: 27 });
     expect(JSON.stringify(records[0])).not.toContain("id-abc");
   });
 
@@ -717,7 +741,7 @@ describe("telemetry through recordAiEvent (08 section 3)", () => {
     ["ok", undefined, "ok"],
     ["crisis", undefined, "crisis"],
     ["fallback", undefined, "degraded"],
-    ["fallback", "ai_unavailable", "degraded"],
+    ["fallback", "ai_unavailable", "provider_error"],
     ["fallback", "ai_invalid", "degraded"],
     ["fallback", "timeout", "timeout"],
     ["fallback", "config", "config_error"],
@@ -735,9 +759,25 @@ describe("telemetry through recordAiEvent (08 section 3)", () => {
     expect(toDbOutcome(outcome, code)).toBe(stored);
   });
 
+  it("a fallback is stored by its cause: provider failure is provider_error, a deliberate pause is degraded", () => {
+    expect(toDbOutcome("fallback", "ai_unavailable")).toBe("provider_error");
+    expect(toDbOutcome("fallback", "ai_unavailable", true)).toBe("degraded");
+    expect(toDbOutcome("fallback", "timeout", true)).toBe("timeout");
+    expect(toDbOutcome("fallback", "config", true)).toBe("config_error");
+    expect(toDbOutcome("fallback", "ai_invalid")).toBe("degraded");
+    expect(toDbOutcome("fallback")).toBe("degraded");
+  });
+
+  it("our own faults (internal, store_unavailable, an unknown code) are never stored as provider_error", () => {
+    for (const code of ["internal", "store_unavailable", "unknown"] as const) {
+      expect(toDbOutcome("error", code), code).toBe("degraded");
+      expect(toDbOutcome("fallback", code), code).toBe("degraded");
+    }
+  });
+
   it("the stored outcomes are exactly the ones the database accepts", () => {
     const all = [
-      ...(["ok", "crisis", "fallback", "mock", "error"] as const).flatMap((o) => (["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout", undefined] as const).map((c) => toDbOutcome(o, c))),
+      ...(["ok", "crisis", "fallback", "mock", "error"] as const).flatMap((o) => (["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout", "internal", "store_unavailable", "unknown", undefined] as const).map((c) => toDbOutcome(o, c))),
     ];
     const allowed = new Set(["ok", "degraded", "crisis", "rate_limited", "invalid_input", "provider_error", "guard_blocked", "unauthorized", "timeout", "config_error", null]);
     for (const s of all) expect(allowed.has(s)).toBe(true);

@@ -450,6 +450,8 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   let user: SignedIn | null = null;
   let cacheStatus: CacheStatus = "bypass";
   let mockHeader = false;
+  /** The provider of this request once it exists, so the event can name the model that answered. */
+  let usedProvider: Provider | undefined;
   /** The sanitized request, once it exists. The fallback and the mock use it (not the redacted copy). */
   let clean: Req | undefined;
 
@@ -462,7 +464,8 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     try {
       // A crisis event carries no bucket: nothing may tie a crisis to a person or an address.
       const bucket = ev.outcome === "crisis" ? {} : { bucket: bucketOf(user === null ? null : user.userHash, ipHash) };
-      (deps.record ?? recordAiEvent)(ev, { cacheStatus, cachedTokens: run.cachedTokens, ...bucket });
+      const model = usedProvider !== undefined && ev.tier !== "none" ? modelNameOf(usedProvider, ev.tier) : "";
+      (deps.record ?? recordAiEvent)(ev, { cacheStatus, cachedTokens: run.cachedTokens, costMicro: run.costMicro, ...(model === "" ? {} : { model }), ...bucket });
     } catch {
       // Telemetry never blocks or fails an answer. recordAiEvent swallows its own failures; this is for a broken injected sink.
     }
@@ -579,6 +582,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     }
     const nonce = rand();
     const provider = deps.provider ?? (mock ? undefined : defaultProvider());
+    usedProvider = provider;
     if (flagged.length > 0) {
       stage = "provider";
       const text = redactPii(flagged.join("\n")).text;
@@ -588,7 +592,10 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       const asked = await modelSaysCrisis(run, provider, nonce, text, quota);
       if (asked.crisis) return finish(respond({ kind: "crisis", source: asked.source }));
     }
-    if (aiOff) return finish(respond(degrade("ai_unavailable")));
+    if (aiOff) {
+      ev.paused = true; // the fallback is on purpose (kill switch or spend cap): not a provider failure
+      return finish(respond(degrade("ai_unavailable")));
+    }
 
     // 7. personal details out, injection counted (never blocked)
     stage = "redact";

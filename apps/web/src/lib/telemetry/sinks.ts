@@ -102,21 +102,27 @@ function persist(store: TelemetryTable, job: () => PromiseLike<{ error: unknown 
 }
 
 /** Addendum section 2. The one mapping lives in lib/ai/telemetry.ts; `mock` is not stored (null). */
-export const dbOutcome = (e: Pick<AiEvent, "outcome" | "errorCode">): DbOutcome | null => toDbOutcome(e.outcome, e.errorCode);
+export const dbOutcome = (e: Pick<AiEvent, "outcome" | "errorCode" | "paused">): DbOutcome | null => toDbOutcome(e.outcome, e.errorCode, e.paused === true);
 
 export type CacheStatus = "miss" | "hit" | "bypass";
 const CACHE: readonly string[] = ["miss", "hit", "bypass"];
 const BUCKET = /^[a-z0-9:_-]{1,40}$/;
+/** A model id as providers write it (letters, digits, dot, dash, underscore, colon, slash), at most 80 characters (the column limit). */
+const MODEL = /^[A-Za-z0-9._:/-]{1,80}$/;
+/** cost_micro_usd is an int4. */
+const MAX_COST_MICRO = 2_147_483_647;
 
-export function recordAiEvent(e: AiEvent, extra: { cacheStatus: CacheStatus; cachedTokens: number; bucket?: string }): void {
+export function recordAiEvent(e: AiEvent, extra: { cacheStatus: CacheStatus; cachedTokens: number; bucket?: string; model?: string; costMicro?: number }): void {
   try {
     const rec = aiRecord(e);
     const cacheStatus = CACHE.includes(extra?.cacheStatus) ? extra.cacheStatus : "bypass";
     const cachedTokens = typeof extra?.cachedTokens === "number" && Number.isFinite(extra.cachedTokens) ? Math.max(0, Math.floor(extra.cachedTokens)) : 0;
     emitLine(JSON.stringify({ ...rec, cacheStatus, cachedTokens }));
 
-    const outcome = dbOutcome(rec as Pick<AiEvent, "outcome" | "errorCode">);
+    const outcome = dbOutcome(rec as Pick<AiEvent, "outcome" | "errorCode" | "paused">);
     if (outcome === null || rec.task === "unknown") return;
+    const model = typeof extra?.model === "string" && MODEL.test(extra.model) ? extra.model : null;
+    const cost = typeof extra?.costMicro === "number" && Number.isFinite(extra.costMicro) ? Math.min(MAX_COST_MICRO, Math.max(0, Math.round(extra.costMicro))) : null;
     const row = {
       task: rec.task,
       outcome,
@@ -130,6 +136,9 @@ export function recordAiEvent(e: AiEvent, extra: { cacheStatus: CacheStatus; cac
       bucket: typeof extra?.bucket === "string" && BUCKET.test(extra.bucket) ? extra.bucket : null,
       cache_status: cacheStatus,
       cached_tokens: cachedTokens,
+      // Only when known: a fallback with no provider call has no model, and a cost of 0 is not stored as a cost.
+      ...(model === null ? {} : { model }),
+      ...(cost === null || cost === 0 ? {} : { cost_micro_usd: cost }),
     };
     persist("ops_ai_events", () => telemetryDb().from("ops_ai_events").insert(row));
   } catch {

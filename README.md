@@ -67,7 +67,8 @@ Views in `supabase/migrations/20261105130000_rumi_metric_views.sql`. Counts, rat
 | `ops_v_ai_recent_30m` | Last 30 minutes: provider calls, errors, fallbacks |
 
 Known limits of the numbers:
-- Cost per task reads 0 until `cost_micro_usd` is filled. The event record has no model or cost field yet. The only real spend figure is the `global` row of `ops_v_usage_today`, which the AI limiter fills.
+- Cost per task comes from `cost_micro_usd`, which each AI event now fills with the estimated price of its provider calls (an estimate from a price table, not an invoice). Events that made no provider call carry no cost. The `global` row of `ops_v_usage_today`, which the AI limiter fills, is the spend figure the cap uses.
+- A reply served from the fallback is stored by its cause. If the provider failed, it is `provider_error` (it counts in the error rate). If it was served on purpose because `ai_enabled` is off or the spend cap was reached, it is `degraded`.
 - `ops_app_events` stores server faults (5xx), browser crash reports, and database-side events. It does NOT store 401, 403, 429 or other caller errors. Those are warning lines in the logs only.
 - Server fault rows are at most one per minute per (code, fingerprint, route) per instance, and at most 120 a minute per instance. The log line for each fault is still written; the row that does get written carries a `repeats` count in the log.
 
