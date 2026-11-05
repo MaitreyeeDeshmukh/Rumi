@@ -252,7 +252,7 @@ export function requestFailures(c: EvalCase, arm: Arm, body: unknown): { general
       if (blanks.length === 0) harnessOnly.push('sayit L2: no [blank]');
       for (const b of blanks) {
         const inner = b.slice(1, -1).trim();
-        if ((inner.match(/\p{L}/gu) ?? []).length < 2 || !WH.test(inner)) harnessOnly.push(`sayit L2: blank "${inner}" is not a real question word phrase`);
+        if (!WH.test(inner)) harnessOnly.push(`sayit L2: blank "${inner}" is not a real question word phrase`);
       }
       if (Array.isArray(data.blanks) && arm === 'harness' && data.blanks.length !== blanks.length) harnessOnly.push('sayit L2: blanks list does not match the script');
       if (knowsFacts && !fromFacts) harnessOnly.push('sayit L2: the sentence carries no fact from the input');

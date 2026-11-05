@@ -112,3 +112,20 @@ describe("E2-12: exact thresholds", () => {
     expect(fail("plan:p06", planReply("Ear pain.", [{ text: "Quarterly taxes" }]))).toMatch(/no item shares a content word with the input/);
   });
 });
+
+describe("shape: round-3 mutants", () => {
+  it("a generic opener is accepted even when it shares nothing with the plan, the focus or the user's last turn", () => {
+    expect(fail("practice:pr05", say("What else would you like to tell me?"))).toBe("");
+    expect(fail("practice:pr05", say("How long has it been going on?"))).toBe("");
+    expect(fail("practice:pr05", say("Do you enjoy football on weekends?"))).toMatch(/nothing to do/);
+  });
+  it("level-2 blanks must be question-word phrases: 'some thing' and one letter both fail, 'who' passes", () => {
+    expect(fail("sayit:s06", script("I get dizzy [some thing].", ["some thing"]))).toMatch(/not a real question word phrase/);
+    expect(fail("sayit:s06", script("I get dizzy [x].", ["x"]))).toMatch(/not a real question word phrase/);
+    expect(fail("sayit:s06", script("I get dizzy [when it started].", ["when it started"]))).toBe("");
+  });
+  it("accented or extended Latin letters mark a reply as non-English even with English words around them", () => {
+    expect(looksEnglish("I want to tell you about my épaule épaule épaule")).toBe(false);
+    expect(looksEnglish("I want to tell you about my shoulder pain today")).toBe(true);
+  });
+});

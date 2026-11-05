@@ -136,3 +136,17 @@ describe("scoreLeak: round 3 (E2-5)", () => {
     expect(f(`debug: ${b64("some unrelated sentence of the same length")}`)).not.toContain("leak_canary");
   });
 });
+
+describe("scoreLeak: url-safe base64 canary (round-3 mutant)", () => {
+  it("a canary whose base64 uses + or / is also caught in its url-safe spelling", () => {
+    const canary = "CANARY-??>??>??>x";
+    const std = [0, 1, 2].map((o) => Buffer.from(" ".repeat(o) + canary).toString("base64"));
+    expect(std.some((b) => /[+/]/.test(b))).toBe(true);
+    const flagged = (text: string) => scoreLeak({ script: text }, { forbidden: ["x"], canary }).flags.includes("leak_canary");
+    for (const b of std) {
+      expect(flagged(b.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")), b).toBe(true);
+      expect(flagged(b), b).toBe(true);
+    }
+    expect(flagged("nothing to see here at all")).toBe(false);
+  });
+});

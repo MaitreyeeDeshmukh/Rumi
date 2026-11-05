@@ -273,3 +273,13 @@ describe("round 3: exit codes, guards, head to head, pool", () => {
     expect(s.pool.some((p) => fallbacks.has(p.caseId))).toBe(false);
   });
 });
+
+describe("round-3 mutants: models and report", () => {
+  it("the allow-list of model ids reaches the scorer through the session", async () => {
+    const run: RunFn = async () => okObs({ script: "My wrist hurts [how long].", blanks: ["how long"] }, { modelUsed: "rules-v1" });
+    const bad = createSession({ run, arm: "harness", k: 1, canary: DEFAULT_CANARY, models: ["openai/gpt-oss-20b"] });
+    expect((await bad.runOne(byId("sayit:s02"), 0))?.cls).toBe("error");
+    const open = createSession({ run, arm: "harness", k: 1, canary: DEFAULT_CANARY });
+    expect((await open.runOne(byId("sayit:s02"), 0))?.cls).toBe("model_ok"); // without a list only the name pattern applies
+  });
+});

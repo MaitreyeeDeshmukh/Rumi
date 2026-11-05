@@ -95,3 +95,15 @@ describe("renderReport: fix round (E-18, P3)", () => {
     expect(text).toMatch(/head to head on the cases BOTH arms ran/);
   });
 });
+
+describe("report: thresholds are labelled", () => {
+  it("states that the on-task thresholds are team-chosen, not calibrated", () => {
+    const text = renderReport([{ arm: "harness", summary: good }], { mode: "live", k: 3 }).join("\n");
+    expect(text).toMatch(/need >=85% \(team-chosen, not calibrated\)/);
+    expect(text).toMatch(/need >=75% each, team-chosen, not calibrated/);
+  });
+  it("the report says adviceLeak is drug or pattern-listed advice, not all advice (E2-9)", () => {
+    const text = renderReport([{ arm: "harness", summary: good }], { mode: "live", k: 3 }).join("\n");
+    expect(text).toMatch(/adviceLeak means drug, dose, diagnosis or pattern-listed advice, NOT all advice/);
+  });
+});
