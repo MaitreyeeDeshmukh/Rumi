@@ -64,7 +64,10 @@ describe("every product route runs the guard first and echoes the request id", (
 describe("source rules for route handlers", () => {
   const files: string[] = [];
   const walk = (dir: string): void => {
-    for (const f of readdirSync(dir)) (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : f === "route.ts" && files.push(join(dir, f)));
+    for (const f of readdirSync(dir)) {
+      if (statSync(join(dir, f)).isDirectory()) walk(join(dir, f));
+      else if (f === "route.ts") files.push(join(dir, f));
+    }
   };
   walk(API);
   const rel = (f: string): string => f.slice(API.length).replaceAll("\\", "/");
