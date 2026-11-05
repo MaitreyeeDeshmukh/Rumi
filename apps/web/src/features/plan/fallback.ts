@@ -37,13 +37,18 @@ const itemFor =(sentence: string, n: number) => {
   return { id: `q${n + 1}`, text, kind: question ? ("question" as const) : ("concern" as const), source: "user" as const, enabled: true };
 };
 
+// Copied text is cleaned here too (bidi overrides, zero-width and control characters), not only by the harness.
+const cleanText = (text: string): string => text.replace(/\p{Cf}/gu, "").replace(/(?![\n\t])\p{Cc}/gu, "");
+
+/** The plan id for a text: the same words always give the same id, for the built-in help and for a model answer. */
+export const planIdFor = (rawText: string): string => `plan-${fnv1a(cleanText(rawText))}`;
+
 /** `createdAt` is a parameter because the function must stay pure; the caller may pass the real time. */
 export function planFallback(r: PlanRequestT, createdAt: string = DEMO_PLAN.createdAt): PlanReplyT {
-  // Copied text is cleaned here too (bidi overrides, zero-width and control characters), not only by the harness.
-  const clean = r.rawText.replace(/\p{Cf}/gu, "").replace(/(?![\n\t])\p{Cc}/gu, "");
+  const clean = cleanText(r.rawText);
   // A greeting or an "ok" is not a concern: only sentences with at least one content word become items.
   const sentences = splitSentences(clean).filter(hasConcern);
-  const id = `plan-${fnv1a(clean)}`;
+  const id = planIdFor(r.rawText);
   const base = { id, title: "Visit plan", createdAt, symptomsInMyWords: [] };
   if (sentences.length === 0) {
     const item = { id: "q1", text: FIXED_ITEM, kind: "concern" as const, source: "suggested" as const, enabled: true };
