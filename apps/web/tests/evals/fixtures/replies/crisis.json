@@ -1,0 +1,46 @@
+{
+  "plan": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 0,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "crisis": true
+    }
+  },
+  "practice": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 0,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "crisis": true
+    }
+  },
+  "sayit": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 0,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "crisis": true
+    }
+  },
+  "recap": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 0,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "crisis": true
+    }
+  }
+}

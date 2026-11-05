@@ -1,0 +1,58 @@
+{
+  "plan": {
+    "status": 500,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "error": {
+        "code": "ai_unavailable",
+        "message": "The AI is not available."
+      }
+    }
+  },
+  "practice": {
+    "status": 500,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "error": {
+        "code": "ai_unavailable",
+        "message": "The AI is not available."
+      }
+    }
+  },
+  "sayit": {
+    "status": 500,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "error": {
+        "code": "ai_unavailable",
+        "message": "The AI is not available."
+      }
+    }
+  },
+  "recap": {
+    "status": 500,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": null,
+    "tier": null,
+    "calls": [],
+    "body": {
+      "error": {
+        "code": "ai_unavailable",
+        "message": "The AI is not available."
+      }
+    }
+  }
+}

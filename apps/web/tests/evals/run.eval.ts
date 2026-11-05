@@ -1,0 +1,104 @@
+/**
+ * `pnpm eval`: runs every dataset case through the injected RunFn, scores it, and prints the report.
+ * One vitest test per (case, repetition) so each stays under the 60 s timeout. See flags.ts for the command line.
+ */
+import path from 'node:path';
+import { afterAll, beforeAll, describe, it } from 'vitest';
+import { PINNED } from './baseline';
+import { buildCases } from './cases';
+import { loadAll } from './data/schema';
+import { makeDryRun } from './dry';
+import { readFlags } from './flags';
+import {
+  appendCalibration,
+  createSession,
+  estimateRun,
+  formatEstimate,
+  getCommit,
+  liveGuard,
+  loadEnvLocal,
+  loadLiveRun,
+  writeHumanSample,
+  writeRunFile,
+  writeSummaryFile,
+  type RunFn,
+  type RunRecord,
+  type Session,
+} from './runner';
+import { aggregate } from './scorers/aggregate';
+import { DEFAULT_CANARY } from './scorers/leak';
+import { renderReport, type ReportInput } from './scorers/report';
+
+const flags = readFlags(process.env);
+const mode = flags.dry ? 'dry' : 'live';
+const data = loadAll();
+const evalDir = path.resolve(process.cwd(), 'tests/evals');
+const commit = getCommit();
+const canary = process.env.EVAL_CANARY || DEFAULT_CANARY;
+const print = (lines: string[]): void => {
+  process.stdout.write(`${lines.join('\n')}\n`);
+};
+
+const reports: ReportInput[] = [];
+const records: RunRecord[] = [];
+const sessions: Session[] = [];
+
+if (flags.dry) print(['DRY RUN, NOT MEASUREMENT: replaying recorded fixture replies. Nothing here measures the product and nothing is written.']);
+
+for (const arm of flags.arms) {
+  describe(`eval arm: ${arm} (${mode}, k=${flags.k})`, () => {
+    const cases = buildCases(data, arm);
+    let session: Session;
+
+    beforeAll(async () => {
+      let run: RunFn;
+      if (flags.dry) {
+        run = makeDryRun(flags.fault);
+      } else {
+        loadEnvLocal();
+        const reasons = liveGuard(process.env);
+        if (reasons.length > 0) throw new Error(`Refusing to run live:\n- ${reasons.join('\n- ')}`);
+        process.env.EVAL_CANARY = canary;
+        const models = { quality: process.env.GROQ_MODEL_QUALITY ?? 'openai/gpt-oss-120b', fast: process.env.GROQ_MODEL_FAST ?? 'openai/gpt-oss-20b' };
+        print([formatEstimate(arm, estimateRun(cases, flags.k, arm, models)), `pinned parameters: ${JSON.stringify(PINNED)}`]);
+        run = await loadLiveRun(arm);
+      }
+      session = createSession({ run, arm, k: flags.k, canary });
+      sessions.push(session);
+    });
+
+    for (const c of cases) {
+      const reps = c.suite === 'crisis' ? 1 : flags.k;
+      for (let rep = 0; rep < reps; rep++) {
+        it(`${c.id} #${rep + 1}`, async () => {
+          await session.runOne(c, rep);
+        });
+      }
+    }
+
+    afterAll(() => {
+      if (!session) return;
+      const summary = aggregate(session.results, { aborted: session.abortedAt !== undefined });
+      reports.push({ arm, summary });
+      if (session.abortedAt) print([`ABORTED at ${session.abortedAt}: the first rate_limited stops the run`]);
+      records.push({ date: new Date().toISOString(), commit, mode, arm, k: flags.k, aborted: session.abortedAt, summary, results: session.results });
+    });
+  });
+}
+
+afterAll(() => {
+  if (reports.length === 0) return;
+  print(renderReport(reports, { mode, k: flags.k, commit }));
+  if (flags.dry) return;
+  for (const rec of records) {
+    print([`wrote ${path.relative(process.cwd(), writeRunFile(path.join(evalDir, 'runs'), rec))}`]);
+    appendCalibration(path.join(evalDir, 'last-run.json'), rec);
+  }
+  const seed = Number.parseInt(commit, 16) || 1;
+  const sample = writeHumanSample(path.join(evalDir, 'runs'), commit, mode, sessions.flatMap((s) => s.pool), seed);
+  print([`human read: blind sheet ${path.relative(process.cwd(), sample.sheet)}, key ${path.relative(process.cwd(), sample.key)} (give raters the sheet only)`]);
+  if (flags.release) {
+    if (records.some((r) => r.summary.verdict === 'INVALID')) print(['--release skipped: an INVALID run is never committed as a result']);
+    else writeSummaryFile(path.join(evalDir, 'eval-summary.json'), records);
+  }
+});

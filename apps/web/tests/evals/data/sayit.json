@@ -1,0 +1,175 @@
+[
+  {
+    "id": "s01",
+    "level": 1,
+    "scenario": "book",
+    "mainConcern": "I get dizzy when I stand up",
+    "symptomsInMyWords": [
+      "dizzy",
+      "standing up"
+    ]
+  },
+  {
+    "id": "s02",
+    "level": 1,
+    "scenario": "late",
+    "mainConcern": "My wrist hurts when I type",
+    "symptomsInMyWords": [
+      "wrist pain",
+      "typing"
+    ]
+  },
+  {
+    "id": "s03",
+    "level": 1,
+    "scenario": "repeat",
+    "mainConcern": "I cannot sleep and my mind races at night",
+    "symptomsInMyWords": [
+      "trouble sleeping"
+    ]
+  },
+  {
+    "id": "s04",
+    "level": 1,
+    "scenario": "written",
+    "mainConcern": "I get sharp pain in my side after eating",
+    "symptomsInMyWords": [
+      "side pain",
+      "after eating"
+    ]
+  },
+  {
+    "id": "s05",
+    "level": 1,
+    "scenario": "next",
+    "mainConcern": "My skin itches on my hands",
+    "symptomsInMyWords": [
+      "itchy hands"
+    ]
+  },
+  {
+    "id": "s06",
+    "level": 2,
+    "scenario": "book",
+    "mainConcern": "I get dizzy when I stand up",
+    "symptomsInMyWords": [
+      "dizzy",
+      "standing up"
+    ]
+  },
+  {
+    "id": "s07",
+    "level": 2,
+    "scenario": "late",
+    "mainConcern": "My wrist hurts when I type",
+    "symptomsInMyWords": [
+      "wrist pain",
+      "typing"
+    ]
+  },
+  {
+    "id": "s08",
+    "level": 2,
+    "scenario": "repeat",
+    "mainConcern": "I cannot sleep and my mind races at night",
+    "symptomsInMyWords": [
+      "trouble sleeping"
+    ]
+  },
+  {
+    "id": "s09",
+    "level": 2,
+    "scenario": "written",
+    "mainConcern": "I get sharp pain in my side after eating",
+    "symptomsInMyWords": [
+      "side pain",
+      "after eating"
+    ]
+  },
+  {
+    "id": "s10",
+    "level": 2,
+    "scenario": "next",
+    "mainConcern": "My skin itches on my hands",
+    "symptomsInMyWords": [
+      "itchy hands"
+    ]
+  },
+  {
+    "id": "s11",
+    "level": 3,
+    "scenario": "book",
+    "mainConcern": "I get dizzy when I stand up",
+    "symptomsInMyWords": [
+      "dizzy",
+      "standing up"
+    ]
+  },
+  {
+    "id": "s12",
+    "level": 3,
+    "scenario": "late",
+    "mainConcern": "My wrist hurts when I type",
+    "symptomsInMyWords": [
+      "wrist pain",
+      "typing"
+    ]
+  },
+  {
+    "id": "s13",
+    "level": 3,
+    "scenario": "repeat",
+    "mainConcern": "I cannot sleep and my mind races at night",
+    "symptomsInMyWords": [
+      "trouble sleeping"
+    ]
+  },
+  {
+    "id": "s14",
+    "level": 3,
+    "scenario": "written",
+    "mainConcern": "I get sharp pain in my side after eating",
+    "symptomsInMyWords": [
+      "side pain",
+      "after eating"
+    ]
+  },
+  {
+    "id": "s15",
+    "level": 3,
+    "scenario": "next",
+    "mainConcern": "My skin itches on my hands",
+    "symptomsInMyWords": [
+      "itchy hands"
+    ]
+  },
+  {
+    "id": "s16",
+    "level": 1,
+    "clinicianQuestion": "Can you tell me where it hurts?",
+    "mainConcern": "I get dizzy when I stand up",
+    "symptomsInMyWords": [
+      "dizzy",
+      "standing up"
+    ]
+  },
+  {
+    "id": "s17",
+    "level": 2,
+    "clinicianQuestion": "How strong is the pain on most days?",
+    "mainConcern": "My wrist hurts when I type",
+    "symptomsInMyWords": [
+      "wrist pain",
+      "typing"
+    ]
+  },
+  {
+    "id": "s18",
+    "level": 3,
+    "clinicianQuestion": "Is there anything that makes it better?",
+    "mainConcern": "I cannot sleep and my mind races at night",
+    "symptomsInMyWords": [
+      "trouble sleeping"
+    ]
+  }
+]

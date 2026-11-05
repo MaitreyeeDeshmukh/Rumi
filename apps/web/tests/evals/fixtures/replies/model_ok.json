@@ -1,0 +1,113 @@
+{
+  "plan": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": "openai/gpt-oss-120b",
+    "tier": "quality",
+    "latencyMs": 1800,
+    "promptVersion": "plan@dry",
+    "calls": [
+      {
+        "model": "openai/gpt-oss-120b",
+        "tokensIn": 1400,
+        "tokensOut": 350
+      }
+    ],
+    "body": {
+      "plan": {
+        "id": "plan-dry",
+        "title": "Visit plan",
+        "createdAt": "2026-11-05T09:00:00.000Z",
+        "mainConcern": "I want to talk about what is bothering me.",
+        "symptomsInMyWords": [],
+        "items": [
+          {
+            "id": "q1",
+            "text": "I want to tell you what is bothering me.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      }
+    }
+  },
+  "practice": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": "openai/gpt-oss-20b",
+    "tier": "fast",
+    "latencyMs": 700,
+    "promptVersion": "practice@dry",
+    "calls": [
+      {
+        "model": "openai/gpt-oss-20b",
+        "tokensIn": 1500,
+        "tokensOut": 120
+      }
+    ],
+    "body": {
+      "clinicianSay": "Thank you for telling me. What else would you like to say?",
+      "coveredItemIds": [],
+      "isLastTurn": false
+    }
+  },
+  "sayit": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": "openai/gpt-oss-20b",
+    "tier": "fast",
+    "latencyMs": 650,
+    "promptVersion": "sayit@dry",
+    "calls": [
+      {
+        "model": "openai/gpt-oss-20b",
+        "tokensIn": 1200,
+        "tokensOut": 100
+      }
+    ],
+    "body": {
+      "script": "I want to tell you what is bothering me.",
+      "blanks": []
+    }
+  },
+  "recap": {
+    "status": 200,
+    "degraded": false,
+    "attempts": 1,
+    "modelUsed": "openai/gpt-oss-120b",
+    "tier": "quality",
+    "latencyMs": 2600,
+    "promptVersion": "recap@dry",
+    "calls": [
+      {
+        "model": "openai/gpt-oss-120b",
+        "tokensIn": 2200,
+        "tokensOut": 500
+      }
+    ],
+    "body": {
+      "items": [
+        {
+          "section": "discussed",
+          "text": "We talked about the visit.",
+          "evidence": [
+            "l1"
+          ]
+        }
+      ],
+      "unconfirmed": [],
+      "planStatus": [
+        {
+          "itemId": "q1",
+          "status": "not_asked",
+          "evidence": []
+        }
+      ],
+      "dropped": 0
+    }
+  }
+}
