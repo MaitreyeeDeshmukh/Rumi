@@ -120,9 +120,14 @@ jobs:
           files=(supabase/tests/*.sql)
           [ "${#files[@]}" -gt 0 ] || { echo "no supabase/tests/*.sql files found" >&2; exit 1; }
           for f in "${files[@]}"; do
+            # scale_100k.sql is not standalone: scripts/db/scale-check.sh seeds the data first (next step)
+            [ "$(basename "$f")" = "scale_100k.sql" ] && continue
             echo "== $f"
             bash scripts/db/run-sql.sh "$f"
           done
+      - name: Scale check (100k users, rolled back)
+        if: steps.db.outputs.present == 'true'
+        run: bash scripts/db/scale-check.sh
       - name: Schema lint
         if: steps.db.outputs.present == 'true'
         run: supabase db lint --local --fail-on error

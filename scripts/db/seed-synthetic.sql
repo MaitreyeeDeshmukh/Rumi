@@ -91,7 +91,7 @@ begin
 
   -- the sign-up trigger stamped every settings row with now(): give them the user's age (the touch trigger would undo it)
   alter table public.core_settings disable trigger core_settings_touch;
-  update public.core_settings s set updated_at = u.created_at from auth.users u where u.id = s.owner_id;
+  update public.core_settings s set updated_at = u.created_at from auth.users u where u.id = s.owner_id and u.created_at is not null;
   alter table public.core_settings enable trigger core_settings_touch;
   raise notice 'seeded % after % s', 'public.persona_facts', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 end $$;
