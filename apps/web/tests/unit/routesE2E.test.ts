@@ -17,6 +17,7 @@ import { DEMO_PLAN } from "@/fixtures/demoPlan";
 import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
 import { SAVED_RECAP_REPLY } from "@/fixtures/sampleRecap";
 import { runTask } from "@/lib/ai/harness";
+import type { Provider, ProviderCall, ProviderResult } from "@/lib/ai/provider";
 import { setLogSink } from "@/lib/ai/telemetry";
 import { createRateLimiter } from "@/lib/security/rateLimit";
 import { bodyOf, fakeProvider, post, providerError, type Scripted } from "./helpers/fakeTask";
@@ -93,9 +94,18 @@ const CASES: Case[] = [
   },
 ];
 
+/**
+ * The harness also asks the crisis classifier about ordinary text (tier none, fail open). These tests are not about that call, so it is
+ * answered "no" here, off the record: it is not in provider.calls. Every other call goes to the scripted provider.
+ */
+const quietClassifier = (inner: Provider): Provider => ({
+  complete: async (call: ProviderCall): Promise<ProviderResult> =>
+    call.system.includes("safety classifier") ? { text: '{"crisis":false}', modelUsed: "classifier", inTokens: 0, outTokens: 0 } : inner.complete(call),
+});
+
 const run = (c: Case, script: Scripted[], body: Record<string, unknown> = c.body) => {
   const provider = fakeProvider(script);
-  return { provider, done: runTask(c.spec as never, post(body), { provider, limiter: createRateLimiter(), rand: () => HEX }) };
+  return { provider, done: runTask(c.spec as never, post(body), { provider: quietClassifier(provider), limiter: createRateLimiter(), rand: () => HEX }) };
 };
 const json = async (res: Response): Promise<Record<string, unknown>> => (await bodyOf(res)) as Record<string, unknown>;
 const ev = (): Record<string, unknown> => JSON.parse(logs.at(-1) as string) as Record<string, unknown>;
@@ -129,7 +139,8 @@ describe.each(CASES)("/api/$name with a scripted provider (the real path)", (c) 
     expect(body.degraded).toBe(false);
     expect(provider.calls).toHaveLength(1);
     expect(provider.calls[0]).toMatchObject({ tier: c.spec.tier, temperature: c.spec.temperature, maxOutputTokens: c.spec.maxOutputTokens });
-    expect(ev()).toMatchObject({ task: c.name, outcome: "ok", degraded: false, attempts: 1 });
+    // attempts counts the crisis classifier call too, which the harness makes for ordinary typed text (recap has none).
+    expect(ev()).toMatchObject({ task: c.name, outcome: "ok", degraded: false, attempts: c.name === "recap" ? 1 : 2 });
   });
 
   it("the composed prompt has exactly one preamble, one persona and one of each region, and request text only inside fences", async () => {
