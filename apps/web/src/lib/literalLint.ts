@@ -30,8 +30,8 @@ export const IDIOM_PATTERNS: readonly string[] = [
   "(?:run|runs|ran|running) through",
   "a bit",
   "little bit",
-  // "what kind of pain" is a question about a type, not a hedge: only "kind of"/"sort of" NOT after a word like what/this/any/a.
-  "(?<!\\b(?:what|which|this|that|these|those|any|some|another|same|every|each|other|different|the|a|an|one)\\s)(?:sort|kind) of",
+  // "kind of"/"sort of" as a hedge. The question and noun uses ("what kind of pain") are removed first by TYPE_OF.
+  "(?:sort|kind) of",
   "kinda",
   "sorta",
   "(?:touch|touched|touches|touching) base",
@@ -106,7 +106,12 @@ export const IDIOM_PATTERNS: readonly string[] = [
   "ball is in your court",
 ];
 
-const IDIOMS: readonly RegExp[] = IDIOM_PATTERNS.map((p) => new RegExp(`(?<![\\p{L}\\p{N}'])(?:${p})(?![\\p{L}\\p{N}'])`, "u"));
+// No lookbehind in this file: it is loaded in the browser, and Safari before 16.4 throws on it (07 D44).
+// Whole-word matching consumes one character before the idiom instead: the start of the text, or anything that is not a letter, digit or apostrophe.
+const IDIOMS: readonly RegExp[] = IDIOM_PATTERNS.map((p) => new RegExp(`(?:^|[^\\p{L}\\p{N}'])(?:${p})(?![\\p{L}\\p{N}'])`, "u"));
+
+/** "what kind of pain", "this sort of thing", "a kind of": a type, not a hedge. Replaced by one space before the idioms are matched. */
+const TYPE_OF = /(?:^| )(?:what|which|this|that|these|those|any|some|another|same|every|each|other|different|the|a|an|one) (?:sort|kind) of(?= |$)/g;
 
 const COMMANDS = [
   "open", "close", "take", "put", "write", "tell", "ask", "bring", "call", "go", "sit", "stand", "wait", "read", "say",
@@ -135,7 +140,7 @@ export function literalLint(text: string): { ok: boolean; failures: LintFailure[
   const failures: LintFailure[] = [];
   // A line break inside a sentence is not a sentence end; only punctuation ends one.
   for (const sentence of splitSentences(text.replace(/\s+/g, " "))) {
-    const flat = flatten(sentence);
+    const flat = flatten(sentence).replace(TYPE_OF, " ");
     if (countWords(sentence) > MAX_WORDS) failures.push({ sentence, reason: "too_long" });
     if (IDIOMS.some((re) => re.test(flat))) failures.push({ sentence, reason: "idiom" });
     if (isDoubleCommand(sentence)) failures.push({ sentence, reason: "double_command" });

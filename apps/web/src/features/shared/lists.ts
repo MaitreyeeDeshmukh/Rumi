@@ -56,6 +56,21 @@ export const CONDITIONS = [
   'bulimia', 'panic disorder', 'panic attacks', 'burnout', 'long covid', 'pcos', 'endometriosis', 'tendonitis',
 ] as const;
 
+/** Everyday names for conditions that CONDITIONS lacks. The advice guard treats them like CONDITIONS. */
+export const EXTRA_CONDITIONS = [
+  "high blood pressure", "low blood pressure", "high cholesterol", "low iron", "iron deficiency", "anemic", "depressed", "anxious",
+  "bipolar disorder", "panic attack", "panic attacks", "stress", "stressed", "vitamin d deficiency", "underactive thyroid",
+  "overactive thyroid", "irritable bowel", "food poisoning", "kidney infection", "chronic fatigue", "sleep disorder",
+  "hormonal imbalance", "hormone imbalance", "heart condition", "blood clot", "dehydration", "malnutrition", "obesity", "diabetic",
+  "autistic", "asthmatic", "epileptic", "prediabetic", "overweight",
+  "glaucoma", "cataracts", "scoliosis", "shingles", "vertigo", "dyslexia", "dyslexic", "dyscalculia", "dyspraxia", "tourette", "tourettes",
+  "learning disability", "slipped disc", "lactose intolerant", "lactose intolerance", "acne", "tonsillitis", "sinusitis", "strep throat", "gout",
+  "osteoarthritis", "rheumatoid arthritis", "cystic fibrosis", "sickle cell", "leukemia", "lymphoma", "melanoma", "glandular fever", "measles",
+  "chickenpox", "mumps", "whooping cough", "rubella", "malaria", "lyme disease", "tinnitus", "hearing loss", "dermatitis", "rosacea", "vitiligo",
+  "alopecia", "narcolepsy", "restless legs", "personality disorder", "social anxiety", "agoraphobia", "phobia", "psychosis", "paranoia",
+  "sleep apnoea", "hay fever", "eczema", "diabetes type 2", "type 1 diabetes", "type 2 diabetes", "high blood sugar", "low blood sugar"
+] as const;
+
 export const STOPWORDS = [
   'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'any', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'has',
   'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'did', 'get', 'let', 'say', 'she',
@@ -70,7 +85,7 @@ export const STOPWORDS = [
 export const SENTENCE_STARTERS = [
   'i', 'the', 'a', 'an', 'what', 'why', 'how', 'when', 'where', 'who', 'which', 'please', 'can', 'could', 'do', 'does',
   'is', 'are', 'will', 'would', 'should', 'thank', 'thanks', 'hello', 'hi', 'okay', 'yes', 'no', 'sorry', 'my', 'it',
-  'this', 'that', 'we', 'you', 'if', 'and', 'but', 'so', 'then', 'also', 'maybe', 'sometimes', 'often', 'lying',
+  'this', 'that', 'we', 'you', 'if', 'and', 'but', 'so', 'then', 'also', 'maybe', 'sometimes', 'often', 'lying', 'they', 'first', 'before', 'after', 'usually', 'mostly', 'there', 'now',
 ] as const;
 
 export const toSet = <T extends string>(list: readonly T[]): ReadonlySet<string> => new Set<string>(list);

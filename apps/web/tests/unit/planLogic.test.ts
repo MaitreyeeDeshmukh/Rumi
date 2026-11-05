@@ -29,7 +29,7 @@ describe("mainConcernCodes (D10)", () => {
   it("flags a concern that is not from the user's words", () => {
     expect(mainConcernCodes("I keep getting headaches", "my stomach")).toEqual(["main_concern_not_from_user"]);
     expect(mainConcernCodes("I keep getting headaches", "")).toEqual(["main_concern_not_from_user"]);
-    expect(mainConcernCodes("my knee hurts", "my knee and chest pain and dizziness")).toEqual(["main_concern_not_from_user"]);
+    expect(mainConcernCodes("my knee hurts", "my knee and chest tightness and dizziness and nausea")).toEqual(["main_concern_not_from_user"]);
   });
 
   it("is skipped when the user's text has no content word, so the fixed prompt can be used", () => {

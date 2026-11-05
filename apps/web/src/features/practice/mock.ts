@@ -1,3 +1,4 @@
+import { confirmCovered } from "@/features/practice/confirmCovered";
 import { enabledItems } from "@/features/practice/labels";
 import type { PracticeReplyT, PracticeRequestT } from "@/features/shared/schemas";
 import { CLOSING_LINE } from "../../../prompts/persona";
@@ -15,6 +16,10 @@ export function practiceMock(r: PracticeRequestT): PracticeReplyT {
   const spoken = r.turns.filter((t) => t.role === "me").length;
   const at = Math.min(spoken, LINES.length - 1);
   const ids = enabledItems(r.plan).map((i) => i.id);
-  // The first item counts as covered once the user has answered, the second after three answers.
-  return { clinicianSay: LINES[at], coveredItemIds: ids.slice(0, spoken >= 3 ? 2 : spoken >= 1 ? 1 : 0), isLastTurn: at === LINES.length - 1 };
+  // The script proposes the first item after the first answer and the second after three answers; the code keeps an item
+  // only when the latest turn of the user really touches it, as the real task does (07 D12).
+  const proposed = ids.slice(0, spoken >= 3 ? 2 : spoken >= 1 ? 1 : 0);
+  const latest = r.turns.findLast((t) => t.role === "me");
+  const coveredItemIds = latest === undefined ? [] : confirmCovered(proposed, r.plan, [latest.text]);
+  return { clinicianSay: LINES[at], coveredItemIds, isLastTurn: at === LINES.length - 1 };
 }
