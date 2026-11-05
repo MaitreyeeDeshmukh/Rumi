@@ -112,7 +112,7 @@ If the database cannot be read, AI stays on and memory sync stays off. The app r
 2. If it lasts more than 15 minutes, set `ai_enabled = false` to stop the retries. Set it back to true when the provider recovers.
 3. Do not rotate keys unless a key leaked.
 
-**Auth down** (sign-in fails, "Saving is paused" in the app). The app keeps working on the device.
+**Auth down** (sign-in fails, "Saving is paused" in the app). The app keeps working on the device. The app signs a person in anonymously only when they turn memory on (or already have it on), so a visit that never does that never calls Auth.
 1. Check the Supabase status page and the Authentication dashboard: anonymous sign-ins must be on, and the Vercel domain must be in the redirect URLs. Look at the Authentication logs for 429 or captcha failures.
 2. In the Vercel logs, search `request_rejected` with `code":"unauthorized"`. These are warning lines, one a minute per route; they are not in the database tables.
 3. Nothing to flip. Data is safe on the device. Sign-in retries by itself.
