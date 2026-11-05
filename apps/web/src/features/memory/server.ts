@@ -4,9 +4,13 @@
  * Answers carry a code, one plain sentence and the request id. They never carry the database's message.
  *  - facts:   writes a batch (and any removals) as the signed-in user, answers with what is stored.
  *             Off when the `memory_sync_enabled` flag is off (cloud writes fail safe).
- *  - forget:  verified erasure; ignores the flag, so a person can always delete. Also revokes consent.
+ *  - forget:  revokes consent FIRST (so no push can land after the erase), then erases, then proves consent is off and
+ *             no row is left. Ignores the flag, so a person can always delete.
  *  - consent: turn persona memory on or off for this account. Also ignores the flag.
- * A refusal by RLS (consent off) is answered 403 `consent_required`; the browser treats it as "memory is off", not an error.
+ * Consent is checked before any read or write on the facts route; off is 403 `consent_required`, which the browser
+ * treats as "memory is off", not an error. A 42501 from anything but the write RPC is `permission_denied` (a missing
+ * GRANT or a broken policy): a loud 500 with an ERROR log, never read as "consent is off".
+ * Every route is limited per signed-in user as well as per address.
  */
 import { z } from 'zod';
 import { HttpError, json } from '@/lib/ai/http';
@@ -27,10 +31,14 @@ export interface RouteDeps {
   getDb: (req: Request) => Promise<MemoryDb>;
   getFlag: (key: 'memory_sync_enabled') => Promise<boolean>;
   readJson: (req: Request, maxBytes: number) => Promise<unknown>;
+  /** Per-user limit, checked after sign-in. Throws HttpError 429. */
+  userLimit: (userId: string) => void;
   now: () => number;
+  /** Only a test sets this, to see what is logged. */
+  createLog?: typeof createLogger;
 }
 
-type Code = 'bad_input' | 'too_large' | 'unauthorized' | 'forbidden' | 'consent_required' | 'rate_limited' | 'store_unavailable';
+type Code = 'bad_input' | 'too_large' | 'unauthorized' | 'forbidden' | 'consent_required' | 'rate_limited' | 'store_unavailable' | 'permission_denied';
 const MESSAGE: Record<Code, string> = {
   bad_input: 'I could not read that. Check it and try again.',
   too_large: 'That is too long. Make it shorter and try again.',
@@ -39,7 +47,11 @@ const MESSAGE: Record<Code, string> = {
   consent_required: 'Memory is off. Turn it on to save.',
   rate_limited: 'That was too many tries. Wait a minute and try again.',
   store_unavailable: 'Saving is paused. Your work is on this device.',
+  permission_denied: 'Saving is paused. Your work is on this device.',
 };
+
+/** A request id from the browser is used only if it looks like one; anything else (log forging, huge values) is replaced. */
+const REQUEST_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 
 function fail(status: number, code: Code, requestId: string, headers: Record<string, string> = {}): Response {
   return json({ error: { code, message: MESSAGE[code], requestId } }, status, { [REQUEST_ID_HEADER]: requestId, ...headers });
@@ -65,6 +77,10 @@ function answer(e: unknown, requestId: string, log: Logger): Response {
       log.info('memory_unauthorized');
       return fail(401, 'unauthorized', requestId);
     }
+    if (e.reason === 'permission_denied') {
+      log.error('memory_permission_denied', e, { reason: e.reason, pgcode: '42501' });
+      return fail(500, 'permission_denied', requestId);
+    }
     // invalid here means the database refused a batch we had already checked: our bug, so it is an ERROR like the rest.
     log.error('memory_store_failed', e, { reason: e.reason });
     return fail(503, 'store_unavailable', requestId);
@@ -74,11 +90,13 @@ function answer(e: unknown, requestId: string, log: Logger): Response {
 }
 
 async function run(req: Request, route: string, work: (log: Logger, requestId: string, userId: string) => Promise<Response>, deps: RouteDeps): Promise<Response> {
-  const requestId = req.headers.get(REQUEST_ID_HEADER) ?? newRequestId();
-  const log = createLogger({ requestId, route });
+  const sent = req.headers.get(REQUEST_ID_HEADER);
+  const requestId = sent !== null && REQUEST_ID_RE.test(sent) ? sent : newRequestId();
+  const log = (deps.createLog ?? createLogger)({ requestId, route });
   try {
     deps.guard(req, MAX_BODY_BYTES);
     const { userId } = await deps.requireUser(req);
+    deps.userLimit(userId);
     return await work(log, requestId, userId);
   } catch (e) {
     return answer(e, requestId, log);
@@ -97,9 +115,14 @@ export function handleFacts(req: Request, deps: RouteDeps): Promise<Response> {
       const batch = parseFactBatch(await deps.readJson(req, MAX_BODY_BYTES), deps.now());
       if (!batch.ok) return fail(batch.reason === 'too_many' ? 413 : 400, batch.reason === 'too_many' ? 'too_large' : 'bad_input', requestId);
       const store = createSupabaseStore(await deps.getDb(req), userId);
+      // Before any read or write, even for an empty batch (an empty write would pass RLS and reveal what is stored).
+      if (!(await store.hasConsent())) throw new MemoryStoreError('consent_required');
       await store.removeFacts(batch.removed);
       const saved = await store.upsertFacts(batch.facts);
       const { facts, rejected } = await store.search();
+      // Consent can be withdrawn while this request runs: what was just read must not be handed back then.
+      if (!(await store.hasConsent())) throw new MemoryStoreError('consent_required');
+      if (batch.clamped > 0) log.warn('memory_stamps_clamped', { count: batch.clamped });
       log.info('memory_facts_ok', { saved, removed: batch.removed.length, stored: facts.length, rejected });
       return ok({ saved, rejected, facts }, requestId);
     },
@@ -113,14 +136,11 @@ export function handleForget(req: Request, deps: RouteDeps): Promise<Response> {
     '/api/memory/forget',
     async (log, requestId, userId) => {
       const store = createSupabaseStore(await deps.getDb(req), userId);
+      // Consent first: from here on the database refuses every push, so nothing can land after the erase.
+      // If this fails nothing was erased and the answer is a failure.
+      await store.setConsent(false);
       await store.forget(); // throws erasure_incomplete unless zero rows remain: answered as a failure, never as ok
-      try {
-        await store.setConsent(false);
-      } catch (e) {
-        // The facts are gone, which is what was asked. A consent row left on is harmless with nothing stored, and the
-        // browser switches memory off locally; the next enable sets it again.
-        log.warn('memory_consent_revoke_failed', { reason: e instanceof MemoryStoreError ? e.reason : 'error' });
-      }
+      if (await store.hasConsent()) throw new MemoryStoreError('unavailable'); // the revoke did not stick
       log.info('memory_forget_ok');
       return ok({ status: 'ok' }, requestId);
     },

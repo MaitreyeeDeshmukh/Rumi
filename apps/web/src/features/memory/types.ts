@@ -23,6 +23,8 @@ export interface DbResult<T> {
 export interface DbFilter extends PromiseLike<DbResult<unknown>> {
   eq(column: string, value: string): DbFilter;
   lt(column: string, value: string): DbFilter;
+  /** PostgREST or-filter, for example `and(kind.eq.pacing,key.eq.extra_time),and(...)`. Built only from validated values. */
+  or(filters: string): DbFilter;
   limit(count: number): DbFilter;
 }
 export interface DbTable {
@@ -35,7 +37,7 @@ export interface MemoryDb {
   from(table: string): DbTable;
 }
 
-export type MemoryStoreReason = 'consent_required' | 'unauthorized' | 'invalid' | 'timeout' | 'unavailable' | 'erasure_incomplete';
+export type MemoryStoreReason = 'consent_required' | 'permission_denied' | 'unauthorized' | 'invalid' | 'timeout' | 'unavailable' | 'erasure_incomplete';
 
 /** Carries a reason code only. The database's own message is never kept, so it cannot reach a log or a client. */
 export class MemoryStoreError extends Error {

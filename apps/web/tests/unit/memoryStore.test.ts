@@ -84,13 +84,28 @@ describe("sanitise on write: parseFactBatch", () => {
     expect(parseFactBatch({ facts: [fact("p1")], extra: 1 }, NOW)).toEqual({ ok: false, reason: "invalid" });
   });
 
-  it("a change time that is not a real clock is refused: before 2020, more than five minutes ahead, or not ISO", () => {
-    const at = (t: string) => parseFactBatch(body([fact("p1", t)]), NOW);
-    expect(at("2019-12-31T23:59:59.000Z").ok).toBe(false);
-    expect(at("2026-11-05T12:05:01.000Z").ok).toBe(false);
-    expect(at("2026-11-05T12:04:59.000Z").ok).toBe(true);
-    expect(at("yesterday").ok).toBe(false);
-    expect(at("2026-11-05T10:00:00+02:00").ok).toBe(false);
+  it("a change time that is not a real clock is set to the server's time, never a reason to refuse the batch", () => {
+    const stamp = (t: string) => {
+      const r = parseFactBatch(body([fact("p1", t)]), NOW);
+      return r.ok ? { at: r.facts[0].client_updated_at, clamped: r.clamped } : r;
+    };
+    const SERVER = "2026-11-05T12:00:00.000Z";
+    expect(stamp("2019-12-31T23:59:59.000Z")).toEqual({ at: SERVER, clamped: 1 });
+    expect(stamp("2099-01-01T00:00:00.000Z")).toEqual({ at: SERVER, clamped: 1 });
+    expect(stamp("2026-11-05T12:05:01.000Z")).toEqual({ at: SERVER, clamped: 1 });
+    expect(stamp("2026-11-05T12:04:59.000Z")).toEqual({ at: "2026-11-05T12:04:59.000Z", clamped: 0 });
+    expect(stamp("2026-11-05T09:00:00.000Z")).toEqual({ at: "2026-11-05T09:00:00.000Z", clamped: 0 });
+  });
+
+  it("only a stamp that is not a time at all is refused", () => {
+    for (const t of ["yesterday", "", "2026-11-05T10:00:00+02:00", "2026-13-45T10:00:00.000Z"]) {
+      expect(parseFactBatch(body([fact("p1", t)]), NOW), t).toEqual({ ok: false, reason: "invalid" });
+    }
+  });
+
+  it("removal stamps are set to the server's time the same way", () => {
+    const r = parseFactBatch(body([], [{ kind: "support_pref", key: "p1", client_updated_at: "2099-01-01T00:00:00.000Z" }]), NOW);
+    expect(r.ok && r.removed[0].client_updated_at).toBe("2026-11-05T12:00:00.000Z");
   });
 
   it("removals: stated kinds only", () => {

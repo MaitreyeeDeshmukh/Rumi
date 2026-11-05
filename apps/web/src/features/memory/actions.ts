@@ -129,7 +129,7 @@ export function createMemoryActions({
     if (!s.settings.memoryOptIn) return { saved, remote: 'off' };
     if (!online()) return { saved, remote: 'paused' };
 
-    const removed = toWireRemovals(s.persona.removed ?? []);
+    const removed = toWireRemovals(s.persona.removed ?? [], stamp);
     const body = { facts: toSyncFacts(s.persona.facts), removed };
     // The same check the server runs. A batch that fails it is a bug here, so it is not sent and not trimmed.
     if (!parseFactBatch(body).ok) return { saved, remote: 'failed' };
@@ -141,7 +141,7 @@ export function createMemoryActions({
     }
     const reply = answer.kind === 'ok' ? FactsReply.safeParse(answer.data) : null;
     if (!reply?.success) return { saved, remote: 'failed' };
-    const sent = new Set(removed.map((r) => `${r.kind}:${r.key}:${r.client_updated_at}`));
+    const sent = new Set((s.persona.removed ?? []).map((r) => `${r.id}:${r.at}`));
     store.update((d) => {
       // Drop only the removals this request carried; one made while it was in flight stays for the next sync.
       const left = (d.persona.removed ?? []).filter((r) => !sent.has(`${r.id}:${r.at}`));

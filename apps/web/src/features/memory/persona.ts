@@ -33,9 +33,12 @@ export function helpHistoryFor(state: RumiState, kind: PlanItemKind): HelpHistor
 }
 
 /** One ISO form (with Z), or undefined when the text is not a time. */
-const isoOrUndefined = (t: string | undefined): string | undefined => {
+const isoOrUndefined = (t: string | undefined, notAfter?: string): string | undefined => {
   const ms = t === undefined ? Number.NaN : Date.parse(t);
-  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
+  if (Number.isNaN(ms)) return undefined;
+  const cap = notAfter === undefined ? Number.NaN : Date.parse(notAfter);
+  // A change cannot be later than now: a stamp from the future (a wrong clock, a bad import) is set to now.
+  return new Date(Number.isNaN(cap) ? ms : Math.min(ms, cap)).toISOString();
 };
 
 /**
@@ -51,7 +54,7 @@ export function factsFromState(state: RumiState, now: string = new Date().toISOS
     const id = factId(kind, key);
     if (out.some((f) => f.id === id)) return;
     const old = before.get(id);
-    const updatedAt = isoOrUndefined(changedAt) ?? (old && old.level === level ? isoOrUndefined(old.updatedAt) : undefined) ?? now;
+    const updatedAt = isoOrUndefined(changedAt, now) ?? (old && old.level === level ? isoOrUndefined(old.updatedAt, now) : undefined) ?? now;
     out.push({ id, kind, key, ...(level === undefined ? {} : { level }), createdAt: old?.createdAt ?? now, updatedAt });
   };
 
@@ -87,10 +90,11 @@ export function pendingRemovals(before: Persona, after: readonly PersonaFact[], 
 export const toSyncFacts = (facts: readonly PersonaFact[]): PersonaFactSyncT[] =>
   facts.map((f) => ({ kind: f.kind, key: f.key, ...(f.level === undefined ? {} : { level: f.level }), client_updated_at: f.updatedAt }));
 
-export const toWireRemovals = (removed: readonly PersonaRemoval[]): PersonaFactRemovalT[] =>
+export const toWireRemovals = (removed: readonly PersonaRemoval[], now?: string): PersonaFactRemovalT[] =>
   removed.flatMap((r) => {
     const [kind, key] = r.id.split(':');
-    return kind === 'support_pref' || kind === 'pacing' ? [{ kind, key, client_updated_at: r.at }] : [];
+    const at = isoOrUndefined(r.at, now);
+    return (kind === 'support_pref' || kind === 'pacing') && at !== undefined ? [{ kind, key, client_updated_at: at }] : [];
   });
 
 /**

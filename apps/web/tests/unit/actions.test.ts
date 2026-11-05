@@ -212,8 +212,8 @@ describe("two devices: last write wins", () => {
 
   it("a stale device does not overwrite a newer fact, and it adopts the newer one", async () => {
     const db = fakeMemoryDb();
-    const a = memoryDevice(db, { card: [] });
-    const b = memoryDevice(db, { card: [] });
+    const a = memoryDevice(db, { card: [], at: "2026-11-05T12:00:00.000Z" });
+    const b = memoryDevice(db, { card: [], at: "2026-11-05T12:00:00.000Z" });
     withHelp(T2, 3)(a); // newer practice, on device A
     withHelp(T1, 0)(b); // older practice, on device B
     await a.actions.enableMemory();

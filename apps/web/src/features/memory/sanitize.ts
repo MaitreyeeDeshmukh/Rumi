@@ -7,10 +7,14 @@ import { FactsRequest, PersonaFactSync, type PersonaFactRemovalT } from '@/featu
 import type { StoredFact } from './types';
 
 export type BatchResult =
-  | { ok: true; facts: StoredFact[]; removed: PersonaFactRemovalT[] }
+  | { ok: true; facts: StoredFact[]; removed: PersonaFactRemovalT[]; clamped: number }
   | { ok: false; reason: 'too_many' | 'invalid' };
 
-/** A change stamp before this or more than five minutes ahead is not a real device clock; it could pin a fact forever. */
+/**
+ * A change stamp before this or more than five minutes ahead is not a real device clock; left alone it could pin a fact
+ * forever (a stamp in the far future beats every later change). Such a stamp is set to the server's time instead of
+ * refusing the batch, so one wrong device clock can never make sync fail for good. Only a stamp that is not a time is refused.
+ */
 const EARLIEST_MS = Date.UTC(2020, 0, 1);
 const FUTURE_SLACK_MS = 5 * 60_000;
 
@@ -24,10 +28,18 @@ export function parseFactBatch(raw: unknown, nowMs: number = Date.now()): BatchR
   if (sizeOf(raw, 'facts') > FACTS_BATCH_MAX || sizeOf(raw, 'removed') > FACTS_BATCH_MAX) return { ok: false, reason: 'too_many' };
   const parsed = FactsRequest.safeParse(raw);
   if (!parsed.success) return { ok: false, reason: 'invalid' };
-  const removed = parsed.data.removed ?? [];
-  const stamps = [...parsed.data.facts, ...removed].map((f) => Date.parse(f.client_updated_at));
-  if (stamps.some((t) => Number.isNaN(t) || t < EARLIEST_MS || t > nowMs + FUTURE_SLACK_MS)) return { ok: false, reason: 'invalid' };
-  return { ok: true, facts: parsed.data.facts, removed };
+  let clamped = 0;
+  const fixed = <T extends { client_updated_at: string }>(f: T): T | null => {
+    const t = Date.parse(f.client_updated_at);
+    if (Number.isNaN(t)) return null;
+    if (t >= EARLIEST_MS && t <= nowMs + FUTURE_SLACK_MS) return f;
+    clamped++;
+    return { ...f, client_updated_at: new Date(nowMs).toISOString() };
+  };
+  const facts = parsed.data.facts.map(fixed);
+  const removed = (parsed.data.removed ?? []).map(fixed);
+  if (facts.includes(null) || removed.includes(null)) return { ok: false, reason: 'invalid' };
+  return { ok: true, facts: facts as StoredFact[], removed: removed as PersonaFactRemovalT[], clamped };
 }
 
 /** PostgREST sends timestamptz as "2026-11-05T10:00:00.123456+00:00"; the schema wants one ISO form. */

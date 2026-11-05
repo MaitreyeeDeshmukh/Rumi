@@ -196,7 +196,11 @@ export const FactsRequest = z.strictObject({
     .array(PersonaFactSync)
     .max(FACTS_BATCH_MAX)
     .refine((facts) => unique(facts.map((f) => `${f.kind}:${f.key}`)), { message: 'duplicate fact' }),
-  removed: z.array(PersonaFactRemoval).max(FACTS_BATCH_MAX).optional(),
+  removed: z
+    .array(PersonaFactRemoval)
+    .max(FACTS_BATCH_MAX)
+    .refine((removed) => unique(removed.map((f) => `${f.kind}:${f.key}`)), { message: 'duplicate removal' })
+    .optional(),
 });
 export const ForgetReply = z.object({ status: z.enum(['ok', 'failed']) });
 /** `facts` is what the database holds after the write, so a second device can merge it. `rejected` counts stored rows we ignored. */

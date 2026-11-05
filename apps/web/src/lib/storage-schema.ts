@@ -183,6 +183,11 @@ function parseRecap(raw: unknown): Recap | undefined {
 }
 
 const iso = (v: unknown): string => (typeof v === 'string' ? v.slice(0, 40) : '');
+/** A change time in the one form the server accepts (with Z), or '' when it is not a time. */
+const isoTime = (v: unknown): string => {
+  const ms = typeof v === 'string' ? Date.parse(v) : Number.NaN;
+  return Number.isNaN(ms) ? '' : new Date(ms).toISOString();
+};
 
 /** Facts are rebuilt from (kind, key, level) only. Any stored id or free text is thrown away. */
 function parseFacts(raw: unknown): PersonaFact[] {
@@ -202,7 +207,7 @@ function parseFacts(raw: unknown): PersonaFact[] {
       ...(wire.data.level === undefined ? {} : { level: wire.data.level }),
       createdAt,
       // Data saved before updatedAt existed falls back to its creation time.
-      updatedAt: iso(own(entry, 'updatedAt')) || createdAt,
+      updatedAt: isoTime(own(entry, 'updatedAt')) || createdAt,
     });
   }
   return uniqueBy(facts, (f) => f.id).slice(0, LIMITS.factsMax);
@@ -215,8 +220,8 @@ function parseRemoved(raw: unknown): PersonaRemoval[] {
   for (const entry of raw) {
     if (!isObject(entry)) continue;
     const id = own(entry, 'id');
-    const at = iso(own(entry, 'at'));
-    if (typeof id !== 'string' || at === '' || Number.isNaN(Date.parse(at))) continue;
+    const at = isoTime(own(entry, 'at'));
+    if (typeof id !== 'string' || at === '') continue;
     const [kind, key, extra] = id.split(':');
     if (extra !== undefined || !PersonaFactRemoval.safeParse({ kind, key, client_updated_at: '2026-01-01T00:00:00.000Z' }).success) continue;
     out.push({ id: `${kind}:${key}`, at });

@@ -8,7 +8,7 @@
  *  - `getMemoryContext` is the read path used by AI routes: it never throws and gives up after 1500 ms.
  */
 import { STATED_FACT_KINDS } from '@/features/shared/constants';
-import { PersonaFactSync, type PersonaFactRemovalT } from '@/features/shared/schemas';
+import { PersonaFactRemoval, PersonaFactSync, type PersonaFactRemovalT } from '@/features/shared/schemas';
 import { getFlag } from '@/lib/ai/flags';
 import { createLogger, type Logger } from '@/lib/log';
 import { getServerClient } from '@/lib/supabase/server';
@@ -37,11 +37,11 @@ type Verdict = 'consent' | 'unauthorized' | 'caller' | 'retry';
 
 /** What a database error means. Unknown errors may clear on their own, so they are retried once. */
 function classify(e: DbError): Verdict {
-  if (e.code === '42501') return 'consent'; // insufficient_privilege: the RLS policy refused the row
-  if (e.status === 401 || e.code === 'PGRST301' || e.code === 'PGRST303') return 'unauthorized';
+  if (e.code === '42501') return 'consent'; // insufficient_privilege: an RLS policy refused the row, or a GRANT is missing
+  if (e.status === 401 || e.code === '28000' || e.code === 'PGRST301' || e.code === 'PGRST303') return 'unauthorized';
   if (e.status === 429 || (e.status !== undefined && e.status >= 500)) return 'retry';
   if (e.code === '57014' || e.code === '40001' || e.code === '40P01') return 'retry'; // timeout, serialisation, deadlock
-  if (/^(22|23|42)/.test(e.code ?? '') || (e.status !== undefined && e.status >= 400)) return 'caller';
+  if (/^(22|23|42|54)/.test(e.code ?? '') || (e.status !== undefined && e.status >= 400)) return 'caller';
   return 'retry';
 }
 
@@ -60,14 +60,18 @@ function withTimeout<T>(work: PromiseLike<T>, ms: number): Promise<T> {
 export function createSupabaseStore(db: MemoryDb, userId: string, options: StoreOptions = {}): MemoryStore {
   const { timeoutMs = CALL_TIMEOUT_MS, attempts = 2, sleep = realSleep, random = Math.random, now = Date.now } = options;
 
-  async function call(op: () => PromiseLike<DbResult<unknown>>): Promise<unknown> {
+  /**
+   * `consentOn42501`: only the write RPC may read 42501 as "consent is off" (its row-level policy checks consent).
+   * Anywhere else 42501 means a missing GRANT or a broken policy, which must be loud, not a quiet "memory is off".
+   */
+  async function call(op: () => PromiseLike<DbResult<unknown>>, consentOn42501 = false): Promise<unknown> {
     for (let attempt = 1; ; attempt++) {
       let failure: MemoryStoreError;
       try {
         const res = await withTimeout(op(), timeoutMs);
         if (!res.error) return res.data;
         const verdict = classify(res.error);
-        if (verdict === 'consent') throw new MemoryStoreError('consent_required');
+        if (verdict === 'consent') throw new MemoryStoreError(consentOn42501 ? 'consent_required' : 'permission_denied');
         if (verdict === 'unauthorized') throw new MemoryStoreError('unauthorized');
         if (verdict === 'caller') throw new MemoryStoreError('invalid');
         failure = new MemoryStoreError('unavailable');
@@ -98,17 +102,22 @@ export function createSupabaseStore(db: MemoryDb, userId: string, options: Store
         if (!held || Date.parse(f.client_updated_at) > Date.parse(held.client_updated_at)) latest.set(id, f);
       }
       // Only 11 distinct facts exist (a test pins that), so one call always stays under the database's cap of 100.
-      const data = await call(() => db.rpc('persona_upsert_facts', { p_facts: [...latest.values()] }));
+      const data = await call(() => db.rpc('persona_upsert_facts', { p_facts: [...latest.values()] }), true);
       if (typeof data !== 'number' || !Number.isInteger(data) || data < 0) throw new MemoryStoreError('unavailable');
       return data;
     },
 
     async removeFacts(removals: readonly PersonaFactRemovalT[]) {
-      for (const r of removals) {
-        await call(() =>
-          db.from('persona_facts').delete().eq('owner_id', userId).eq('kind', r.kind).eq('key', r.key).lt('client_updated_at', r.client_updated_at),
-        );
-      }
+      if (removals.length === 0) return;
+      // One request for all of them. Every value is checked against the allowlist and the ISO form first, so the
+      // filter text cannot carry anything but ids and a time.
+      const groups = removals.map((raw) => {
+        const parsed = PersonaFactRemoval.safeParse(raw);
+        if (!parsed.success) throw new MemoryStoreError('invalid');
+        const r = parsed.data;
+        return `and(kind.eq.${r.kind},key.eq.${r.key},client_updated_at.lt.${r.client_updated_at})`;
+      });
+      await call(() => db.from('persona_facts').delete().eq('owner_id', userId).or(groups.join(',')));
     },
 
     async search() {

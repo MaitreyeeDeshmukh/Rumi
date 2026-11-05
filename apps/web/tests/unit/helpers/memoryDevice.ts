@@ -46,6 +46,7 @@ export function memoryDevice(db: FakeMemoryDb, options: DeviceOptions = {}) {
     getDb: async () => db,
     getFlag: async () => flag.on,
     readJson,
+    userLimit: () => undefined,
     now: () => SERVER_NOW,
   };
   const auth = { status: options.auth ?? ("ready" as AuthStatus) };

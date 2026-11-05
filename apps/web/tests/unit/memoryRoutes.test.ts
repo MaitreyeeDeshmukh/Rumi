@@ -24,6 +24,7 @@ function setup(over: Partial<RouteDeps> = {}) {
     getDb: async () => db,
     getFlag: async () => true,
     readJson,
+    userLimit: () => undefined,
     now: () => NOW,
     ...over,
   };
@@ -36,12 +37,12 @@ const answerOf = async (res: Response) => ({ status: res.status, body: (await re
 describe("POST /api/memory/facts", () => {
   it("writes the batch and answers with what is stored, plus the request id", async () => {
     const { db, deps } = setup();
-    const { status, body, res } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }, { "x-request-id": "req-1" }), deps));
+    const { status, body, res } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }, { "x-request-id": "req-12345678" }), deps));
     expect(status).toBe(200);
     expect(body).toMatchObject({ saved: 2, rejected: 0 });
     expect((body.facts as unknown[]).length).toBe(2);
     expect(db.rows.size).toBe(2);
-    expect(res.headers.get("x-request-id")).toBe("req-1");
+    expect(res.headers.get("x-request-id")).toBe("req-12345678");
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -182,13 +183,38 @@ describe("POST /api/memory/forget", () => {
     expect(db.consent).toBe(false);
   });
 
-  it("rows left behind: answered as a failure (503), never ok", async () => {
+  it("revokes consent FIRST, then erases, then checks both", async () => {
+    const { db, deps } = setup();
+    db.rows.set("support_pref:p1", { kind: "support_pref", key: "p1", level: null, client_updated_at: T1 });
+    await handleForget(post("/api/memory/forget", {}), deps);
+    expect(db.calls).toEqual(["upsert:core_consents", "rpc:persona_forget_all", "select:core_consents"]);
+  });
+
+  it("rows left behind: answered as a failure (503), never ok; consent is already off", async () => {
     const { db, deps } = setup();
     db.stuckRows = 2;
     const { status, body } = await answerOf(await handleForget(post("/api/memory/forget", {}), deps));
     expect(status).toBe(503);
     expect(body.status).toBeUndefined();
-    expect(db.consent).toBe(true);
+    expect(db.consent).toBe(false);
+  });
+
+  it("consent could not be revoked: nothing is erased and the answer is a failure, not ok", async () => {
+    const { db, deps } = setup();
+    db.rows.set("support_pref:p1", { kind: "support_pref", key: "p1", level: null, client_updated_at: T1 });
+    db.script = [{ status: 400 }];
+    const { status, body } = await answerOf(await handleForget(post("/api/memory/forget", {}), deps));
+    expect(status).toBe(503);
+    expect(body.status).toBeUndefined();
+    expect(db.calls).toEqual(["upsert:core_consents"]);
+    expect(db.rows.size).toBe(1);
+  });
+
+  it("the revoke did not stick (consent reads back on): the answer is a failure", async () => {
+    const { db, deps } = setup();
+    const real = db.from.bind(db);
+    db.from = (t) => ({ ...real(t), upsert: async () => ({ data: null, error: null }) }); // reports success, changes nothing
+    expect((await handleForget(post("/api/memory/forget", {}), deps)).status).toBe(503);
   });
 
   it("works with the sync flag off: a person can always delete", async () => {
@@ -206,14 +232,6 @@ describe("POST /api/memory/forget", () => {
     });
     expect((await handleForget(post("/api/memory/forget", {}), deps)).status).toBe(401);
     expect(db.calls).toEqual([]);
-  });
-
-  it("the erase worked but the consent row could not be changed: still ok, because the facts are gone", async () => {
-    const { db, deps } = setup();
-    db.script = [null, null, { status: 400 }];
-    db.rows.set("support_pref:p1", { kind: "support_pref", key: "p1", level: null, client_updated_at: T1 });
-    expect((await handleForget(post("/api/memory/forget", {}), deps)).status).toBe(200);
-    expect(db.rows.size).toBe(0);
   });
 });
 
