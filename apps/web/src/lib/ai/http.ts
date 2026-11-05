@@ -12,7 +12,7 @@ export class HttpError extends Error {
   }
 }
 
-const MESSAGE: Record<ApiErrorCode, string> = {
+export const MESSAGE: Record<ApiErrorCode, string> = {
   bad_input: "I could not read that. Check what you wrote and try again.",
   too_large: "That is too long. Make it shorter and try again.",
   forbidden: "This request was blocked. Reload the page and try again.",
@@ -30,7 +30,7 @@ export function json(body: unknown, status = 200, headers: Record<string, string
 }
 
 /** Whole seconds between 1 and 3600; 60 when the value is missing or not a finite number. */
-const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(3600, Math.max(1, Math.ceil(sec))) : 60);
+export const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(3600, Math.max(1, Math.ceil(sec))) : 60);
 
 export function errorResponse(e: HttpError): Response {
   const headers: Record<string, string> = e.status === 429 ? { "Retry-After": String(retryAfter(e.retryAfterSec)) } : {};

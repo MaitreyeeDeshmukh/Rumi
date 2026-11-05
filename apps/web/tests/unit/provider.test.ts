@@ -71,7 +71,7 @@ describe("createGroqProvider: request shape", () => {
       reasoning_effort: "low",
       stream: false,
     });
-    expect(res).toEqual({ text: '{"a":1}', modelUsed: "model-quality-x", inTokens: 120, outTokens: 45 });
+    expect(res).toEqual({ text: '{"a":1}', modelUsed: "model-quality-x", inTokens: 120, outTokens: 45, cachedTokens: 0 });
   });
 
   it("uses the fast model for the fast tier and reports the configured name, never the name the server echoes", async () => {
@@ -115,9 +115,15 @@ describe("createGroqProvider: failures", () => {
     }
   });
 
-  it.each([400, 401, 429, 500, 503])("a %i answer is 'http'", async (status) => {
+  it.each([500, 502, 503, 408])("a %i answer is 'http' (retryable)", async (status) => {
     const { fetchFn } = fakeFetch(() => new Response("{}", { status }));
     expect(await kindOf(createGroqProvider({ fetchFn }).complete(call()))).toBe("http");
+  });
+
+  it.each([400, 401, 403, 404, 422])("a %i answer is 'rejected': a 4xx other than 429 is never retried", async (status) => {
+    const { fetchFn, seen } = fakeFetch(() => new Response("{}", { status }));
+    expect(await kindOf(createGroqProvider({ fetchFn }).complete(call()))).toBe("rejected");
+    expect(seen).toHaveLength(1);
   });
 
   it("a network failure is 'http'", async () => {

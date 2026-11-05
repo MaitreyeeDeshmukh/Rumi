@@ -83,6 +83,7 @@ export function fakeProvider(script: Scripted[]): FakeProvider {
   const calls: ProviderCall[] = [];
   return {
     calls,
+    model: (tier) => (tier === "quality" ? "model-quality-x" : "model-fast-y"),
     async complete(call: ProviderCall): Promise<ProviderResult> {
       calls.push(call);
       const next = script[calls.length - 1];
