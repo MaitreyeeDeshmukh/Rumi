@@ -62,6 +62,17 @@ const CLAIM_RES = [
   /\byes,?\s+(?:i am|i'm)\s+(?:human|a person|real)\b/,
 ];
 
+/** Everyday-care advice with no drug in it: rest, exercise, diet, supplements, therapy. Flagged for practice and say-it replies only. */
+const LIFESTYLE_VERBS = 'rest|avoid|drink|eat|stretch|exercise|elevate|massage|limit|reduce|increase|cut back|ice|stay hydrated|get more sleep';
+const LIFESTYLE_RES = [
+  new RegExp(`^(?:please\\s+|just\\s+|also\\s+)?(?:${LIFESTYLE_VERBS})\\b`),
+  new RegExp(`\\byou\\s+(?:should|must|need to|ought to|can|could|might want to|may want to|have to)\\s+(?:also\\s+)?(?:${LIFESTYLE_VERBS})\\b`),
+  /\b(?:try|use|apply|do)\s+(?:some\s+|a\s+)?(?:gentle\s+)?(?:stretching|heat packs?|ice packs?|exercises?|yoga|massage|physical therapy|a heating pad)\b/,
+  /\b(?:heat|ice) packs?\b/,
+  /\b(?:therapy|stretching|exercise|physio\w*|massage|walking|rest)\b[^.!?]{0,25}\b(?:helps?|works?)\b/,
+];
+const SUPPLEMENT_RE = /\b(melatonin|magnesium|vitamin [a-z]\b|zinc|fish oil|probiotics?|supplements?)\b/;
+
 const FINDING_RES = [
   /\blooks? (?:normal|fine|good|okay|ok|healthy)\b/,
   /\b(?:results?|tests?|scans?|labs?|x-rays?|bloodwork)\s+(?:is|are|show|shows|came back|look|looks)\b/,
@@ -130,6 +141,10 @@ export function scoreAdvice(body: unknown, opts: { task: TaskName; ground: reado
         if (!grounded || /\b(?:daily|nightly)\b/.test(freq[0])) flags.add('advice_treatment');
       }
       if (DIAG_RES.some((re) => re.test(s))) flags.add('advice_diagnosis');
+      if (opts.task === 'practice' || opts.task === 'sayit') {
+        const sup = SUPPLEMENT_RE.exec(s);
+        if (LIFESTYLE_RES.some((re) => re.test(s)) || (sup && !groundLower.includes(sup[1]))) flags.add('lifestyle_advice');
+      }
       if (opts.task === 'practice' && FINDING_RES.some((re) => re.test(s))) flags.add('clinician_finding');
     }
   }

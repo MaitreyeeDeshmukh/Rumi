@@ -10,7 +10,8 @@ import { buildCases } from "../evals/cases";
 import { exitCodeFor } from "../evals/cli.mjs";
 import { loadAll } from "../evals/data/schema";
 import { makeDryRun } from "../evals/dry";
-import { createSession, ipFor, loadLiveRun, type LiveAdapterModule, type RunFn } from "../evals/runner";
+import { commonSummaries, createSession, ipFor, liveGuard, loadLiveRun, type LiveAdapterModule, type RunFn, type RunRecord } from "../evals/runner";
+import { aggregate } from "../evals/scorers/aggregate";
 import { DEFAULT_CANARY } from "../evals/scorers/leak";
 import { drawSample, type Rating } from "../evals/scorers/humanSample";
 import { renderHumanRead } from "../evals/scorers/report";
@@ -173,7 +174,7 @@ describe("the human-ratings CLI (backlog)", () => {
     sheet.map((s, i) => ({ blindId: s.blindId, rater, scores: { truth: 2, safety: 2, intent: 2, literal: i < bump ? 1 : 2, agency: 2, ...(s.multiTurn ? { continuity: 2 as const } : {}) } }));
 
   it("prints the rubric table, per-dimension agreement and per-arm means", () => {
-    const text = renderHumanRead(sheet, key, [...rate("ana"), ...rate("ben", 5)]).join("\n");
+    const text = renderHumanRead(sheet, key, [...rate("ana"), ...rate("ben", 5)], {}).join("\n");
     expect(text).toMatch(/Human read: 20 items, raters ana and ben/);
     expect(text).toMatch(/literal\s+n=20 exact 75\.0%/);
     expect(text).toMatch(/per arm \(unblinded now\): harness n=\d+ pass/);
@@ -182,8 +183,8 @@ describe("the human-ratings CLI (backlog)", () => {
   it("SEEDED BAD: missing scores, a third rater, or a builder scoring their own lane stop the read", () => {
     const partial = [...rate("ana"), ...rate("ben")];
     delete partial[0].scores.truth;
-    expect(() => renderHumanRead(sheet, key, partial)).toThrow(/truth is missing/);
-    expect(() => renderHumanRead(sheet, key, [...rate("ana"), ...rate("ben"), ...rate("cy")])).toThrow(/exactly two raters/);
+    expect(() => renderHumanRead(sheet, key, partial, {})).toThrow(/truth is missing/);
+    expect(() => renderHumanRead(sheet, key, [...rate("ana"), ...rate("ben"), ...rate("cy")], {})).toThrow(/exactly two raters/);
     expect(() => renderHumanRead(sheet, key, [...rate("ana"), ...rate("ben")], { ana: ["plan", "practice", "sayit", "recap"] })).toThrow(/own lane/);
   });
   it("end to end: pnpm eval --human-* prints the table from three JSON files and exits 0; a bad file exits non-zero", { timeout: 90_000 }, () => {
@@ -193,10 +194,13 @@ describe("the human-ratings CLI (backlog)", () => {
       writeFileSync(p, JSON.stringify(v));
       return p;
     };
-    const ok = cli(`--human-sheet=${f("sheet.json", sheet)}`, `--human-key=${f("key.json", key)}`, `--human-ratings=${f("ratings.json", [...rate("ana"), ...rate("ben", 3)])}`);
+    const ok = cli(`--human-sheet=${f("sheet.json", sheet)}`, `--human-key=${f("key.json", key)}`, `--human-ratings=${f("ratings.json", [...rate("ana"), ...rate("ben", 3)])}`, `--human-lanes=${f("lanes.json", {})}`);
     expect(ok.status).toBe(0);
     expect(ok.stdout).toMatch(/Human read: 20 items/);
-    const bad = cli(`--human-sheet=${f("sheet.json", sheet)}`, `--human-key=${f("key.json", key)}`, `--human-ratings=${f("bad.json", rate("ana"))}`);
+    const bad = cli(`--human-sheet=${f("sheet.json", sheet)}`, `--human-key=${f("key.json", key)}`, `--human-ratings=${f("bad.json", rate("ana"))}`, `--human-lanes=${f("lanes.json", {})}`);
+    const noLanes = cli(`--human-sheet=${f("sheet.json", sheet)}`, `--human-key=${f("key.json", key)}`, `--human-ratings=${f("ratings.json", [...rate("ana"), ...rate("ben")])}`);
+    expect(noLanes.status).toBe(2);
+    expect(noLanes.stderr).toMatch(/--human-lanes/);
     expect(bad.status).not.toBe(0);
     expect(cli("--human-sheet=x").status).toBe(2);
   });
@@ -211,5 +215,61 @@ describe("the baseline arm in a dry run (E-13, E-11)", () => {
     const sum = aggregate(s.results, { arm: "baseline" });
     expect(sum.valid).toBe(true);
     expect(sum.notApplicable.length).toBeGreaterThan(0);
+  });
+});
+
+describe("round 3: exit codes, guards, head to head, pool", () => {
+  it("E2-7: COMPARISON (a valid baseline that missed gates) does not fail the run; an arm that never started is misuse (1), even when the other arm FAILs", () => {
+    expect(exitCodeFor(["PASS", "COMPARISON"], 0, 2)).toBe(0);
+    expect(exitCodeFor(["FAIL", "COMPARISON"], 1, 2)).toBe(3);
+    expect(exitCodeFor(["FAIL"], 1, 2)).toBe(1);
+    expect(exitCodeFor(["INVALID"], 1, 2)).toBe(1);
+    expect(exitCodeFor(["PASS"], 0, 1)).toBe(0);
+    expect(exitCodeFor(["PASS", "INVALID"], 1, 2)).toBe(4);
+  });
+  it("end to end: the default pnpm eval --dry (both arms) exits 0 even though the baseline is graded on harness-only rules", { timeout: 90_000 }, () => {
+    const r = cli("--dry", "--k=1");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/role: yardstick only/);
+    expect(r.stdout).toMatch(/replay only: scorers are proven by pnpm check and --self-test/);
+  });
+  it("E2-10 end to end: --self-test exits 0 and prints the count; it refuses to combine with other flags", { timeout: 60_000 }, () => {
+    const ok = cli("--self-test");
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toMatch(/self-test: \d+ seeded items checked, 0 scorer problem/);
+    expect(cli("--self-test", "--dry").status).toBe(2);
+  });
+  it("P3: a whitespace-only GROQ_API_KEY is refused", () => {
+    expect(liveGuard({ GROQ_API_KEY: "   ", NODE_ENV: "test" }).join(" ")).toMatch(/GROQ_API_KEY/);
+    expect(liveGuard({ GROQ_API_KEY: "\t\n", NODE_ENV: "test" }).join(" ")).toMatch(/GROQ_API_KEY/);
+    expect(liveGuard({ GROQ_API_KEY: " k ", NODE_ENV: "test" })).toEqual([]);
+  });
+  const recordFor = async (arm: "harness" | "baseline"): Promise<RunRecord> => {
+    const s = createSession({ run: makeDryRun(undefined, arm), arm, k: 1, canary: DEFAULT_CANARY });
+    for (const c of buildCases(data, arm)) await s.runOne(c, 0);
+    return { date: "d", commit: "c", mode: "dry", arm, k: 1, summary: aggregate(s.results, { arm }), results: s.results };
+  };
+  it("E2-12: commonSummaries scores each arm on the cases both ran: no crisis suite, no harness-only rows", async () => {
+    const [h, b] = [await recordFor("harness"), await recordFor("baseline")];
+    const common = commonSummaries([h, b]);
+    expect(common.get("harness")?.total).toBe(common.get("baseline")?.total);
+    expect(common.get("harness")?.total).toBe(b.results.length);
+    expect(h.results.length).toBeGreaterThan(b.results.length);
+    expect(common.get("harness")?.crisis.recall.n).toBe(0);
+    expect(commonSummaries([h]).size).toBe(0);
+  });
+  it("E2-11: fallback replies never enter the human pool", async () => {
+    let n = 0;
+    const run: RunFn = async (c) => {
+      const o = await makeDryRun()(c);
+      n++;
+      return n % 2 === 0 ? { ...o, degraded: true, attempts: 3 } : o;
+    };
+    const s = createSession({ run, arm: "harness", k: 1, canary: DEFAULT_CANARY });
+    for (const c of cases.filter((x) => x.suite === "plan")) await s.runOne(c, 0);
+    expect(s.results.some((r) => r.cls === "fallback")).toBe(true);
+    const fallbacks = new Set(s.results.filter((r) => r.cls === "fallback").map((r) => r.caseId));
+    expect(s.pool.length).toBeGreaterThan(0);
+    expect(s.pool.some((p) => fallbacks.has(p.caseId))).toBe(false);
   });
 });

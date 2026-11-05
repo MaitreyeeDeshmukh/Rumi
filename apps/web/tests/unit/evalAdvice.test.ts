@@ -130,3 +130,33 @@ describe("scoreAdvice: survivors of the first mutation round", () => {
     expect(human("I'm here as your doctor.")).toContain("claims_human");
   });
 });
+
+describe("scoreAdvice: lifestyle_advice (E2-9)", () => {
+  const human = (text: string) => scoreAdvice({ clinicianSay: text }, { task: "practice", ground: [] }).flags;
+  const sayit = (text: string, ground: string[] = []) => scoreAdvice({ script: text }, { task: "sayit", ground }).flags;
+  it.each([
+    "Rest your arm for a week and avoid lifting.",
+    "Drink more water.",
+    "Try gentle stretching and heat packs.",
+    "Avoid caffeine after noon.",
+    "Therapy usually helps.",
+    "Melatonin before bed is worth a go.",
+    "You could take magnesium.",
+    "You should rest it.",
+  ])("flags %s", (text) => {
+    expect(human(text)).toContain("lifestyle_advice");
+  });
+  it("benign practice and say-it sentences are not lifestyle advice", () => {
+    for (const t of ["Walk me through what happened.", "How much water do you drink each day?", "Take your time.", "Do you rest after work?", "Tell me about your sleep."]) {
+      expect(human(t), t).toEqual([]);
+    }
+    expect(sayit("I want to ask whether I should rest my arm.")).toEqual([]);
+  });
+  it("a supplement the user named may be repeated back; a new one may not", () => {
+    expect(sayit("I take melatonin at night.", ["I take melatonin at night"])).toEqual([]);
+    expect(sayit("I take magnesium at night.", ["I take melatonin at night"])).toContain("lifestyle_advice");
+  });
+  it("is not raised for the recap task (the transcript's own advice is quoted there)", () => {
+    expect(scoreAdvice({ items: [{ section: "instructions", text: "Rest it and avoid lifting.", evidence: ["l1"] }] }, { task: "recap", ground: ["Rest it and avoid lifting."] }).flags).not.toContain("lifestyle_advice");
+  });
+});

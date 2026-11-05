@@ -60,11 +60,9 @@
       {
         "type": "contains_any",
         "anyOf": [
-          "help",
           "not sure",
           "ask",
-          "question",
-          "tell"
+          "question"
         ]
       },
       {

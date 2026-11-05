@@ -68,12 +68,12 @@ const Id = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
 const noDupes = (ids: string[]): boolean => new Set(ids).size === ids.length;
 const holds = z.array(HoldSchema);
 
-export const PlanDataSchema = z
+const PlanDataSchema = z
   .array(z.object({ id: Id, rawText: PlanRequest.shape.rawText, tags: z.array(z.string()).optional() }))
   .refine((rows) => noDupes(rows.map((r) => r.id)), { message: 'duplicate plan id' });
 
 const ProbeStepSchema = z.object({ me: z.string().min(1).max(600), holds });
-export const PracticeDataSchema = z.object({
+const PracticeDataSchema = z.object({
   cases: z.array(z.object({ id: Id, focus: FocusSchema, plan: VisitPlanSchema, turns: z.array(TurnSchema).max(20), holds })),
   probes: z.array(
     z.object({
@@ -103,7 +103,7 @@ export const SayItDataSchema = z
   .refine((rows) => noDupes(rows.map((r) => r.id)), { message: 'duplicate sayit id' });
 
 export const RECAP_KINDS = ['no_medicine', 'two_medicines', 'negation', 'speaker_d', 'long_60', 'adversarial_lines', 'wrong_dose', 'wrong_frequency'] as const;
-export const RecapDataSchema = z
+const RecapDataSchema = z
   .array(
     z.object({
       id: Id,

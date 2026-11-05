@@ -12,7 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { ARMS, PINNED, assertHarnessParity, baselineCall, type BaselineCall, type ParitySpec } from './baseline';
-import { DEFAULT_PRICES, type PriceTable, type Summary } from './scorers/aggregate';
+import { aggregate, DEFAULT_PRICES, type PriceTable, type Summary } from './scorers/aggregate';
 import { classify, isRateLimited } from './scorers/classify';
 import { isObj } from './scorers/body';
 import { drawSample, renderReplyForRater, type SampleSource } from './scorers/humanSample';
@@ -27,7 +27,7 @@ export type RunFn = (c: EvalCase) => Promise<Observation>;
 export function liveGuard(env: Record<string, string | undefined>): string[] {
   const reasons: string[] = [];
   if ((env.MOCK_AI ?? '') !== '') reasons.push('MOCK_AI is set: mock answers are never a measurement (unset it, or pass --dry)');
-  if ((env.GROQ_API_KEY ?? '') === '') reasons.push('GROQ_API_KEY is missing: add it to apps/web/.env.local (or pass --dry)');
+  if ((env.GROQ_API_KEY ?? '').trim() === '') reasons.push('GROQ_API_KEY is missing: add it to apps/web/.env.local (or pass --dry)');
   if (env.NODE_ENV === 'production') reasons.push('NODE_ENV is production: EVAL_MODE is not honoured there');
   return reasons;
 }
@@ -69,6 +69,8 @@ export interface SessionOptions {
   canary: string;
   /** When set, an observation whose mode differs (and is not 'mock') is an error: a live run must not accept a replay. */
   mode?: 'live' | 'dry';
+  /** The model ids this run may use (from config, never printed); anything else is not model_ok. */
+  models?: readonly string[];
   /** Deadline per request in ms (default 25 s: D18 allows one request 22 s). A scripted probe gets one deadline per step. */
   timeoutMs?: number;
 }
@@ -99,7 +101,7 @@ function describeInput(c: EvalCase): string {
 export function createSession(opts: SessionOptions) {
   let calls = 0;
   const results: CaseResult[] = [];
-  /** First repetition of every model-answered case, kept in memory for the blind human read (never written with the results). */
+  /** First repetition of every model-answered case (never a fallback: canned text would give the arm away), kept in memory for the blind human read (never written with the results). */
   const pool: SampleSource[] = [];
   let abortedAt: string | undefined;
 
@@ -165,9 +167,9 @@ export function createSession(opts: SessionOptions) {
     async runOne(c: EvalCase, rep: number): Promise<CaseResult | null> {
       if (abortedAt) return null;
       const obs = await driveWithDeadline(c);
-      const result = scoreCase(c, obs, { arm: opts.arm, rep, canary: opts.canary });
+      const result = scoreCase(c, obs, { arm: opts.arm, rep, canary: opts.canary, models: opts.models });
       results.push(result);
-      if (rep === 0 && c.suite !== 'crisis' && ['model_ok', 'retry_ok', 'fallback'].includes(result.cls)) {
+      if (rep === 0 && c.suite !== 'crisis' && ['model_ok', 'retry_ok'].includes(result.cls)) {
         const turns = isObj(c.body) && Array.isArray(c.body.turns) ? c.body.turns.length : 0;
         pool.push({
           caseId: c.id,
@@ -352,4 +354,16 @@ export async function loadLiveRun(arm: Arm, load: () => Promise<LiveAdapterModul
   const callBaseline = mod.callBaseline;
   if (!callBaseline) throw new Error('The live adapter has no callBaseline(call, case): the baseline arm cannot run.');
   return (c) => callBaseline(baselineCall(c.task, c.body), c);
+}
+
+/**
+ * Head to head (E-11): each arm scored again on the cases BOTH arms ran, keyed by arm. Used by the report's arm table, so a
+ * harness-only row (the canary, memory poisoning) or the crisis suite never makes the comparison lopsided.
+ */
+export function commonSummaries(records: readonly RunRecord[]): Map<Arm, Summary> {
+  const out = new Map<Arm, Summary>();
+  if (records.length < 2) return out;
+  const common = records.map((r) => new Set(r.results.map((x) => x.caseId))).reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
+  for (const rec of records) out.set(rec.arm, aggregate(rec.results, { arm: rec.arm, expected: [], restrictTo: common }));
+  return out;
 }

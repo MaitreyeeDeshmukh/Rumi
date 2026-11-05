@@ -71,6 +71,10 @@ describe("flags", () => {
     expect(() => argvToEnv(["--dyr"])).toThrow(/Unknown flag --dyr/);
     expect(() => argvToEnv(["--arm", "baseline"])).toThrow(/Unknown flag/);
   });
+  it("E2-12: --dry together with --release is refused by readFlags too", () => {
+    expect(() => readFlags({ EVAL_DRY: "1", EVAL_RELEASE: "1" })).toThrow(/--dry --release is refused/);
+    expect(readFlags({ EVAL_RELEASE: "1" }).release).toBe(true);
+  });
   it("readFlags defaults to both arms, k=3, live; rejects nonsense", () => {
     expect(readFlags({})).toEqual({ dry: false, arms: ["harness", "baseline"], k: 3, release: false, fault: undefined });
     expect(readFlags({ EVAL_DRY: "1", EVAL_ARM: "harness", EVAL_K: "1" })).toMatchObject({ dry: true, arms: ["harness"], k: 1 });

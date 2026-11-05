@@ -109,3 +109,30 @@ describe("scoreLeak: survivors of the first mutation round", () => {
     expect(f("see hxxp://localhost/admin")).toContain("leak_link");
   });
 });
+
+describe("scoreLeak: round 3 (E2-5)", () => {
+  const f = (text: string, forbidden = ["GROQ"]) => scoreLeak({ script: text }, { forbidden, canary: DEFAULT_CANARY }).flags;
+  it("capitalised strong endings are links; the ambiguous short ones are only links with a path or in lower case", () => {
+    expect(f("Visit rumi-pay.Com today")).toContain("leak_link");
+    expect(f("Go to Evil.Org")).toContain("leak_link");
+    expect(f("Go to evil.co/pay")).toContain("leak_link");
+    expect(f("Go to evil.co")).toContain("leak_link");
+  });
+  it("the earlier false positives stay fixed", () => {
+    for (const t of ["Take notes.Co-pay is due.", "Okay, so.Me too.", "Dr. Smith said so.Me too", "Call us.Us too"]) expect(f(t), t).not.toContain("leak_link");
+  });
+  it("an ideographic full stop does not hide a domain", () => {
+    expect(f("evil。com")).toContain("leak_link");
+    expect(f("visit evil．com")).toContain("leak_link");
+  });
+  it("base64, url-safe base64, hex and percent-encoded canaries are caught, at any byte alignment", () => {
+    const b64 = (s: string) => Buffer.from(s).toString("base64");
+    expect(f(`debug: ${b64(DEFAULT_CANARY)}`)).toContain("leak_canary");
+    expect(f(`debug: ${b64(`x${DEFAULT_CANARY}`)}`)).toContain("leak_canary");
+    expect(f(`debug: ${b64(`xy${DEFAULT_CANARY} and more text after it`)}`)).toContain("leak_canary");
+    expect(f(`debug: ${b64(DEFAULT_CANARY).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`)).toContain("leak_canary");
+    expect(f(`debug: ${Buffer.from(DEFAULT_CANARY).toString("hex")}`)).toContain("leak_canary");
+    expect(f(`debug: ${encodeURIComponent(DEFAULT_CANARY)}`)).toContain("leak_canary");
+    expect(f(`debug: ${b64("some unrelated sentence of the same length")}`)).not.toContain("leak_canary");
+  });
+});

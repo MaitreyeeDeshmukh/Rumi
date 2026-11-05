@@ -18,7 +18,7 @@ const planReply = (mainConcern: string, items: { text: string; source?: string }
 });
 const say = (clinicianSay: string, isLastTurn = false) => ({ clinicianSay, coveredItemIds: [] as string[], isLastTurn });
 const script = (s: string, blanks: string[] = []) => ({ script: s, blanks });
-const failures = (id: string, body: unknown, arm: Arm = "harness") => checkShape(byId(id), arm, body);
+const failures = (id: string, body: unknown, arm: Arm = "harness") => checkShape(byId(id), arm, body).failures;
 
 describe("E-2: a reply must be a real answer to this request", () => {
   it("SEEDED BAD: the same refusal for every task is flagged (including inside a plan, which parses)", () => {
@@ -38,7 +38,7 @@ describe("E-2: a reply must be a real answer to this request", () => {
     expect(looksEnglish("Me duele el hombro cuando levanto el brazo.")).toBe(false);
     expect(looksEnglish("我的肩膀痛，抬手的时候更痛")).toBe(false);
     expect(looksEnglish("Ich habe Schmerzen und das ist nicht gut für mich")).toBe(false);
-    expect(looksEnglish("ear pain left side 4 days")).toBe(true);
+    expect(looksEnglish("ear pain left side 4 days", "ear pain left side 4 days")).toBe(true);
     expect(looksEnglish("Which ear is it?")).toBe(true);
     expect(failures("sayit:s02", script("<b>Hello</b><script>alert(1)</script>")).join("|")).toMatch(/markup/);
     expect(failures("sayit:s02", script("word ".repeat(5000))).join("|")).toMatch(/filler/);
@@ -74,15 +74,15 @@ describe("E-2: a reply must be a real answer to this request", () => {
     expect(failures("sayit:s01", script("Is it 3 times a day?")).join("|")).toMatch(/digit/);
   });
   it("sayit level 2 needs a [blank] and a matching blanks list; level 3 is a complete sentence with no blank", () => {
-    expect(failures("sayit:s06", script("I want to tell you about [what is happening].", ["what is happening"]))).toEqual([]);
-    expect(failures("sayit:s06", script("I want to tell you about my dizziness.")).join("|")).toMatch(/L2: no \[blank\]/);
-    expect(failures("sayit:s06", script("I feel [what] and [when].", ["what"])).join("|")).toMatch(/does not match/);
-    expect(failures("sayit:s11", script("I would like to book my next visit."))).toEqual([]);
+    expect(failures("sayit:s06", script("I get dizzy [how long].", ["how long"]))).toEqual([]);
+    expect(failures("sayit:s06", script("I get dizzy a lot.")).join("|")).toMatch(/L2: no \[blank\]/);
+    expect(failures("sayit:s06", script("I get dizzy [how long] and [when].", ["how long"])).join("|")).toMatch(/does not match/);
+    expect(failures("sayit:s11", script("I get dizzy when I stand up."))).toEqual([]);
     expect(failures("sayit:s11", script("I want to [do what].", ["do what"])).join("|")).toMatch(/L3: contains a blank/);
     expect(failures("sayit:s11", script("Book")).join("|")).toMatch(/L3: not a complete sentence/);
   });
   it("recap: items parse, planStatus cites real lines and known plan items", () => {
-    const ok = { items: [{ section: "discussed", text: "Shoulder pain.", evidence: ["l2"] }], unconfirmed: [], planStatus: [{ itemId: "q1", status: "asked_by_me", evidence: ["l2"] }], dropped: 0 };
+    const ok = { items: [{ section: "discussed", text: "It hurts when I lift my arm over my head.", evidence: ["l2"] }], unconfirmed: [], planStatus: [{ itemId: "q1", status: "asked_by_me", evidence: ["l2"] }], dropped: 0 };
     expect(failures("recap:r01", ok)).toEqual([]);
     expect(failures("recap:r01", { ...ok, planStatus: [{ itemId: "q9", status: "asked_by_me", evidence: ["l2"] }] }).join("|")).toMatch(/unknown item q9/);
     expect(failures("recap:r01", { ...ok, planStatus: [{ itemId: "q1", status: "asked_by_me", evidence: ["l99"] }] }).join("|")).toMatch(/missing line l99/);

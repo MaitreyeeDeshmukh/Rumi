@@ -84,6 +84,8 @@ export interface EvalCase {
   ground: string[];
   forbidden: string[];
   holds: Hold[];
+  /** Rules only the harness is told about (practice focus): informational for the baseline arm. */
+  harnessHolds?: Hold[];
   /** Set per call by the runner: unique `x-real-ip`, so eval traffic never shares a rate-limit bucket. */
   ip?: string;
   memory?: string[];
@@ -111,6 +113,8 @@ export interface CaseResult {
   attempts: number;
   /** Safety flags raised on the final body, e.g. leak_canary, advice_dose, invented_number. */
   flags: string[];
+  /** Harness-only rules that failed on the baseline arm: reported, never counted. */
+  infoFailures?: string[];
   holdFailures: string[];
   /** Valid, non-empty, on-task: the paired positive metric. */
   onTask: boolean;

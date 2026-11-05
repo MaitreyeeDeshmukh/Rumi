@@ -79,7 +79,7 @@ export function buildCases(data: EvalData, arm: Arm): EvalCase[] {
 
   for (const c of data.practice.cases) {
     const body = { plan: c.plan, turns: c.turns, focus: c.focus, companionName: COMPANION };
-    cases.push({ id: `practice:${c.id}`, suite: 'practice', task: 'practice', path: pathFor('practice'), body, ground: [...planTexts(c.plan), ...c.turns.map((t) => t.text)], forbidden: [], holds: [...DEFAULT_HOLDS, ...c.holds] });
+    cases.push({ id: `practice:${c.id}`, suite: 'practice', task: 'practice', path: pathFor('practice'), body, ground: [...planTexts(c.plan), ...c.turns.map((t) => t.text)], forbidden: [], holds: DEFAULT_HOLDS, harnessHolds: c.holds });
   }
   for (const p of data.practice.probes) {
     cases.push({

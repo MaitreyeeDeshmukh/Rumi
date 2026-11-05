@@ -245,3 +245,10 @@ describe("the fix round: data (E-5, E-15, E-17, P3)", () => {
     expect(CrisisDataSchema.safeParse({ positive: ["a b c"], heldOutPositive: ["a b c"], negative: ["a b c"], knownFalsePositives: [] }).success).toBe(false);
   });
 });
+
+describe("round 3 data (P3)", () => {
+  it("sc02 no longer accepts the generic words 'tell' and 'help' as evidence of asking for help", () => {
+    const hold = data.scenarios.find((s) => s.id === "sc02")?.mustHold.find((h) => h.type === "contains_any");
+    expect(hold).toEqual({ type: "contains_any", anyOf: ["not sure", "ask", "question"] });
+  });
+});

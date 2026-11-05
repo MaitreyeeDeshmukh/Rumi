@@ -14,7 +14,7 @@
  */
 import type { Arm } from './types';
 
-export const DRY_FAULTS = ['error', 'mock', 'empty', 'seeded'] as const;
+const DRY_FAULTS = ['error', 'mock', 'empty', 'seeded'] as const;
 export type DryFault = (typeof DRY_FAULTS)[number];
 
 export interface EvalFlags {

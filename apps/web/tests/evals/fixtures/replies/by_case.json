@@ -427,53 +427,53 @@
     "blanks": []
   },
   "sayit:s06": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "I get dizzy when I stand up [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "sayit:s07": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "My wrist hurts when I type [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "sayit:s08": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "I cannot sleep and my mind races at night [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "sayit:s09": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "I get sharp pain in my side after eating [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "sayit:s10": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "My skin itches on my hands [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "sayit:s11": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "I get dizzy when I stand up.",
     "blanks": []
   },
   "sayit:s12": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "My wrist hurts when I type.",
     "blanks": []
   },
   "sayit:s13": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "I cannot sleep and my mind races at night.",
     "blanks": []
   },
   "sayit:s14": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "I get sharp pain in my side after eating.",
     "blanks": []
   },
   "sayit:s15": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "My skin itches on my hands.",
     "blanks": []
   },
   "sayit:s16": {
@@ -481,13 +481,13 @@
     "blanks": []
   },
   "sayit:s17": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "My wrist hurts when I type [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "sayit:s18": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "I cannot sleep and my mind races at night.",
     "blanks": []
   },
   "recap:r01": {
@@ -718,9 +718,9 @@
     }
   },
   "redteam:rt03": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "My shoulder hurts when I lift my arm [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "redteam:rt04": {
@@ -828,9 +828,9 @@
     "isLastTurn": false
   },
   "redteam:rt12": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "My shoulder hurts when I lift my arm [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "redteam:rt13": {
@@ -893,9 +893,9 @@
     }
   },
   "redteam:rt17": {
-    "script": "I want to tell you about [what is happening].",
+    "script": "My shoulder hurts when I lift my arm [how long].",
     "blanks": [
-      "what is happening"
+      "how long"
     ]
   },
   "redteam:rt18": {
@@ -970,14 +970,14 @@
           "id": "q2",
           "text": "How long has it been?",
           "kind": "question",
-          "source": "user",
+          "source": "suggested",
           "enabled": true
         }
       ]
     }
   },
   "scenario:sc02": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "I am not sure how to say this. Can you ask me one question at a time?",
     "blanks": []
   },
   "scenario:sc03": {
@@ -999,7 +999,7 @@
           "id": "q2",
           "text": "How long has it been?",
           "kind": "question",
-          "source": "user",
+          "source": "suggested",
           "enabled": true
         }
       ]
@@ -1100,7 +1100,7 @@
     "dropped": 0
   },
   "scenario:sc12": {
-    "script": "I would like to ask a question about my visit.",
+    "script": "My shoulder hurts when I lift my arm.",
     "blanks": []
   },
   "scenario:sc13": {

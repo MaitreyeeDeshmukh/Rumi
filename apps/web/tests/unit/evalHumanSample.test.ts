@@ -144,27 +144,36 @@ describe("E-14: the arm cannot be read off the sheet", () => {
     expect(renderReplyForRater("practice", { clinicianSay: "**Which** ear?", coveredItemIds: [], isLastTurn: false })).toBe("Which ear?");
     expect(renderReplyForRater("sayit", { script: "  I want  to ask.  ", blanks: [], crisis: false })).toBe("I want to ask.");
   });
-  it("a length/format classifier cannot beat chance: identical content in the two arm formats renders to identical text", () => {
-    const rows: { arm: "harness" | "baseline"; len: number; lines: number }[] = [];
+  it("E2-11 realistic outputs: structure is gone, but sentence length still gives the arm away (KNOWN LIMIT)", () => {
+    // Harness replies are short, lint-clean sentences; a bare model writes longer free text. Same facts, different style.
+    const facts = ["my left ear hurts", "it started after swimming", "it is worse at night", "i want to know if it will go away", "i need a quiet room to think"];
+    const harness = (f: string) => ({ plan: { id: "plan-1", title: "Visit plan", createdAt: "x", mainConcern: `I told you that ${f}.`, symptomsInMyWords: [], items: [{ id: "q1", text: `Please note that ${f}.`, kind: "concern", source: "user", enabled: true }] } });
+    const baseline = (f: string) => ({
+      mainConcern: `So basically what I would like to explain to the doctor today, in my own words, is that ${f}, and that this has been bothering me quite a lot for some time now, which is why I am here at all`,
+      symptomsInMyWords: [],
+      items: [{ text: `I would really appreciate it if we could spend some time going through the fact that ${f}, because I think that matters and I do not want to forget it later`, kind: "concern", source: "user" }],
+      crisis: false,
+    });
+    const rows: { arm: string; len: number; lines: number; avg: number }[] = [];
     for (let i = 0; i < 20; i++) {
-      const text = `Headache number ${i} in the afternoon.`;
-      const h = { items: [{ section: "discussed", text, evidence: ["l2"] }], unconfirmed: i % 2 ? ["I could not confirm this: x"] : [], planStatus: [], dropped: i % 3 };
-      const b = { items: [{ section: "discussed", text, evidence: ["l2"] }], planStatus: [] };
-      const rh = renderReplyForRater("recap", h);
-      const rb = renderReplyForRater("recap", b);
-      rows.push({ arm: "harness", len: rh.length, lines: rh.split("\n").length }, { arm: "baseline", len: rb.length, lines: rb.split("\n").length });
-    }
-    // Best single-threshold classifier on length or line count.
-    const accuracy = (key: "len" | "lines") => {
-      let best = 0;
-      for (const t of rows.map((r) => r[key])) {
-        const correct = rows.filter((r) => (r[key] > t ? "harness" : "baseline") === r.arm).length;
-        best = Math.max(best, correct / rows.length, 1 - correct / rows.length);
+      const f = facts[i % facts.length];
+      for (const [arm, body] of [["harness", harness(f)], ["baseline", baseline(f)]] as const) {
+        const text = renderReplyForRater("plan", body);
+        const sentences = text.split(/[.!?\n]+/).filter((x) => x.trim());
+        rows.push({ arm, len: text.length, lines: text.split("\n").length, avg: text.split(/\s+/).length / sentences.length });
       }
-      return best;
+    }
+    const best = (key: "len" | "lines" | "avg") => {
+      let top = 0;
+      for (const t of rows.map((r) => r[key])) {
+        const correct = rows.filter((r) => (r[key] > t ? "baseline" : "harness") === r.arm).length;
+        top = Math.max(top, correct / rows.length, 1 - correct / rows.length);
+      }
+      return top;
     };
-    expect(accuracy("len")).toBeLessThanOrEqual(0.55);
-    expect(accuracy("lines")).toBeLessThanOrEqual(0.55);
+    expect(best("lines")).toBeLessThanOrEqual(0.55); // structure carries nothing
+    expect(best("len")).toBeGreaterThan(0.9); // KNOWN LIMIT: how much is written still separates the arms
+    expect(best("avg")).toBeGreaterThan(0.9); // KNOWN LIMIT: so does sentence length; the human read is "blind" only to structure
   });
   it("kills the missing final shuffle: items of one task are not contiguous in the sheet, for several seeds", () => {
     const pool = (["plan", "practice", "sayit", "recap"] as const).flatMap((task) =>

@@ -13,6 +13,7 @@ import { makeDryRun } from './dry';
 import { readFlags } from './flags';
 import {
   appendCalibration,
+  commonSummaries,
   createSession,
   DEFAULT_TIMEOUT_MS,
   estimateRun,
@@ -52,6 +53,8 @@ for (const arm of flags.arms) {
   describe(`eval arm: ${arm} (${mode}, k=${flags.k})`, () => {
     const cases = buildCases(data, arm);
     let session: Session;
+    // The only model ids this run may have used: from config (never printed); the dry fixtures use the two Groq ids of 06 section 0.
+    const models = (): string[] => [process.env.GROQ_MODEL_QUALITY ?? 'openai/gpt-oss-120b', process.env.GROQ_MODEL_FAST ?? 'openai/gpt-oss-20b'];
 
     beforeAll(async () => {
       let run: RunFn;
@@ -67,7 +70,7 @@ for (const arm of flags.arms) {
         // Throws when the harness specs differ from the pin, before a single paid call.
         run = await loadLiveRun(arm);
       }
-      session = createSession({ run, arm, k: flags.k, canary, mode });
+      session = createSession({ run, arm, k: flags.k, canary, mode, models: models() });
       sessions.push(session);
     });
 
@@ -98,15 +101,10 @@ for (const arm of flags.arms) {
 afterAll(() => {
   if (reports.length === 0) return;
   // Head to head: score each arm on the cases both arms ran, so the table compares like with like.
-  if (records.length > 1) {
-    const common = records.map((r) => new Set(r.results.map((x) => x.caseId))).reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
-    for (const rep of reports) {
-      const rec = records.find((r) => r.arm === rep.arm);
-      if (rec) rep.common = aggregate(rec.results, { arm: rep.arm, expected: [], restrictTo: common });
-    }
-  }
+  const common = commonSummaries(records);
+  for (const rep of reports) rep.common = common.get(rep.arm);
   print(renderReport(reports, { mode, k: flags.k, commit }));
-  if (process.env.EVAL_STATUS_FILE) writeFileSync(process.env.EVAL_STATUS_FILE, JSON.stringify({ verdicts: reports.map((r) => r.summary.verdict) }));
+  if (process.env.EVAL_STATUS_FILE) writeFileSync(process.env.EVAL_STATUS_FILE, JSON.stringify({ verdicts: reports.map((r) => r.summary.verdict), expected: flags.arms.length }));
   if (flags.dry) return;
   for (const rec of records) {
     print([`wrote ${path.relative(process.cwd(), writeRunFile(path.join(evalDir, 'runs'), rec))}`]);

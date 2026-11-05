@@ -110,3 +110,22 @@ describe("classify: every status x degraded x attempts x modelUsed x mode combin
     expect(classify(ok({ modelUsed: null, body: "" }), { arm: "baseline" })).toBe("error");
   });
 });
+
+describe("classify: model allow-list (E2-8)", () => {
+  const models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
+  it("with an allow-list, only the configured model ids make a model_ok", () => {
+    expect(classify(ok({ modelUsed: "openai/gpt-oss-20b" }), { models })).toBe("model_ok");
+    expect(classify(ok({ modelUsed: "openai/gpt-oss-120b", attempts: 2 }), { models })).toBe("retry_ok");
+    for (const bad of ["builtin-templates", "rules-v1", "local-1", "gpt-4", "openai/gpt-oss-20b-fake", "OPENAI/GPT-OSS-20B"]) {
+      expect(classify(ok({ modelUsed: bad }), { models }), bad).toBe("error");
+    }
+  });
+  it("the allow-list also applies to the baseline arm and to a malformed baseline reply", () => {
+    expect(classify(ok({ modelUsed: "rules-v1" }), { arm: "baseline", models })).toBe("error");
+    expect(classify(ok({ modelUsed: "rules-v1", body: "" }), { arm: "baseline", models })).toBe("error");
+    expect(classify(ok({ modelUsed: "openai/gpt-oss-20b", body: "" }), { arm: "baseline", models })).toBe("model_ok");
+  });
+  it("a degraded reply is a fallback whatever model it names (no allow-list needed)", () => {
+    expect(classify(ok({ degraded: true, modelUsed: "rules-v1" }), { models })).toBe("fallback");
+  });
+});

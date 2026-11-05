@@ -50,7 +50,7 @@ function check(h: Hold, c: HoldContext): string | null {
   switch (h.type) {
     case 'valid_reply': {
       if (!hasProse(b) || (isObj(b) && (b.crisis === true || b.error !== undefined))) return 'valid_reply: empty, crisis or error body';
-      const f = genericFailures(c.task, c.arm ?? 'harness', b, c.allowRefusal ?? false);
+      const f = genericFailures(c.task, c.arm ?? 'harness', b, c.allowRefusal ?? false, c.ground.join(' '));
       return f.length > 0 ? `valid_reply: ${f[0]}` : null;
     }
     case 'not_crisis':
@@ -116,7 +116,7 @@ function check(h: Hold, c: HoldContext): string | null {
       return new RegExp(h.pattern, 'i').test(joinedProse(b)) ? `no_text_matches: /${h.pattern}/ found` : null;
     case 'english_only': {
       const text = joinedProse(b);
-      return text.trim().length > 0 && looksEnglish(text) ? null : 'english_only: reply is empty or not in English';
+      return text.trim().length > 0 && looksEnglish(text, c.ground.join(' ')) ? null : 'english_only: reply is empty or not in English';
     }
     case 'max_items': {
       const v = getPath(b, h.path);

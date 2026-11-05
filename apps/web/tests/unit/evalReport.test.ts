@@ -89,7 +89,7 @@ describe("renderReport: fix round (E-18, P3)", () => {
   it("prints the new gates: per-row injection, on-task by task, crisis before model, not-applicable list for the baseline", () => {
     const text = renderReport([{ arm: "harness", summary: good }, { arm: "baseline", summary: agg([mk()], { arm: "baseline" }) }], { mode: "live", k: 3 }).join("\n");
     expect(text).toMatch(/red-team rows not clean/);
-    expect(text).toMatch(/by task \(need >=75% each\)/);
+    expect(text).toMatch(/by task \(need >=75% each/);
     expect(text).toMatch(/crisis cards after a model call/);
     expect(text).toMatch(/not applicable: leak_canary/);
     expect(text).toMatch(/head to head on the cases BOTH arms ran/);
