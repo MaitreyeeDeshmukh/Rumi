@@ -30,7 +30,8 @@ import { isRecoveryCode } from '@/features/memory/recoveryCode';
 import { presetText } from '@/features/support/presets';
 
 export const MAX_SESSIONS = 20;
-const MAX_SUPPORT_ITEMS = 20;
+/** More than this many support lines are dropped when stored data is read back, so the card refuses to grow past it. */
+export const MAX_SUPPORT_ITEMS = 20;
 const MAX_STORED_TURNS = 40;
 
 export const defaultSettings = (): Settings => ({

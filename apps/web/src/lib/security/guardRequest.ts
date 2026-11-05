@@ -1,11 +1,8 @@
-import { LIMITS } from "@/features/shared/constants";
+import { LIMITS, RECOVERY_CODE_RE } from "@/features/shared/constants";
 import { HttpError } from "@/lib/ai/http";
 import { assertSameOrigin } from "./origin";
 import { clientIp, hashClientIp, rateLimiter, type RateLimiter } from "./rateLimit";
 import { getSession, type Session } from "./session";
-
-/** Recovery code format: 4 groups of 5 characters from an alphabet without 0, 1, I, O. The browser normalises case and dashes first. */
-const KEY_RE = /^[A-HJ-NP-Z2-9]{5}(?:-[A-HJ-NP-Z2-9]{5}){3}$/;
 
 export interface GuardResult {
   /** `id` is null when no signing secret is usable; the request is then limited by address only. */
@@ -45,7 +42,7 @@ export function guardRequest(req: Request, options: GuardOptions = {}): GuardRes
     }
 
     const key = req.headers.get("x-rumi-key");
-    if (key !== null && !KEY_RE.test(key)) throw new HttpError(400, "bad_input");
+    if (key !== null && !RECOVERY_CODE_RE.test(key)) throw new HttpError(400, "bad_input");
     return { session, ipHash, memoryKey: key };
   } catch (e) {
     if (e instanceof HttpError) throw e;

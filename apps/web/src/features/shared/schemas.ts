@@ -179,6 +179,8 @@ export const FactsRequest = z.strictObject({
     .max(LIMITS.factsMax)
     .refine((facts) => unique(facts.map((f) => `${f.kind}:${f.key}`)), { message: 'duplicate fact' }),
 });
+/** Body of /api/memory/forget: how long ago the browser last synced (its own clock), so the server can lengthen its settle wait. */
+export const ForgetRequest = z.strictObject({ sinceSyncMs: z.number().finite().min(0).max(600_000).optional() });
 export const ForgetReply = z.object({ status: z.enum(['ok', 'failed']) });
 export const FactsReply = z.object({ saved: z.number().int().min(0), rejected: z.number().int().min(0) });
 
