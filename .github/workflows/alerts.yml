@@ -1,0 +1,53 @@
+name: alerts
+
+# Every 15 minutes: read ops_alert_snapshot() and /api/ready, then open, update or close a GitHub issue per alert.
+# Rules: apps/web/src/lib/telemetry/alerts.ts. Issue handling: apps/web/src/lib/telemetry/alertIssues.ts. Setup and meaning: README.md, Operations.
+#
+# SETUP (user action, once):
+#   1. This file must exist on the DEFAULT branch: GitHub runs schedules from there only.
+#   2. Settings > Environments > New environment "alerts". Restrict "Deployment branches" to main and put the secrets below
+#      in the ENVIRONMENT (not repository) secrets, so a branch or pull request workflow cannot read the service key.
+#      Secrets: ALERTS_SUPABASE_URL, ALERTS_SUPABASE_KEY, ALERTS_APP_URL, ALERTS_READY_TOKEN (same value as READY_TOKEN in Vercel).
+#      Optional variable: AI_DAILY_GLOBAL_SPEND_CAP_USD.
+#   3. ALERTS_SUPABASE_KEY is a service-role key today. Swap it for a read-only role that can only execute ops_alert_snapshot()
+#      when the database lane provides one.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: alerts
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: alerts
+    steps:
+      # Actions are pinned to full commit SHAs (checkout v4.4.0, setup-node v4.4.0; verified through the GitHub API).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+      - name: Evaluate alert rules
+        env:
+          SUPABASE_URL: ${{ secrets.ALERTS_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.ALERTS_SUPABASE_KEY }}
+          APP_URL: ${{ secrets.ALERTS_APP_URL }}
+          READY_TOKEN: ${{ secrets.ALERTS_READY_TOKEN }}
+          AI_DAILY_GLOBAL_SPEND_CAP_USD: ${{ vars.AI_DAILY_GLOBAL_SPEND_CAP_USD }}
+        run: node --experimental-strip-types apps/web/scripts/alerts-check.mjs
+      - name: Open, update or close issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node --experimental-strip-types apps/web/scripts/alerts-issues.mjs

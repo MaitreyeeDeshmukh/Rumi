@@ -1,6 +1,11 @@
 "use client";
 
-export default function GlobalError() {
+import { useEffect } from "react";
+import { reportClientError } from "@/lib/telemetry/reportClientError";
+
+export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
+  // Only the digest is sent: never the message or stack.
+  useEffect(() => reportClientError("global_error", error.digest), [error]);
   return (
     <html lang="en">
       <head>

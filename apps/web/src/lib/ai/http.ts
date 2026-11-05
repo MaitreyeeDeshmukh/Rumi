@@ -1,25 +1,19 @@
 import type { ApiErrorCode } from "@/features/shared/types";
+import { AppError, MESSAGES } from "@/lib/errors";
 
-export class HttpError extends Error {
+/** The older constructor shape, kept so every caller still works. It is an AppError, so toResponse and the logger treat it alike. */
+export class HttpError extends AppError {
+  declare readonly code: ApiErrorCode;
   constructor(
-    readonly status: number,
-    readonly code: ApiErrorCode,
+    status: number,
+    code: ApiErrorCode,
     /** Seconds until the caller may try again. Sent as Retry-After on a 429. */
-    readonly retryAfterSec?: number,
+    retryAfterSec?: number,
   ) {
-    super(code);
+    super(code, { status, retryAfterSec });
     this.name = "HttpError";
   }
 }
-
-const MESSAGE: Record<ApiErrorCode, string> = {
-  bad_input: "I could not read that. Check what you wrote and try again.",
-  too_large: "That is too long. Make it shorter and try again.",
-  forbidden: "This request was blocked. Reload the page and try again.",
-  ai_invalid: "I could not make a safe answer. Your work is saved. Try again.",
-  ai_unavailable: "I could not reach the AI. Your work is saved. Try again.",
-  rate_limited: "That was too many tries. Wait one minute and try again.",
-};
 
 /** Every API answer is private: never cached by the browser, a proxy or the CDN. */
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -34,7 +28,7 @@ const retryAfter = (sec: number | undefined): number => (sec !== undefined && Nu
 
 export function errorResponse(e: HttpError): Response {
   const headers: Record<string, string> = e.status === 429 ? { "Retry-After": String(retryAfter(e.retryAfterSec)) } : {};
-  return json({ error: { code: e.code, message: MESSAGE[e.code] } }, e.status, headers);
+  return json({ error: { code: e.code, message: MESSAGES[e.code] } }, e.status, headers);
 }
 
 /**

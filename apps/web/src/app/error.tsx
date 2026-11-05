@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { reportClientError } from "@/lib/telemetry/reportClientError";
 
-export default function ErrorPage({ reset }: { error: Error; reset: () => void }) {
+export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  // Only the digest is sent: never the message or stack.
+  useEffect(() => reportClientError("render_error", error.digest), [error]);
   return (
     <section className="page center" role="alert">
       <h1>Something went wrong</h1>
