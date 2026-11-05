@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HttpError, errorResponse, json, readJson } from "@/lib/ai/http";
+import { HttpError, json, readJson, retryAfter } from "@/lib/ai/http";
 
 const post = (body: BodyInit | null, headers: Record<string, string> = {}): Request =>
   new Request("https://rumi.test/api/plan", { method: "POST", body, headers });
@@ -17,7 +17,7 @@ function streamOf(chunks: number, size: number, pulled: { n: number }, headers: 
   return new Request("https://rumi.test/api/plan", { method: "POST", body: stream, headers, duplex: "half" } as RequestInit & { duplex: "half" });
 }
 
-describe("json and errorResponse", () => {
+describe("json and retryAfter", () => {
   it("every answer is JSON and never cached", async () => {
     const res = json({ ok: true });
     expect(res.headers.get("Cache-Control")).toBe("no-store");
@@ -25,18 +25,10 @@ describe("json and errorResponse", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it("maps a code to a plain message and the status", async () => {
-    const res = errorResponse(new HttpError(403, "forbidden"));
-    expect(res.status).toBe(403);
-    expect(res.headers.get("Cache-Control")).toBe("no-store");
-    expect(res.headers.get("Retry-After")).toBeNull();
-    expect(await res.json()).toEqual({ error: { code: "forbidden", message: "This request was blocked. Reload the page and try again." } });
-  });
-
-  it("a 429 carries Retry-After, rounded up, with a default of 60", () => {
-    expect(errorResponse(new HttpError(429, "rate_limited", 12.2)).headers.get("Retry-After")).toBe("13");
-    expect(errorResponse(new HttpError(429, "rate_limited")).headers.get("Retry-After")).toBe("60");
-    expect(errorResponse(new HttpError(429, "rate_limited", 0)).headers.get("Retry-After")).toBe("1");
+  it("Retry-After is rounded up, with a default of 60", () => {
+    expect(retryAfter(12.2)).toBe(13);
+    expect(retryAfter(undefined)).toBe(60);
+    expect(retryAfter(0)).toBe(1);
   });
 });
 
@@ -87,7 +79,7 @@ describe("readJson", () => {
 describe("07 P3 and H-17 details", () => {
   it("Retry-After is a whole number between 1 and 86400 (a day) even for NaN, Infinity or negative input", () => {
     for (const [input, expected] of [[Number.NaN, "60"], [Number.POSITIVE_INFINITY, "60"], [-5, "1"], [999_999, "86400"], [7_200, "7200"], [0.2, "1"]] as const) {
-      expect(errorResponse(new HttpError(429, "rate_limited", input)).headers.get("Retry-After")).toBe(expected);
+      expect(String(retryAfter(input))).toBe(expected);
     }
   });
 

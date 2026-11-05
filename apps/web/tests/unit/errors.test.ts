@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HttpError, errorResponse } from "@/lib/ai/http";
+import { HttpError } from "@/lib/ai/http";
 import { AppError, MESSAGES, asAppError, fingerprintOf, toResponse, type AppErrorCode } from "@/lib/errors";
 import { newRequestId, requestIdOf } from "@/lib/requestContext";
 
@@ -59,12 +59,12 @@ describe("toResponse", () => {
 });
 
 describe("HttpError adapter", () => {
-  it("is an AppError with the old constructor shape, and errorResponse still works", async () => {
+  it("is an AppError with the old constructor shape, and toResponse answers it", async () => {
     const e = new HttpError(429, "rate_limited", 12);
     expect(e).toBeInstanceOf(AppError);
     expect([e.status, e.code, e.retryAfterSec]).toEqual([429, "rate_limited", 12]);
-    expect(toResponse(e, RID).status).toBe(429);
-    const res = errorResponse(e);
+    const res = toResponse(e, RID);
+    expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("12");
     expect(((await res.json()) as { error: { message: string } }).error.message).toBe(MESSAGES.rate_limited);
   });

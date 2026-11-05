@@ -122,15 +122,15 @@ describeWhen("auth", ["lib/auth/requireUser"], "chaos: a server route checks the
 
 // Waiting for lane persona: src/features/memory/supabaseStore.ts
 describeWhen("persona", ["features/memory/supabaseStore"], "chaos: reading persona memory while Supabase is broken", () => {
-  it.each(["down", "error", "hang"] as Mode[])("store %s: getMemoryContext gives '' within its 1500 ms cap and never throws", async (mode) => {
+  it.each(["down", "error", "hang"] as Mode[])("store %s: getMemoryFacts gives [] within its 1500 ms cap and never throws", async (mode) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const fake = fakeSupabase(mode);
     installSupabase(fake);
-    const { getMemoryContext } = await loadLane<MemoryStoreModule>("features/memory/supabaseStore");
+    const { getMemoryFacts } = await loadLane<MemoryStoreModule>("features/memory/supabaseStore");
     const t0 = Date.now();
-    const pending = getMemoryContext("11111111-2222-4333-8444-555555555555");
+    const pending = getMemoryFacts("11111111-2222-4333-8444-555555555555");
     await vi.advanceTimersByTimeAsync(1_600);
-    await expect(pending).resolves.toBe("");
+    await expect(pending).resolves.toEqual([]);
     expect(Date.now() - t0).toBeLessThanOrEqual(1_700);
     expectNoLeak(logs, "", false);
   });

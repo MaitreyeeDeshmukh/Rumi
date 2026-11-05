@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as env from "@/lib/env";
 import { STRICT_REFUSED_MS, ProviderError, createGroqProvider, type ProviderCall } from "@/lib/ai/provider";
-import { logEvent, setLogSink, type AiEvent } from "@/lib/ai/telemetry";
+import { aiRecord, setLogSink, type AiEvent } from "@/lib/ai/telemetry";
 
 const KEY = "gsk_TESTKEYTESTKEYTESTKEYTESTKEY";
 const warnings: Array<{ event: string; f?: Record<string, unknown> }> = [];
@@ -124,12 +124,7 @@ describe("telemetry line: the new fields are allowlisted codes", () => {
     ms: 5,
     ...over,
   });
-  const lines = (e: AiEvent): Record<string, unknown> => {
-    const out: string[] = [];
-    setLogSink((l) => out.push(l));
-    logEvent(e);
-    return JSON.parse(out[0]) as Record<string, unknown>;
-  };
+  const lines = (e: AiEvent): Record<string, unknown> => JSON.parse(JSON.stringify(aiRecord(e))) as Record<string, unknown>;
 
   it("writes provider error, status, finish reason and crisis source when they are valid", () => {
     expect(lines(event({ providerError: "timeout", providerStatus: 503, finishReason: "length", crisisSource: "failsafe_quota" }))).toMatchObject({

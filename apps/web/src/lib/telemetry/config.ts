@@ -20,9 +20,6 @@ export function getRelease(): string {
 /** True when a Sentry DSN is configured. The value itself is read only by the adapter that the app plugs in. */
 export const sentryEnabled = (): boolean => present("SENTRY_DSN");
 
-/** True when the process runs on Vercel, whose edge sets the client address headers the rate limiters trust. */
-export const onVercel = (): boolean => present("VERCEL");
-
 /** Kill switch: TELEMETRY_DB_WRITES=off stops database telemetry writes. Stdout lines continue. */
 export const dbWritesEnabled = (): boolean => (process.env.TELEMETRY_DB_WRITES ?? "").trim().toLowerCase() !== "off";
 

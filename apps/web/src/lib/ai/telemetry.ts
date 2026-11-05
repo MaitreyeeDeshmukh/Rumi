@@ -108,10 +108,6 @@ export function aiRecord(event: AiEvent) {
   return record;
 }
 
-export function logEvent(event: AiEvent): void {
-  emitLine(JSON.stringify(aiRecord(event)));
-}
-
 /** The values `ops_ai_events.outcome` accepts (08 section 2). */
 export type DbOutcome = "ok" | "degraded" | "crisis" | "rate_limited" | "invalid_input" | "provider_error" | "guard_blocked" | "unauthorized" | "timeout" | "config_error";
 

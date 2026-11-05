@@ -56,5 +56,5 @@ export interface RequireUserModule {
   requireUser(req: Request): Promise<{ userId: string; userHash: string; isAnonymous: boolean }>;
 }
 export interface MemoryStoreModule {
-  getMemoryContext(userId: string): Promise<string>;
+  getMemoryFacts(userId: string): Promise<string[]>;
 }

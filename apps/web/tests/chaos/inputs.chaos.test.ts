@@ -4,9 +4,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LIMITS } from "@/features/shared/constants";
-import { HttpError, errorResponse, readJson } from "@/lib/ai/http";
-import { AppError } from "@/lib/errors";
-import { logEvent } from "@/lib/ai/telemetry";
+import { HttpError, readJson } from "@/lib/ai/http";
+import { AppError, toResponse } from "@/lib/errors";
+import { recordAiEvent } from "@/lib/telemetry/sinks";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { createRateLimiter } from "@/lib/security/rateLimit";
 import { describeWhen } from "./lanes";
@@ -14,6 +14,8 @@ import { loadLane, type HarnessModule } from "./frozen";
 import { captureLogs, chaosSpec, expectNoLeak, post, stubLiveEnv, USER_TEXT, type Logs } from "./fakes";
 
 const CAP = LIMITS.bodyBytesMax;
+const RID = "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4e";
+const EXTRA = { cacheStatus: "bypass", cachedTokens: 0 } as const;
 
 /** The status and error code of the HttpError a call throws, or null when it does not throw one. */
 async function failure(fn: () => unknown): Promise<{ status: number; code: string; retryAfterSec?: number } | null> {
@@ -64,7 +66,7 @@ describe("chaos: oversize and malformed bodies", () => {
   ])("%s is a 400 bad_input whose answer never repeats the input", async (_n, raw) => {
     const f = await failure(() => readJson(post(undefined, {}, raw), CAP));
     expect(f).toMatchObject({ status: 400, code: "bad_input" });
-    const answer = errorResponse(new HttpError(400, "bad_input"));
+    const answer = toResponse(new HttpError(400, "bad_input"), RID);
     expect(answer.headers.get("cache-control")).toBe("no-store");
     expect(await answer.text()).not.toContain("nope");
   });
@@ -87,7 +89,7 @@ describe("chaos: floods and cross-site posts", () => {
     for (let i = 0; i < 5; i += 1) await guardRequest(post({}, same), { limiter, authenticate: null });
     const f = await failure(() => guardRequest(post({}, same), { limiter, authenticate: null }));
     expect(f).toMatchObject({ status: 429, code: "rate_limited" });
-    const res = errorResponse(new HttpError(429, "rate_limited", f?.retryAfterSec));
+    const res = toResponse(new HttpError(429, "rate_limited", f?.retryAfterSec), RID);
     expect(res.status).toBe(429);
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
     expect(res.headers.get("cache-control")).toBe("no-store");
@@ -124,20 +126,26 @@ describe("chaos: floods and cross-site posts", () => {
 
 describe("chaos: the telemetry writer is handed user text and a key", () => {
   let logs: Logs;
-  beforeEach(() => void (logs = captureLogs()));
-  afterEach(() => logs.stop());
+  beforeEach(() => {
+    vi.stubEnv("TELEMETRY_DB_WRITES", "off"); // stdout only: this test is about the line, not the table
+    logs = captureLogs();
+  });
+  afterEach(() => {
+    logs.stop();
+    vi.unstubAllEnvs();
+  });
 
   it("fields that are not on the allowlist or not in the right shape never reach the log line", () => {
     const base = { id: "0b9e2f5c-1111-4222-8333-444455556666", task: "plan", promptVersion: "plan@1", outcome: "ok", degraded: false, attempts: 1, tier: "quality", redactions: 0, injectionHits: 0, thin: false, guardHits: [], memoryItems: 0, inTokens: 1, outTokens: 1, ms: 5 };
-    logEvent({ ...base, text: USER_TEXT, key: "gsk_CHAOSKEY0123456789abcdefghij", message: USER_TEXT } as never);
-    logEvent({ ...base, id: USER_TEXT, promptVersion: USER_TEXT, errorCode: USER_TEXT, task: USER_TEXT, outcome: USER_TEXT, tier: USER_TEXT, guardHits: [USER_TEXT] } as never);
+    recordAiEvent({ ...base, text: USER_TEXT, key: "gsk_CHAOSKEY0123456789abcdefghij", message: USER_TEXT } as never, EXTRA);
+    recordAiEvent({ ...base, id: USER_TEXT, promptVersion: USER_TEXT, errorCode: USER_TEXT, task: USER_TEXT, outcome: USER_TEXT, tier: USER_TEXT, guardHits: [USER_TEXT] } as never, EXTRA);
     expect(logs.lines).toHaveLength(2);
     expectNoLeak(logs);
   });
 
   it("a null or garbage event does not throw (telemetry can never break a request)", () => {
-    expect(() => logEvent(null as never)).not.toThrow();
-    expect(() => logEvent("ZEBRA-MARIGOLD" as never)).not.toThrow();
+    expect(() => recordAiEvent(null as never, EXTRA)).not.toThrow();
+    expect(() => recordAiEvent("ZEBRA-MARIGOLD" as never, EXTRA)).not.toThrow();
     expectNoLeak(logs);
   });
 });

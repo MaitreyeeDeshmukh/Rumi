@@ -1,5 +1,5 @@
 import type { ApiErrorCode } from "@/features/shared/types";
-import { AppError, MESSAGES } from "@/lib/errors";
+import { AppError } from "@/lib/errors";
 
 /** The older constructor shape, kept so every caller still works. It is an AppError, so toResponse and the logger treat it alike. */
 export class HttpError extends AppError {
@@ -25,11 +25,6 @@ export function json(body: unknown, status = 200, headers: Record<string, string
 
 /** Whole seconds between 1 and 86400 (a day: the daily limit resets at UTC midnight); 60 when the value is missing or not a finite number. */
 export const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(86_400, Math.max(1, Math.ceil(sec))) : 60);
-
-export function errorResponse(e: HttpError): Response {
-  const headers: Record<string, string> = e.status === 429 ? { "Retry-After": String(retryAfter(e.retryAfterSec)) } : {};
-  return json({ error: { code: e.code, message: MESSAGES[e.code] } }, e.status, headers);
-}
 
 /**
  * Reads a JSON body with a hard byte cap. The declared Content-Length is checked first, then the stream is read

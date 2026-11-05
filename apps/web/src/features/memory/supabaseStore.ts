@@ -5,7 +5,7 @@
  *  - Erasure is `persona_forget_all` and is only reported done when it says zero rows remain.
  *  - Every call has a timeout and one retry for faults that may clear (5xx, 429, network, timeout). A caller fault
  *    (4xx, constraint) is never retried. The database's message is dropped; only a reason code leaves this file.
- *  - `getMemoryContext` is the read path used by AI routes: it never throws and gives up after 1500 ms.
+ *  - `getMemoryFacts` is the read path used by AI routes: it never throws and gives up after 1500 ms.
  */
 import { STATED_FACT_KINDS } from '@/features/shared/constants';
 import { PersonaFactRemoval, PersonaFactSync, type PersonaFactRemovalT } from '@/features/shared/schemas';
@@ -205,10 +205,4 @@ export async function getMemoryFacts(userId: string, deps: ContextDeps = {}): Pr
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** A ready prompt block, or '' (see getMemoryFacts). */
-export async function getMemoryContext(userId: string, deps: ContextDeps = {}): Promise<string> {
-  const lines = await getMemoryFacts(userId, deps);
-  return lines.length === 0 ? '' : `<user_memory>\n${lines.map((l) => `- ${l}`).join('\n')}\n</user_memory>`;
 }

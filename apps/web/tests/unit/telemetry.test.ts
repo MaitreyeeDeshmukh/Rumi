@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { GUARD_LOG_RE } from "@/features/shared/guards";
-import { logEvent, setLogSink, type AiEvent } from "@/lib/ai/telemetry";
+import { aiRecord, type AiEvent } from "@/lib/ai/telemetry";
 
 const base: AiEvent = {
   id: "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4e",
@@ -21,16 +21,10 @@ const base: AiEvent = {
   errorCode: "ai_unavailable",
 };
 
-function capture(e: unknown): string[] {
-  const lines: string[] = [];
-  setLogSink((l) => lines.push(l));
-  logEvent(e as AiEvent);
-  return lines;
-}
+/** The line the writer produces for an event: one JSON string of the record. */
+const capture = (e: unknown): string[] => [JSON.stringify(aiRecord(e as AiEvent))];
 
-afterEach(() => setLogSink(null));
-
-describe("logEvent", () => {
+describe("aiRecord", () => {
   it("writes one JSON line with counts, ids and guard labels", () => {
     const lines = capture(base);
     expect(lines).toHaveLength(1);
@@ -99,7 +93,7 @@ describe("logEvent", () => {
   });
 });
 
-describe("logEvent: narrow shapes", () => {
+describe("aiRecord: narrow shapes", () => {
   it("an id is a uuid or 12 hex characters, nothing else", () => {
     for (const ok of [base.id, "0123456789ab"]) expect(JSON.parse(capture({ ...base, id: ok })[0]).id).toBe(ok);
     for (const bad of ["headache", "my-head-hurts", "abcdef", "0123456789abcdef", "ABCDEF123456", "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4"]) {
@@ -121,7 +115,7 @@ describe("logEvent: narrow shapes", () => {
   });
 });
 
-describe("logEvent: stage", () => {
+describe("aiRecord: stage", () => {
   it("is written only when set, and only from the fixed list", () => {
     expect(JSON.parse(capture({ ...base, stage: "prompt" })[0]).stage).toBe("prompt");
     expect(JSON.parse(capture({ ...base, stage: "my head hurts" })[0]).stage).toBe("unknown");
