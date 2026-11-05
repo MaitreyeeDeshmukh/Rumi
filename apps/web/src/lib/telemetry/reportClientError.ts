@@ -7,7 +7,7 @@
 export function reportClientError(code: "render_error" | "global_error" | "unhandled_rejection", digest?: string): void {
   try {
     const body: { code: string; route: string; fingerprint?: string } = { code, route: window.location.pathname.slice(0, 80) };
-    if (digest !== undefined && /^[A-Za-z0-9]{1,64}$/.test(digest)) body.fingerprint = digest;
+    if (digest !== undefined && /^[a-z0-9]{8,64}$/.test(digest)) body.fingerprint = digest;
     void fetch("/api/client-error", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

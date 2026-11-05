@@ -1,37 +1,55 @@
-// Reads the metric views and /api/ready, applies the rules in src/lib/telemetry/alerts.ts and writes alerts.json.
+// Reads ops_alert_snapshot() and /api/ready, applies the rules in src/lib/telemetry/alerts.ts and writes alerts.json:
+//   { "alerts": [...], "undecided": [...] }   (undecided = rules that had no data this run; see alertIssues.ts)
 // Run by .github/workflows/alerts.yml: node --experimental-strip-types apps/web/scripts/alerts-check.mjs
-// Needs SUPABASE_URL, SUPABASE_SECRET_KEY, APP_URL. Optional: AI_DAILY_GLOBAL_SPEND_CAP_USD. Prints alert keys only, never a value.
+// Needs SUPABASE_URL, SUPABASE_SECRET_KEY, APP_URL. Optional: READY_TOKEN (to learn WHICH dependency failed),
+// AI_DAILY_GLOBAL_SPEND_CAP_USD, READY_RETRY_MS (default 5000), ALERTS_OUT.
+// A missing variable or an unreachable service is itself an alert (metrics_unreachable / not_ready), written to the file
+// with exit 0, so an issue opens. Exit 1 happens only on a bug in this script. Prints alert keys only, never a value.
 import { writeFileSync } from "node:fs";
-import { DEFAULT_THRESHOLDS, evaluateAlerts } from "../src/lib/telemetry/alerts.ts";
+import { DEFAULT_THRESHOLDS, evaluateAlerts, undecidedAlerts } from "../src/lib/telemetry/alerts.ts";
 
-const { SUPABASE_URL, SUPABASE_SECRET_KEY, APP_URL, AI_DAILY_GLOBAL_SPEND_CAP_USD, ALERTS_OUT = "alerts.json" } = process.env;
-for (const [name, value] of Object.entries({ SUPABASE_URL, SUPABASE_SECRET_KEY, APP_URL })) {
-  if (!value) {
-    console.error(`missing configuration: ${name}`);
-    process.exit(2);
-  }
-}
-
+const { SUPABASE_URL, SUPABASE_SECRET_KEY, APP_URL, READY_TOKEN, AI_DAILY_GLOBAL_SPEND_CAP_USD, ALERTS_OUT = "alerts.json" } = process.env;
 const TIMEOUT_MS = 10_000;
+const RETRY_MS = Number.isFinite(Number(process.env.READY_RETRY_MS)) ? Number(process.env.READY_RETRY_MS) : 5000;
+
 const cap = Number(AI_DAILY_GLOBAL_SPEND_CAP_USD);
 const thresholds = { ...DEFAULT_THRESHOLDS, spendCapUsd: Number.isFinite(cap) && cap > 0 ? cap : DEFAULT_THRESHOLDS.spendCapUsd };
-const auth = { apikey: SUPABASE_SECRET_KEY, Authorization: `Bearer ${SUPABASE_SECRET_KEY}` };
 
-/** One REST read. Returns the first row, or null when anything goes wrong (the rule then raises metrics_unreachable). */
-async function firstRow(path) {
+/** https only (plain http just for a local mock), so the service key is never sent in clear text. null for anything else. */
+function baseUrl(value) {
   try {
-    const res = await fetch(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/${path}`, { headers: auth, signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok) return null;
-    const rows = await res.json();
-    return Array.isArray(rows) ? (rows[0] ?? {}) : null;
+    const u = new URL(value ?? "");
+    const local = u.hostname === "127.0.0.1" || u.hostname === "localhost";
+    return u.protocol === "https:" || (u.protocol === "http:" && local) ? u.origin : null;
   } catch {
     return null;
   }
 }
 
-async function readReady() {
+// redirect: "error" - a redirect would carry the service key and token to another host.
+const get = (url, init) => fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store" });
+
+/** The snapshot JSON, or null when anything goes wrong (the rules then raise metrics_unreachable). */
+async function readSnapshot() {
+  const base = baseUrl(SUPABASE_URL);
+  if (base === null || !SUPABASE_SECRET_KEY) return null;
   try {
-    const res = await fetch(`${APP_URL.replace(/\/$/, "")}/api/ready`, { signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store" });
+    const res = await get(`${base}/rest/v1/rpc/ops_alert_snapshot`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_SECRET_KEY, Authorization: `Bearer ${SUPABASE_SECRET_KEY}`, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return typeof body === "object" && body !== null ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+async function probeReady(base) {
+  try {
+    const res = await get(`${base}/api/ready`, READY_TOKEN ? { headers: { "x-ready-token": READY_TOKEN } } : {});
     const body = await res.json().catch(() => ({}));
     const failed = Array.isArray(body?.failed) ? body.failed.filter((n) => typeof n === "string") : [];
     return { ok: res.ok && body?.ok === true, failed };
@@ -40,18 +58,29 @@ async function readReady() {
   }
 }
 
+/** Two probes: the second runs only after a failed first one, RETRY_MS later. One blip (a deploy, a cold start) is not an alert. */
+async function readReady() {
+  const base = baseUrl(APP_URL);
+  if (base === null) return null;
+  const first = await probeReady(base);
+  if (first?.ok) return first;
+  await new Promise((r) => setTimeout(r, RETRY_MS));
+  return probeReady(base);
+}
+
 const count = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-const [recentRow, spendRow, ready] = await Promise.all([firstRow("ops_v_ai_recent_30m?select=*"), firstRow("ops_v_usage_today?scope=eq.global&select=cost_usd"), readReady()]);
+const [snap, ready] = await Promise.all([readSnapshot(), readReady()]);
 
-const alerts = evaluateAlerts(
-  {
-    recent: recentRow === null ? null : { calls: count(recentRow.calls), errorCalls: count(recentRow.error_calls), degradedCalls: count(recentRow.degraded_calls) },
-    // No global row yet today means nothing was spent, not that the read failed.
-    spendUsd: spendRow === null ? null : count(spendRow.cost_usd),
-    ready,
-  },
-  thresholds,
-);
+const ai = snap?.ai_30m;
+const appEvents = snap?.app_events_30m;
+const snapshot = {
+  recent: snap === null || typeof ai !== "object" || ai === null ? null : { calls: count(ai.calls), errorCalls: count(ai.error_calls), degradedCalls: count(ai.degraded_calls) },
+  // No global usage row yet today means nothing was spent (the function returns 0), not that the read failed.
+  spendUsd: snap === null || typeof snap.usage_today !== "object" || snap.usage_today === null ? null : count(snap.usage_today.global_cost_usd),
+  appErrors: snap === null || typeof appEvents !== "object" || appEvents === null ? null : Object.values(appEvents).reduce((sum, n) => sum + count(n), 0),
+  ready,
+};
 
-writeFileSync(ALERTS_OUT, JSON.stringify(alerts, null, 2));
-console.log(`alerts: ${alerts.length === 0 ? "none" : alerts.map((a) => a.key).join(", ")}`);
+const result = { alerts: evaluateAlerts(snapshot, thresholds), undecided: undecidedAlerts(snapshot, thresholds) };
+writeFileSync(ALERTS_OUT, JSON.stringify(result, null, 2));
+console.log(`alerts: ${result.alerts.length === 0 ? "none" : result.alerts.map((a) => a.key).join(", ")}; undecided: ${result.undecided.join(", ") || "none"}`);

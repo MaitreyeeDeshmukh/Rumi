@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { setLogSink } from "@/lib/ai/telemetry";
 import { HttpError } from "@/lib/ai/http";
 import { AppError } from "@/lib/errors";
@@ -32,52 +33,88 @@ describe("logger redaction", () => {
     expect(new Date(String(o.ts)).toISOString()).toBe(o.ts);
   });
 
-  it("drops fields whose key names text, secrets or identities", () => {
+  it("writes only allowlisted fields: everything else is dropped, whatever its name or value", () => {
     log().info("x", {
+      // names the old denylist caught
       text: "my knee hurts",
-      body: "b",
-      content: "c",
-      prompt: "p",
-      message: "m",
       email: "a@b.co",
       accessToken: "t",
-      apiKey: "k",
-      secret: "s",
-      password: "pw",
-      authorization: "Bearer abc",
-      cookie: "rumi_sid=1",
       userId: "u1",
-      keep: "fine",
-    });
-    expect(Object.keys(out()[0]).filter((k) => !["ts", "level", "event", "requestId", "route", "release"].includes(k))).toEqual(["keep"]);
-  });
-
-  it("replaces emails and tokens that hide under an innocent key, and hashes long strings", () => {
-    const longText = "I have been feeling pain in my left knee for three weeks and I do not know what to tell the doctor. ".repeat(5);
-    log().info("x", {
-      note: "write to jane.doe@example.com please",
-      detail: "sk-live1234567890abcdef",
+      // names the old denylist missed
+      msg: "I take 50mg",
+      err: "boom",
+      error: "boom",
+      detail: "private",
+      name: "Jane",
+      phone: "5551234567",
+      addr: "1 Main St",
+      ip: "203.0.113.7",
+      sid: "abc",
+      session: "abc",
       jwt: "eyJhbGciOiJIUzI1NiJ9.payload.sig",
-      bearer: "Bearer abc.def",
-      userRef: "a1b2c3d4-1111-4222-8333-444455556666",
-      blob: "AbCdEfGhIjKlMnOpQrStUvWxYz0123",
-      long: longText,
+      pwd: "p",
+      auth: "x",
+      sub: "uuid",
+      note: "private",
+      answer: "private",
+      reply: "private",
+      input: "private",
+      query: "private",
+      firstName: "Jane",
+      somethingNew: "anything",
+      // allowed
+      code: "ai_unavailable",
+      count: 2,
     });
-    const line = lines[0];
-    for (const leak of ["jane.doe", "example.com", "sk-live", "eyJhbGci", "abc.def", "a1b2c3d4-1111", "AbCdEfGh", "feeling pain", "left knee"]) {
-      expect(line, leak).not.toContain(leak);
-    }
     const o = out()[0];
-    expect(o.note).toBe("[redacted]");
-    expect(String(o.long)).toMatch(/^h:[0-9a-f]{12}$/);
-    log().info("x", { long: longText });
-    expect(out()[1].long).toBe(o.long); // stable marker: the same text always hashes the same
+    const extra = Object.keys(o).filter((k) => !["ts", "level", "event", "requestId", "route", "release"].includes(k));
+    expect(extra.sort()).toEqual(["code", "count"]);
+    expect(lines[0]).not.toMatch(/knee|50mg|Jane|5551234567|Main St|203\.0|eyJ/);
   });
 
-  it("lets plain short codes through, including snake_case words", () => {
-    log().info("x", { reason: "store_unavailable_after_retry", area: "ai" });
+  it("checks the value of an allowed field too: prose, emails, tokens, uuids and wrong types never print", () => {
+    log().info("x", { code: "write to jane.doe@example.com please", reason: "sk-live1234567890abcdef", area: "a1b2c3d4-1111-4222-8333-444455556666", task: "My Knee Hurts", digest: "<script>", status: "500" as never, count: "3" as never, ok: "yes" as never });
+    const line = lines[0];
+    for (const leak of ["jane.doe", "sk-live", "a1b2c3d4-1111", "My Knee", "<script>"]) expect(line, leak).not.toContain(leak);
+    const o = out()[0];
+    expect([o.code, o.reason, o.area, o.task, o.digest]).toEqual(["[redacted]", "[redacted]", "[redacted]", "[redacted]", "[redacted]"]);
+    expect(o).not.toHaveProperty("status");
+    expect(o).not.toHaveProperty("count");
+    expect(o).not.toHaveProperty("ok");
+  });
+
+  it("accepts a numeric digest and a 16-hex fingerprint only", () => {
+    log().info("x", { digest: "2349872346", fingerprint: "0123456789abcdef" });
+    log().info("x", { digest: "12", fingerprint: "NOT-HEX" });
+    const [good, bad] = out();
+    expect([good.digest, good.fingerprint]).toEqual(["2349872346", "0123456789abcdef"]);
+    expect([bad.digest, bad.fingerprint]).toEqual(["[redacted]", "[redacted]"]);
+  });
+
+  it("hashes a long string (HMAC, stable) instead of printing it", () => {
+    const longText = "I have been feeling pain in my left knee for three weeks and I do not know what to tell the doctor. ".repeat(5);
+    log().info("x", { reason: longText });
+    log().info("x", { reason: longText });
+    log().info("x", { reason: longText + "!" });
+    const [a, b, c] = out();
+    expect(lines.join("")).not.toMatch(/feeling pain|left knee/);
+    expect(String(a.reason)).toMatch(/^h:[0-9a-f]{12}$/);
+    expect(b.reason).toBe(a.reason);
+    expect(c.reason).not.toBe(a.reason);
+  });
+
+  it("the hash marker is keyed: it is not a bare sha256 of the text", () => {
+    const text = "x".repeat(200);
+    log().info("x", { reason: text });
+    const plain = createHash("sha256").update(text).digest("hex").slice(0, 12);
+    expect(String(out()[0].reason)).not.toBe(`h:${plain}`);
+  });
+
+  it("lets plain short codes and variable-name lists through", () => {
+    log().info("x", { reason: "store_unavailable_after_retry", area: "ai", names: "next_public_supabase_url,next_public_supabase_publishable_key,supabase_secret_key" });
     const o = out()[0];
     expect([o.reason, o.area]).toEqual(["store_unavailable_after_retry", "ai"]);
+    expect(o.names).toBe("next_public_supabase_url,next_public_supabase_publishable_key,supabase_secret_key");
   });
 
   it("cannot be spoofed: fields never overwrite ts, level, event, requestId, route or release", () => {
@@ -86,6 +123,12 @@ describe("logger redaction", () => {
     expect([o.level, o.event, o.requestId, o.route]).toEqual(["info", "real_event", RID, "/api/plan"]);
     expect(o.ts).not.toBe("yesterday");
     expect(o.release).not.toBe("evil");
+  });
+
+  it("cannot be tricked with a field called __proto__ or constructor", () => {
+    const fields = JSON.parse('{"__proto__": {"code": "x"}, "constructor": "y", "toString": "z", "count": 1}') as never;
+    expect(() => log().info("x", fields)).not.toThrow();
+    expect(Object.keys(out()[0]).filter((k) => !["ts", "level", "event", "requestId", "route", "release"].includes(k))).toEqual(["count"]);
   });
 
   it("cleans a bad request id, a bad route and a bad event name", () => {
@@ -98,10 +141,10 @@ describe("logger redaction", () => {
     const many: Record<string, string> = {};
     for (let i = 0; i < 5000; i++) many[`k${i}`] = "v";
     expect(() => {
-      log().info("x", { a: Number.NaN, b: undefined, c: { nested: "x" } as never, ...many });
+      log().info("x", { count: Number.NaN, ms: undefined, code: { nested: "x" } as never, ...many });
       redactFields(null as never);
     }).not.toThrow();
-    expect(Object.keys(out()[0]).length).toBeLessThan(45);
+    expect(Object.keys(out()[0]).length).toBeLessThan(15);
   });
 });
 

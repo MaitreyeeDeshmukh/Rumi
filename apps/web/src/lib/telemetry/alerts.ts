@@ -8,6 +8,8 @@ export interface AlertSnapshot {
   recent: { calls: number; errorCalls: number; degradedCalls: number } | null;
   /** Spend today in USD, global bucket (view ops_v_usage_today). null when it could not be read. */
   spendUsd: number | null;
+  /** App events (server 5xx, client crashes) in the last 30 minutes, from ops_alert_snapshot(). null when unreadable. */
+  appErrors: number | null;
   /** The answer of /api/ready. null when the request itself failed. */
   ready: { ok: boolean; failed: string[] } | null;
 }
@@ -22,13 +24,15 @@ export interface AlertThresholds {
   spendCapUsd: number;
   /** Fewer calls than this in the window is too little to judge, so a rate alert is not raised. Default 20. */
   minCalls: number;
+  /** More app events than this in 30 minutes raises app_errors. Default 10. */
+  appErrors: number;
 }
 
-export const DEFAULT_THRESHOLDS: AlertThresholds = { errorRate: 0.1, degradedRate: 0.25, spendFraction: 0.8, spendCapUsd: 10, minCalls: 20 };
+export const DEFAULT_THRESHOLDS: AlertThresholds = { errorRate: 0.1, degradedRate: 0.25, spendFraction: 0.8, spendCapUsd: 10, minCalls: 20, appErrors: 10 };
 
 export interface Alert {
   /** Stable id. The issue title is "[alert] <key>". */
-  key: "provider_errors" | "degraded_replies" | "spend_cap" | "not_ready" | "metrics_unreachable";
+  key: "provider_errors" | "degraded_replies" | "spend_cap" | "app_errors" | "not_ready" | "metrics_unreachable";
   title: string;
   /** Numbers and dependency names only. */
   detail: string;
@@ -40,7 +44,7 @@ const NAME = /^[a-z_]{1,20}$/;
 export function evaluateAlerts(s: AlertSnapshot, t: AlertThresholds = DEFAULT_THRESHOLDS): Alert[] {
   const alerts: Alert[] = [];
 
-  if (s.recent === null || s.spendUsd === null) {
+  if (s.recent === null || s.spendUsd === null || s.appErrors === null) {
     alerts.push({
       key: "metrics_unreachable",
       title: "The alert job cannot read the metrics",
@@ -75,6 +79,14 @@ export function evaluateAlerts(s: AlertSnapshot, t: AlertThresholds = DEFAULT_TH
     });
   }
 
+  if (s.appErrors !== null && s.appErrors > t.appErrors) {
+    alerts.push({
+      key: "app_errors",
+      title: "App errors are high",
+      detail: `${s.appErrors} app error events in the last 30 minutes (limit ${t.appErrors}). Check ops_v_app_errors_daily by code and release. Follow the "Bad deploy" runbook if one release stands out.`,
+    });
+  }
+
   if (s.ready === null || !s.ready.ok) {
     const names = s.ready === null ? ["unreachable"] : s.ready.failed.filter((n) => NAME.test(n)).slice(0, 5);
     alerts.push({
@@ -85,4 +97,17 @@ export function evaluateAlerts(s: AlertSnapshot, t: AlertThresholds = DEFAULT_TH
   }
 
   return alerts;
+}
+
+/**
+ * Alerts whose condition could not be judged this run: the metrics were unreadable, or a rate rule had fewer than
+ * `minCalls` calls to go on. An open issue for one of these must NOT be closed as "cleared": no data is not good news.
+ */
+export function undecidedAlerts(s: AlertSnapshot, t: AlertThresholds = DEFAULT_THRESHOLDS): Alert["key"][] {
+  const rateUnknown = s.recent === null || s.recent.calls < t.minCalls;
+  const keys: Alert["key"][] = [];
+  if (rateUnknown) keys.push("provider_errors", "degraded_replies");
+  if (s.spendUsd === null) keys.push("spend_cap");
+  if (s.appErrors === null) keys.push("app_errors");
+  return keys;
 }

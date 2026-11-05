@@ -5,7 +5,8 @@ const h = vi.hoisted(() => ({
   afterThrows: false,
   rows: [] as { table: string; row: Record<string, unknown> }[],
   rpcs: [] as { fn: string; args: Record<string, unknown> | undefined }[],
-  mode: "ok" as "ok" | "error" | "throw" | "hang" | "adminThrows",
+  mode: "ok" as "ok" | "error" | "throw" | "hang" | "manual" | "adminThrows",
+  resolvers: [] as (() => void)[],
 }));
 
 vi.mock("next/server", () => ({
@@ -20,6 +21,7 @@ vi.mock("@/lib/supabase/admin", () => ({
     if (h.mode === "adminThrows") throw new Error("SUPABASE_SECRET_KEY missing");
     const reply = (): PromiseLike<{ error: unknown }> => {
       if (h.mode === "hang") return new Promise(() => undefined);
+      if (h.mode === "manual") return new Promise((res) => h.resolvers.push(() => res({ error: null })));
       if (h.mode === "throw") throw new Error("connection reset SECRETTEXT");
       return Promise.resolve({ error: h.mode === "error" ? { message: "boom SECRETTEXT" } : null });
     };
@@ -39,6 +41,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 import { setLogSink, type AiEvent } from "@/lib/ai/telemetry";
+import { resetThrottle } from "@/lib/telemetry/throttle";
 import { dbOutcome, recordAiEvent, recordAppEvent, resetSinkState, type AppEvent } from "@/lib/telemetry/sinks";
 
 const base: AiEvent = {
@@ -78,7 +81,9 @@ afterEach(() => {
   h.mode = "ok";
   h.afterThrows = false;
   resetSinkState();
+  resetThrottle();
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe("outcome mapping (addendum section 2)", () => {
@@ -199,7 +204,7 @@ describe("recordAiEvent", () => {
     recordAiEvent(base, extra);
     await settle();
     expect(h.rows.length).toBe(rowsBefore); // skipped
-    expect(lines).toHaveLength(1); // the event's own stdout line is still written
+    expect(lines.filter((l) => l.includes("ai_task"))).toHaveLength(1); // the event's own stdout line is still written
     await vi.advanceTimersByTimeAsync(31_000);
     h.mode = "ok";
     recordAiEvent(base, extra);
@@ -212,7 +217,8 @@ describe("recordAiEvent", () => {
     h.mode = "hang";
     for (let i = 0; i < 200; i++) recordAiEvent(base, extra);
     expect(h.rows.length).toBe(50);
-    expect(lines).toHaveLength(200); // every event still reached stdout
+    expect(lines.filter((l) => l.includes("ai_task"))).toHaveLength(200); // every event still reached stdout
+    expect(lines.filter((l) => l.includes("telemetry_dropped"))).toHaveLength(1); // and the drops were reported once
     await vi.advanceTimersByTimeAsync(2100);
     await settle();
   });
@@ -246,8 +252,139 @@ describe("recordAppEvent", () => {
     await settle();
     expect(lines.filter((l) => l.includes("telemetry_store_failed"))).toHaveLength(1);
     h.mode = "throw";
-    expect(() => recordAppEvent(appEvent)).not.toThrow();
+    expect(() => recordAppEvent({ ...appEvent, code: "other_code" })).not.toThrow();
     await settle();
     expect(lines.join("")).not.toContain("SECRETTEXT");
+  });
+});
+
+describe("per-store breaker, half-open probe, drop counter, kill switch", () => {
+  const aiFail = async (n: number): Promise<void> => {
+    for (let i = 0; i < n; i++) {
+      recordAiEvent(base, extra);
+      await settle();
+    }
+  };
+
+  it("trips each store on its own: a dead ops_ai_events does not pause ops_app_events", async () => {
+    vi.useFakeTimers();
+    h.mode = "error";
+    await aiFail(5);
+    expect(lines.some((l) => l.includes('"store":"ops_ai_events"') && l.includes("telemetry_store_paused"))).toBe(true);
+    h.mode = "ok";
+    recordAppEvent(appEvent);
+    await settle();
+    expect(h.rpcs).toHaveLength(1); // the app store still writes
+    const before = h.rows.length;
+    recordAiEvent(base, extra);
+    await settle();
+    expect(h.rows.length).toBe(before); // the ai store is still paused
+  });
+
+  it("after the pause only ONE probe call goes out; everything else stays paused until it answers", async () => {
+    vi.useFakeTimers();
+    h.mode = "error";
+    await aiFail(5);
+    await vi.advanceTimersByTimeAsync(31_000);
+    h.mode = "hang";
+    const before = h.rows.length;
+    for (let i = 0; i < 20; i++) recordAiEvent(base, extra);
+    expect(h.rows.length).toBe(before + 1); // one probe, 19 dropped
+    await vi.advanceTimersByTimeAsync(2100); // the probe times out: breaker opens again
+    await settle();
+    h.mode = "ok";
+    recordAiEvent(base, extra);
+    await settle();
+    expect(h.rows.length).toBe(before + 1); // paused again for another 30 s
+    await vi.advanceTimersByTimeAsync(31_000);
+    recordAiEvent(base, extra); // probe succeeds: closed
+    await settle();
+    expect(h.rows.length).toBe(before + 2);
+    recordAiEvent(base, extra);
+    recordAiEvent(base, extra);
+    await settle();
+    expect(h.rows.length).toBe(before + 4); // normal writes resume
+  });
+
+  it("a slow success that started before the breaker opened does not close it", async () => {
+    vi.useFakeTimers();
+    h.mode = "manual";
+    recordAiEvent(base, extra); // in flight, not answered yet
+    h.jobs.length = 0; // settle() must not wait for it
+    h.mode = "error";
+    await aiFail(5);
+    expect(lines.some((l) => l.includes("telemetry_store_paused"))).toBe(true);
+    h.resolvers.forEach((r) => r()); // the old call now succeeds, late
+    await vi.advanceTimersByTimeAsync(1);
+    const before = h.rows.length;
+    recordAiEvent(base, extra);
+    await settle();
+    expect(h.rows.length).toBe(before);
+  });
+
+  it("counts dropped writes and reports them in one warning line per minute", async () => {
+    vi.useFakeTimers();
+    h.mode = "error";
+    await aiFail(5);
+    lines.length = 0;
+    for (let i = 0; i < 30; i++) recordAiEvent(base, extra); // all dropped (paused)
+    const droppedLines = (): Record<string, unknown>[] => lines.filter((l) => l.includes("telemetry_dropped")).map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(droppedLines()).toHaveLength(1); // the first drop reports at once
+    await vi.advanceTimersByTimeAsync(10_000);
+    for (let i = 0; i < 30; i++) recordAiEvent(base, extra);
+    expect(droppedLines()).toHaveLength(1); // still inside the minute
+    await vi.advanceTimersByTimeAsync(61_000);
+    h.mode = "hang"; // the probe goes out and hangs, the rest drop
+    for (let i = 0; i < 5; i++) recordAiEvent(base, extra);
+    const reports = droppedLines();
+    expect(reports).toHaveLength(2);
+    expect(reports[1].dropped).toBeGreaterThanOrEqual(30); // what was dropped since the last line
+    await vi.advanceTimersByTimeAsync(2100);
+    await settle();
+  });
+
+  it("TELEMETRY_DB_WRITES=off skips every database write and keeps stdout", async () => {
+    vi.stubEnv("TELEMETRY_DB_WRITES", "off");
+    recordAiEvent(base, extra);
+    recordAppEvent(appEvent);
+    await settle();
+    expect(h.rows).toHaveLength(0);
+    expect(h.rpcs).toHaveLength(0);
+    expect(lines).toHaveLength(2);
+    vi.stubEnv("TELEMETRY_DB_WRITES", "on");
+    recordAiEvent(base, extra);
+    await settle();
+    expect(h.rows).toHaveLength(1);
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("app event volume cap", () => {
+  it("writes one row per minute per (source, code, fingerprint, route) and counts the rest in the next stdout line", async () => {
+    vi.useFakeTimers();
+    for (let i = 0; i < 50; i++) recordAppEvent(appEvent);
+    await settle();
+    expect(h.rpcs).toHaveLength(1);
+    expect(lines).toHaveLength(50); // every event is still on stdout
+    expect(lines.filter((l) => l.includes('"suppressed":true'))).toHaveLength(49);
+    await vi.advanceTimersByTimeAsync(61_000);
+    recordAppEvent(appEvent);
+    await settle();
+    expect(h.rpcs).toHaveLength(2);
+    expect(JSON.parse(lines[lines.length - 1]).repeats).toBe(49);
+  });
+
+  it("different keys each get their row, but all keys together are capped at 120 rows a minute", async () => {
+    vi.useFakeTimers();
+    for (let i = 0; i < 300; i++) {
+      recordAppEvent({ ...appEvent, fingerprint: `abc${String(i).padStart(5, "0")}` });
+      if (i % 40 === 39) await settle(); // let writes finish so the in-flight cap is not what limits this
+    }
+    await settle();
+    expect(h.rpcs).toHaveLength(120);
+    await vi.advanceTimersByTimeAsync(61_000);
+    recordAppEvent({ ...appEvent, fingerprint: "zzzzzzzz" });
+    await settle();
+    expect(h.rpcs).toHaveLength(121);
   });
 });

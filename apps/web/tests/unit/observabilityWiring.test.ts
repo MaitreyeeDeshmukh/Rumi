@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({ events: [] as Record<string, unknown>[] }));
 vi.mock("@/lib/telemetry/sinks", () => ({ recordAppEvent: (e: Record<string, unknown>) => h.events.push(e) }));
 
 import { setLogSink } from "@/lib/ai/telemetry";
+import { resetThrottle } from "@/lib/telemetry/throttle";
 import { AppError } from "@/lib/errors";
 import { reportClientError } from "@/lib/telemetry/reportClientError";
 import { sentryBeforeSend } from "@/lib/telemetry/sentry";
@@ -17,6 +18,7 @@ const RID = "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4e";
 const lines: string[] = [];
 setLogSink((l) => lines.push(l));
 afterEach(() => {
+  resetThrottle();
   h.events.length = 0;
   lines.length = 0;
   vi.unstubAllGlobals();
@@ -41,7 +43,7 @@ describe("wiring: the pieces are connected, not just written", () => {
   it("observability code never reads an error message, except our own timeout marker", () => {
     for (const f of ["lib/log.ts", "lib/errors.ts", "lib/telemetry/sinks.ts", "lib/telemetry/ready.ts", "lib/telemetry/respond.ts", "lib/telemetry/serverFault.ts", "lib/telemetry/clientError.ts", "lib/telemetry/sentry.ts"]) {
       const code = src(f).split("\n").filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l));
-      for (const line of code.filter((l) => /\.message\b/.test(l))) expect(`${f}: ${line}`).toMatch(/message === "timeout"|delete e.message/);
+      for (const line of code.filter((l) => /\.message\b/.test(l))) expect(`${f}: ${line}`).toMatch(/message === "timeout"|delete e.message|err.message/);
     }
   });
 
@@ -60,6 +62,18 @@ describe("respondWithError", () => {
     expect(JSON.parse(lines[0])).toMatchObject({ level: "error", code: "ai_unavailable", status: 503 });
     expect(h.events).toEqual([expect.objectContaining({ source: "server", area: "ai", code: "ai_unavailable", route: "/api/plan", status: 503 })]);
     expect(lines.join("") + (await res.text())).not.toContain("PRIVATETEXT");
+  });
+
+  it("4xx lines are sampled: one a minute per route and code, then the count of skipped ones", () => {
+    for (let i = 0; i < 25; i++) respondWithError(new AppError("rate_limited"), { requestId: RID, route: "/api/client-error" });
+    expect(lines).toHaveLength(1);
+    respondWithError(new AppError("bad_input"), { requestId: RID, route: "/api/client-error" }); // another code: its own line
+    respondWithError(new AppError("rate_limited"), { requestId: RID, route: "/api/plan" }); // another route: its own line
+    expect(lines).toHaveLength(3);
+    vi.useFakeTimers({ now: Date.now() + 61_000 });
+    respondWithError(new AppError("rate_limited"), { requestId: RID, route: "/api/client-error" });
+    vi.useRealTimers();
+    expect(JSON.parse(lines[3]).repeats).toBe(24);
   });
 
   it("4xx: a warning, no app event", () => {
@@ -89,6 +103,15 @@ describe("reportServerFault (onRequestError)", () => {
     expect(h.events).toEqual([expect.objectContaining({ source: "server", code: "unhandled", route: "/app/plan/[id]/page", status: 500 })]);
   });
 
+  it("logs a digest only when it is a plain number; a crafted one is dropped", () => {
+    for (const digest of ["<script>alert(1)</script>", "abc", "1".repeat(40), "12 34 56", ""]) {
+      lines.length = 0;
+      reportServerFault(Object.assign(new Error("x"), { digest }), "/x");
+      expect(lines[0]).not.toContain("digest");
+      expect(lines[0]).not.toContain("script");
+    }
+  });
+
   it("ignores a forged request id and does not record caller faults", () => {
     reportServerFault(new AppError("bad_input"), "/x", { "x-request-id": "<script>" });
     expect(JSON.parse(lines[0]).requestId).toMatch(/^[0-9a-f-]{36}$/);
@@ -103,6 +126,7 @@ describe("reportClientError (browser)", () => {
     vi.stubGlobal("fetch", fetchMock);
     reportClientError("render_error", "2349872346");
     reportClientError("global_error", "bad digest with spaces");
+    reportClientError("global_error", "UPPER12345");
     const calls = fetchMock.mock.calls as unknown as [string, { body: string; method: string }][];
     expect(calls[0][0]).toBe("/api/client-error");
     expect(JSON.parse(calls[0][1].body)).toEqual({ code: "render_error", route: "/plan", fingerprint: "2349872346" });

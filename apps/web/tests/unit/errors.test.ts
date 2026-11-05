@@ -100,6 +100,15 @@ describe("fingerprintOf", () => {
     expect(fingerprintOf(new Error("multi\nline\n    at fake (evil.ts:1:1)"))).toMatch(/^[0-9a-f]{16}$/);
   });
 
+  it("is not fooled by frame-looking lines inside a message", () => {
+    const make = (m: string): Error => new Error(m);
+    const plain = fingerprintOf(make("plain"));
+    expect(fingerprintOf(make("multi\n    at fake (evil.ts:1:1)\n    at other (evil2.ts:2:2)"))).toBe(plain);
+    expect(fingerprintOf(make("at x (C:\\a\\b.ts:9:9)"))).toBe(plain);
+    const app = (m: string): AppError => new AppError("conflict", { cause: new Error(m) });
+    expect(fingerprintOf(app("a\n    at fake (evil.ts:1:1)"))).toBe(fingerprintOf(app("b")));
+  });
+
   it("never throws: strings, null, circular objects, empty errors, hostile stacks", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;

@@ -1,8 +1,16 @@
 name: alerts
 
-# Every 15 minutes: read the metric views and /api/ready, then open, update or close a GitHub issue per alert.
-# Rules live in apps/web/src/lib/telemetry/alerts.ts. Setup and meaning of each alert: README.md, section Operations.
-# Repository secrets: ALERTS_SUPABASE_URL, ALERTS_SUPABASE_KEY, ALERTS_APP_URL. Repository variable (optional): AI_DAILY_GLOBAL_SPEND_CAP_USD.
+# Every 15 minutes: read ops_alert_snapshot() and /api/ready, then open, update or close a GitHub issue per alert.
+# Rules: apps/web/src/lib/telemetry/alerts.ts. Issue handling: apps/web/src/lib/telemetry/alertIssues.ts. Setup and meaning: README.md, Operations.
+#
+# SETUP (user action, once):
+#   1. This file must exist on the DEFAULT branch: GitHub runs schedules from there only.
+#   2. Settings > Environments > New environment "alerts". Restrict "Deployment branches" to main and put the secrets below
+#      in the ENVIRONMENT (not repository) secrets, so a branch or pull request workflow cannot read the service key.
+#      Secrets: ALERTS_SUPABASE_URL, ALERTS_SUPABASE_KEY, ALERTS_APP_URL, ALERTS_READY_TOKEN (same value as READY_TOKEN in Vercel).
+#      Optional variable: AI_DAILY_GLOBAL_SPEND_CAP_USD.
+#   3. ALERTS_SUPABASE_KEY is a service-role key today. Swap it for a read-only role that can only execute ops_alert_snapshot()
+#      when the database lane provides one.
 
 on:
   schedule:
@@ -21,9 +29,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: alerts
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Actions are pinned to full commit SHAs (checkout v4.4.0, setup-node v4.4.0; verified through the GitHub API).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version-file: .nvmrc
       - name: Evaluate alert rules
@@ -31,31 +43,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.ALERTS_SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.ALERTS_SUPABASE_KEY }}
           APP_URL: ${{ secrets.ALERTS_APP_URL }}
+          READY_TOKEN: ${{ secrets.ALERTS_READY_TOKEN }}
           AI_DAILY_GLOBAL_SPEND_CAP_USD: ${{ vars.AI_DAILY_GLOBAL_SPEND_CAP_USD }}
         run: node --experimental-strip-types apps/web/scripts/alerts-check.mjs
       - name: Open, update or close issues
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh label create alert --color B60205 --description "Automated production alert" 2>/dev/null || true
-          open=$(gh issue list --label alert --state open --limit 100 --json number,title)
-          # Open or update one issue per active alert.
-          jq -c '.[]' alerts.json | while read -r a; do
-            key=$(jq -r .key <<<"$a")
-            title="[alert] $key"
-            body=$(jq -r '"\(.title)\n\n\(.detail)\n\nSee README.md, section Operations, for the runbook."' <<<"$a")
-            num=$(jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty' <<<"$open")
-            if [ -n "$num" ]; then
-              gh issue edit "$num" --body "$body"
-            else
-              gh issue create --title "$title" --label alert --body "$body"
-            fi
-          done
-          # Close issues whose alert is no longer active.
-          active=$(jq -r '.[] | "[alert] " + .key' alerts.json)
-          jq -r '.[] | select(.title | startswith("[alert] ")) | "\(.number)\t\(.title)"' <<<"$open" | while IFS=$'\t' read -r num title; do
-            if ! grep -qxF "$title" <<<"$active"; then
-              gh issue close "$num" --comment "Cleared: the condition is no longer true."
-            fi
-          done
+          GH_REPO: ${{ github.repository }}
+        run: node --experimental-strip-types apps/web/scripts/alerts-issues.mjs

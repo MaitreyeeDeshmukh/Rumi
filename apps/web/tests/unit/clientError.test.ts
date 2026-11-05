@@ -1,20 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRateLimiter } from "@/lib/security/rateLimit";
 
 const h = vi.hoisted(() => ({ events: [] as Record<string, unknown>[] }));
 vi.mock("@/lib/telemetry/sinks", () => ({ recordAppEvent: (e: Record<string, unknown>) => h.events.push(e) }));
 
 import { setLogSink } from "@/lib/ai/telemetry";
-import { CLIENT_ERROR_MAX_BYTES, handleClientError } from "@/lib/telemetry/clientError";
+import { CLIENT_ERROR_MAX_BYTES, MAX_FINGERPRINTS_PER_ROUTE, handleClientError, resetSeenFingerprints } from "@/lib/telemetry/clientError";
+import { KNOWN_ROUTES } from "@/lib/telemetry/routes";
 
 const lines: string[] = [];
 setLogSink((l) => lines.push(l));
 afterEach(() => {
+  resetSeenFingerprints();
   h.events.length = 0;
   lines.length = 0;
 });
 
-const GOOD = { code: "render_error", route: "/plan", fingerprint: "2349872346" };
+const GOOD = { code: "render_error", route: "/help", fingerprint: "2349872346" };
 const limiter = () => createRateLimiter({ limits: { perIp: 10, perSession: 10, perInstance: 120, perUnknownIp: 5 } });
 
 function post(body: unknown, headers: Record<string, string> = {}, raw?: string): Request {
@@ -31,12 +36,54 @@ describe("POST /api/client-error", () => {
     const res = await handleClientError(post(GOOD), limiter());
     expect(res.status).toBe(204);
     expect(res.headers.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
-    expect(h.events).toEqual([{ source: "client", area: "app", code: "render_error", fingerprint: "2349872346", route: "/plan" }]);
+    expect(h.events).toEqual([{ source: "client", area: "app", code: "render_error", fingerprint: "2349872346", route: "/help" }]);
   });
 
   it("accepts a report with no digest", async () => {
     expect((await handleClientError(post({ code: "global_error", route: "/" }), limiter())).status).toBe(204);
     expect(h.events[0]).toMatchObject({ code: "global_error", fingerprint: undefined });
+  });
+
+  it("stores a route that is not a known page as \"unknown\", so a script cannot invent route names", async () => {
+    for (const route of ["https://evil.example/x", "/plan?text=SECRETTEXT", "/not-a-page", "/help/../admin", "/api/client-error", "", "<script>"]) {
+      expect((await handleClientError(post({ ...GOOD, route }), limiter())).status).toBe(204);
+    }
+    expect(h.events.map((e) => e.route)).toEqual(Array(7).fill("unknown"));
+    expect(JSON.stringify(h.events)).not.toContain("SECRETTEXT");
+  });
+
+  it("knows the query-less and trailing-slash forms of a real page", async () => {
+    for (const route of ["/help?x=1", "/help/", "/privacy#top"]) await handleClientError(post({ ...GOOD, route }), limiter());
+    expect(h.events.map((e) => e.route)).toEqual(["/help", "/help", "/privacy"]);
+  });
+
+  it("keeps at most 20 distinct digests per page; known ones and other pages are unaffected", async () => {
+    const l = createRateLimiter({ limits: { perIp: 1000, perSession: 1000, perInstance: 1000, perUnknownIp: 1000 } });
+    for (let i = 0; i < MAX_FINGERPRINTS_PER_ROUTE + 10; i++) await handleClientError(post({ ...GOOD, fingerprint: `digest${String(i).padStart(4, "0")}` }), l);
+    const stored = h.events.map((e) => e.fingerprint);
+    expect(stored.filter((f) => f !== undefined)).toHaveLength(MAX_FINGERPRINTS_PER_ROUTE);
+    expect(stored.filter((f) => f === undefined)).toHaveLength(10);
+    h.events.length = 0;
+    await handleClientError(post({ ...GOOD, fingerprint: "digest0003" }), l); // already known
+    await handleClientError(post({ ...GOOD, route: "/privacy", fingerprint: "digest9999" }), l); // another page
+    expect(h.events.map((e) => e.fingerprint)).toEqual(["digest0003", "digest9999"]);
+  });
+
+  it("lists every static page of the app, so a new page cannot report as unknown by mistake", () => {
+    const root = fileURLToPath(new URL("../../src/app", import.meta.url));
+    const pages: string[] = [];
+    const walk = (dir: string, route: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          if (entry.name === "api" || entry.name.startsWith("[") || entry.name.startsWith("_") || entry.name.startsWith("@")) continue;
+          const group = entry.name.startsWith("(") && entry.name.endsWith(")");
+          walk(join(dir, entry.name), group ? route : `${route === "/" ? "" : route}/${entry.name}`);
+        } else if (/^page.(tsx|ts|jsx|js|mdx)$/.test(entry.name)) pages.push(route);
+      }
+    };
+    walk(root, "/");
+    expect(pages.length).toBeGreaterThan(3);
+    for (const p of pages) expect(KNOWN_ROUTES, `add ${p} to KNOWN_ROUTES in src/lib/telemetry/routes.ts`).toContain(p);
   });
 
   it("refuses other sites and requests that are not browser fetches", async () => {
@@ -70,8 +117,10 @@ describe("POST /api/client-error", () => {
       { ...GOOD, message: "my knee hurts SECRETTEXT" },
       { ...GOOD, stack: "at x" },
       { ...GOOD, code: "SECRETTEXT" },
-      { ...GOOD, route: "https://evil.example/x" },
-      { ...GOOD, route: "/plan?text=SECRETTEXT" },
+      { ...GOOD, route: "x".repeat(121) },
+      { ...GOOD, fingerprint: "ABCDEFGH12" },
+      { ...GOOD, fingerprint: "short" },
+      { ...GOOD, fingerprint: "a".repeat(65) },
       { ...GOOD, fingerprint: "has spaces SECRETTEXT" },
       { code: "render_error" },
       [],

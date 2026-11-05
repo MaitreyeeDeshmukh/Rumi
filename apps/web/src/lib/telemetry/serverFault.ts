@@ -12,7 +12,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export function reportServerFault(err: unknown, routePath: string, headers?: Record<string, string | string[] | undefined>): void {
   const sent = headers?.[REQUEST_ID_HEADER];
   const requestId = typeof sent === "string" && UUID.test(sent) ? sent : newRequestId();
-  const digest = typeof err === "object" && err !== null && "digest" in err ? String((err as { digest: unknown }).digest) : undefined;
+  const rawDigest = typeof err === "object" && err !== null && "digest" in err ? String((err as { digest: unknown }).digest) : "";
+  // Only a numeric Next.js digest is logged; anything else (a crafted value) is dropped.
+  const digest = /^[0-9]{5,20}$/.test(rawDigest) ? rawDigest : undefined;
   createLogger({ requestId, route: routePath }).error("unhandled_error", err, { digest });
   const e = asAppError(err);
   if (e.status >= 500) recordAppEvent({ source: "server", area: "app", code: e.expose ? e.code : "unhandled", fingerprint: fingerprintOf(err), route: routePath, status: e.status });

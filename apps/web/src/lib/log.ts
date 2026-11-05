@@ -1,12 +1,15 @@
 /**
  * The one logger. One JSON line per call: ts, level, event, requestId, route, release, then the fields.
- * Redaction happens here, at the last step, so a careless caller cannot leak: keys that name text, secrets or
- * identities are dropped, values that look like an email or a token are replaced, and long strings become a hash marker.
+ * Redaction happens here, at the last step, so a careless caller cannot leak:
+ *   - only fields on an ALLOWLIST are written, each checked against the shape that field must have; anything else is dropped;
+ *   - a value that fails its shape, looks like an email or a token, or is a long string is replaced, never printed.
  * `error()` never writes an error message. It writes the code, the fingerprint and the status.
+ * To log a new field, add it to FIELDS below with its shape.
  */
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { emitLine, type LogLevel } from "@/lib/ai/telemetry";
 import { AppError, fingerprintOf } from "@/lib/errors";
+import { hashingKey } from "@/lib/security/session";
 import { getRelease } from "@/lib/telemetry/config";
 import { reportError } from "@/lib/telemetry/sentry";
 
@@ -18,8 +21,35 @@ export interface Logger {
   error(event: string, err: unknown, fields?: Fields): void;
 }
 
-/** Keys that name user text, secrets or identities. Matched anywhere in the key, any case. */
-const DROP_KEY = /text|body|content|prompt|message|email|token|key|secret|password|authorization|cookie|userid|user_id|(?:^|_)uid(?:$|_)/i;
+/** Lower-case words, digits and _ . : , - only: enough for codes, areas, outcomes and lists of variable names, not for prose. */
+const WORD = /^[a-z0-9_.:,-]{1,80}$/;
+type Shape = "number" | "boolean" | RegExp;
+/** The only fields that can reach a log line. */
+const FIELDS: Record<string, Shape> = {
+  code: WORD,
+  reason: WORD,
+  area: WORD,
+  source: WORD,
+  outcome: WORD,
+  task: WORD,
+  tier: WORD,
+  store: WORD,
+  scope: WORD,
+  names: /^[a-z0-9_.:,-]{1,120}$/,
+  type: WORD,
+  digest: /^[0-9]{5,20}$/,
+  fingerprint: /^[a-f0-9]{16}$/,
+  status: "number",
+  count: "number",
+  repeats: "number",
+  dropped: "number",
+  attempts: "number",
+  ms: "number",
+  seconds: "number",
+  bytes: "number",
+  ok: "boolean",
+  suppressed: "boolean",
+};
 const MAX_STRING = 120;
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 /** A JWT, a provider key, a bearer value, or an unbroken run of 24+ token characters holding a digit or capital (this also catches uuids). */
@@ -27,24 +57,28 @@ const TOKENISH = /eyJ[\w-]{5,}\.|\b[sS][kK][-_][\w-]{8,}|\b[Bb][Ee][Aa][Rr][Ee][
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EVENT_NAME = /^[a-z0-9_.:-]{1,60}$/;
 
-const hashMarker = (s: string): string => `h:${createHash("sha256").update(s).digest("hex").slice(0, 12)}`;
+/** Keyed (HMAC), so a marker cannot be matched against a dictionary of likely texts. Stable inside one deployment. */
+const hashMarker = (s: string): string => `h:${createHmac("sha256", hashingKey()).update(s).digest("hex").slice(0, 12)}`;
 
-function cleanValue(v: string | number | boolean | undefined): string | number | boolean | undefined {
-  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
-  if (typeof v !== "string") return typeof v === "boolean" ? v : undefined;
+function cleanValue(shape: Shape, v: string | number | boolean | undefined): string | number | boolean | undefined {
+  if (v === undefined) return undefined;
+  if (shape === "number") return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  if (shape === "boolean") return typeof v === "boolean" ? v : undefined;
+  if (typeof v !== "string") return undefined;
   if (v.length > MAX_STRING) return hashMarker(v);
-  if (EMAIL.test(v) || TOKENISH.test(v)) return "[redacted]";
+  if (EMAIL.test(v) || TOKENISH.test(v) || !shape.test(v)) return "[redacted]";
   return v;
 }
 
-/** Applies the redaction rules to a field bag. Exported for the tests. */
+/** Applies the allowlist and the value rules to a field bag. Exported for the tests. */
 export function redactFields(fields: Fields | undefined): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
   if (typeof fields !== "object" || fields === null) return out;
   for (const key of Object.keys(fields).slice(0, 30)) {
-    if (DROP_KEY.test(key)) continue;
-    const v = cleanValue(fields[key]);
-    if (v !== undefined) out[key.slice(0, 40)] = v;
+    const shape = Object.hasOwn(FIELDS, key) ? FIELDS[key] : undefined;
+    if (shape === undefined) continue;
+    const v = cleanValue(shape, fields[key]);
+    if (v !== undefined) out[key] = v;
   }
   return out;
 }

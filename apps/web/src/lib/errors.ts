@@ -101,9 +101,14 @@ export function fingerprintOf(err: unknown): string {
   const code = err instanceof AppError ? err.code : "internal";
   let frame = "nostack";
   try {
-    const stack = err instanceof Error && typeof err.stack === "string" ? err.stack.slice(0, 4000) : "";
-    // Only lines that start with "at " are frames; a multi-line message must not be mistaken for one.
-    for (const line of stack.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("at ")).slice(0, 10)) {
+    let stack = err instanceof Error && typeof err.stack === "string" ? err.stack : "";
+    // The stack starts with the message. A message that contains "at x (file:1:1)" lines must not be mistaken for frames, so
+    // everything up to the end of the message is skipped. (This reads the message only to find where it ends.)
+    const message = err instanceof Error ? err.message : "";
+    const messageEnd = message !== "" ? stack.indexOf(message) : -1;
+    if (messageEnd >= 0) stack = stack.slice(messageEnd + message.length);
+    // Only lines that start with "at " are frames.
+    for (const line of stack.slice(0, 4000).split("\n").map((l) => l.trim()).filter((l) => l.startsWith("at ")).slice(0, 10)) {
       const m = FRAME.exec(line);
       if (m) {
         frame = `${(m[1].split(/[\\/]/).pop() ?? "").split("?")[0]}:${m[2]}`;
