@@ -5,15 +5,14 @@
  */
 import { planStatusFallback, type PlanItemRef } from "@/features/recap/planStatusFallback";
 import { NOTHING_CONFIRMED, recapEmptyCodes, verifyEvidence } from "@/features/recap/verifyEvidence";
-import { COMMON_DRUGS, toSet } from "@/features/shared/lists";
 import type { RecapReplyT, RecapRequestT } from "@/features/shared/schemas";
 import type { RecapItem, Speaker, TranscriptLine } from "@/features/shared/types";
 import { SAVED_RECAP_REPLY } from "@/fixtures/sampleRecap";
 import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
+import { isDrugWord } from "@/lib/text/specifics";
 import { contentWords, splitSentences, wordList } from "@/lib/text/tokens";
 import { truncateAtWord } from "@/lib/text/truncate";
 
-const DRUGS = toSet(COMMON_DRUGS);
 const INSTRUCTION = /\b(please|keep|bring|write|take|follow|call|avoid|drink|rest|use|try)\b/i;
 const NEXT_STEP = /\b(come back|follow.?up|appointment|book|schedule|see you|next visit|referral)\b/i;
 const MAX_ITEMS = 20;
@@ -26,12 +25,13 @@ function itemsFrom(lines: readonly TranscriptLine[], mySpeaker: Speaker): RecapI
   for (const line of lines) {
     if (/\[\s*unclear\s*\]/i.test(line.text)) continue;
     const text = truncateAtWord(line.text, 300);
-    const drug = wordList(line.text).find((w) => DRUGS.has(w));
+    const mine = line.speaker === mySpeaker;
+    // What the clinician said (medicines, instructions, next steps) never comes from the user's own line.
+    const drug = mine ? undefined : wordList(line.text).find(isDrugWord);
     if (drug) {
       const sentence = splitSentences(line.text).find((s) => wordList(s).includes(drug)) ?? line.text;
       items.push({ section: "medications", text: truncateAtWord(`${drug[0].toUpperCase()}${drug.slice(1)}: ${sentence}`, 300), evidence: [line.id] });
     } else if (contentWords(line.text).length >= 3) {
-      const mine = line.speaker === mySpeaker;
       const section = mine ? "discussed" : NEXT_STEP.test(line.text) ? "next_steps" : INSTRUCTION.test(line.text) ? "instructions" : "discussed";
       items.push({ section, text, evidence: [line.id] });
     }

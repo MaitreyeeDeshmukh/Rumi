@@ -53,7 +53,8 @@ describe("idioms", () => {
     "It is a long shot.",
     "We are in the same boat.",
     "I am on the fence.",
-    "It is the sort of thing I forget.",
+    "It is sort of sad.",
+    "I feel kind of tired.",
     "Keep in mind that I need time.",
     "Please keep an eye on it.",
     "I feel a little bit tired.",
@@ -75,6 +76,12 @@ describe("idioms", () => {
     expect(literalLint("That is an extra bit of toast.").ok).toBe(true);
   });
 
+  it("F-13: 'what kind of' and 'this sort of' ask about a type, they do not hedge", () => {
+    for (const q of ["What kind of pain is it?", "What sort of food do you eat?", "It is the sort of thing I forget.", "Which kind of pill is it?", "Is this kind of pain new?", "Any kind of help is fine."]) {
+      expect(literalLint(q).ok, q).toBe(true);
+    }
+  });
+
   it("invisible characters inside a word do not hide an idiom", () => {
     expect(reasons("I am a b​it sad.")).toContain("idiom");
     expect(reasons("I am a b­it sad.")).toContain("idiom");
@@ -91,6 +98,20 @@ describe("double commands", () => {
     expect(reasons("Open the door and sit down.")).toEqual(["double_command"]);
     expect(reasons("Please open the door and then sit down.")).toEqual(["double_command"]);
     expect(reasons("Come back in four weeks and bring the diary.")).toEqual(["double_command"]);
+  });
+
+  it("F-13: commands chained with a comma or a semicolon, and the verbs rest and see, count", () => {
+    expect(reasons("Open the door, sit down.")).toEqual(["double_command"]);
+    expect(reasons("Come back in four weeks, bring the diary.")).toEqual(["double_command"]);
+    expect(reasons("Rest; see the nurse.")).toEqual(["double_command"]);
+    expect(reasons("See the nurse and rest.")).toEqual(["double_command"]);
+    expect(reasons("Take the form, sign it and give it back.")).toEqual(["double_command"]);
+  });
+
+  it("a list of things is not a list of commands", () => {
+    expect(literalLint("Bring water, snacks, and a book.").ok).toBe(true);
+    expect(literalLint("Write down when it starts, how strong it is, and what you were doing.").ok).toBe(true);
+    expect(literalLint("I will rest, then I will go.").ok).toBe(true);
   });
 
   it("one command passes, and so does a second clause that is not a command", () => {

@@ -4,22 +4,22 @@
  * Also the overlap rule that verifyEvidence uses to accept a model's planStatus claim.
  */
 import type { PlanStatusEntry, Speaker, TranscriptLine } from "@/features/shared/types";
-import { contentWords, wordSet } from "@/lib/text/tokens";
+import { allStems, contentStems } from "@/lib/text/stems";
 
 export interface PlanItemRef {
   id: string;
   text: string;
 }
 
-/** Shared content words between a plan item and a line (whole tokens). */
+/** Shared content words (as stems) between a plan item and a line. */
 function overlapCount(itemText: string, lineText: string): number {
-  const have = wordSet(lineText);
-  return [...new Set(contentWords(itemText))].filter((w) => have.has(w)).length;
+  const have = allStems(lineText);
+  return contentStems(itemText).filter((w) => have.has(w)).length;
 }
 
 /** At least 40% of the item's content words, and at least one, must be in the line. "Okay." or "Thank you." never match. */
 export function lineOverlaps(itemText: string, lineText: string): boolean {
-  const need = new Set(contentWords(itemText)).size;
+  const need = contentStems(itemText).length;
   return overlapCount(itemText, lineText) >= Math.max(1, Math.ceil(need * 0.4));
 }
 

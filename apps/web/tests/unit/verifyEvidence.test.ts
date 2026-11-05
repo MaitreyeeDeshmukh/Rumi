@@ -226,18 +226,23 @@ describe("planStatus", () => {
     expect(same.filter((e) => e.itemId === "p1")).toEqual([{ itemId: "p1", status: "asked_by_me", evidence: ["L7"] }]);
     const conflict = status([
       { itemId: "p1", status: "asked_by_me", evidence: ["L7"] },
-      { itemId: "p1", status: "not_asked", evidence: [] },
+      { itemId: "p1", status: "asked_by_other", evidence: ["L7"] },
     ]);
     expect(conflict.filter((e) => e.itemId === "p1")).toEqual([{ itemId: "p1", status: "unclear", evidence: [] }]);
   });
 
   it("not_asked and unclear never carry evidence", () => {
     const r = byId([
-      { itemId: "p1", status: "not_asked", evidence: ["L7"] },
-      { itemId: "p3", status: "unclear", evidence: ["L3"] },
+      { itemId: "p3", status: "not_asked", evidence: ["L7"] },
+      { itemId: "p2", status: "unclear", evidence: ["L3"] },
     ]);
-    expect(r.p1.evidence).toEqual([]);
-    expect(r.p3.evidence).toEqual([]);
+    expect(r.p3).toEqual({ itemId: "p3", status: "not_asked", evidence: [] });
+    expect(r.p2.evidence).toEqual([]);
+  });
+
+  it("a model's not_asked is not trusted when a line clearly matches the item", () => {
+    const r = byId([{ itemId: "p1", status: "not_asked", evidence: [] }]);
+    expect(r.p1).toEqual({ itemId: "p1", status: "asked_by_me", evidence: ["L7"] });
   });
 
   it("the speaker rule follows mySpeaker", () => {

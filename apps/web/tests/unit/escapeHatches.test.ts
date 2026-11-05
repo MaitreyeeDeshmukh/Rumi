@@ -16,7 +16,7 @@ import { isHard, type GuardCode } from "@/features/shared/guards";
 import { DEMO_PLAN } from "@/fixtures/demoPlan";
 import { blankCodes, ledgerFromTexts, specificsCodes } from "@/lib/text/specifics";
 import { lintCodes } from "@/lib/literalLint";
-import { ADVICE_REFUSAL, CLOSING_LINE, STOP_LINE, WAIT_LINE } from "../../prompts/persona";
+import { ADVICE_REFUSAL, CLOSING_LINE, NOTES_LINE, STOP_LINE, WAIT_LINE } from "../../prompts/persona";
 
 const EMPTY = ledgerFromTexts([]);
 const hard = (codes: GuardCode[]): GuardCode[] => codes.filter(isHard);
@@ -59,9 +59,11 @@ describe("practice hatch: a question and nothing else", () => {
     // Practice has no grounding rule (the clinician asks, it does not state facts); its hard rule is clinician_finding,
     // which belongs to the harness lane. This stand-in uses the patterns of 07 D15 until P2 imports the real guard.
     const finding = /looks (normal|fine|good)|nothing to worry|your (blood pressure|weight|temperature|test|results)|(results|test|scan) (is|are|show)/i;
-    const lines = [...new Set([...Object.values(SCRIPT).flat(), ADVICE_REFUSAL, WAIT_LINE, STOP_LINE, CLOSING_LINE])];
+    const lines = [...new Set([...Object.values(SCRIPT).flat(), ADVICE_REFUSAL, WAIT_LINE, STOP_LINE, CLOSING_LINE, NOTES_LINE, "Hi. I am Dr. Lee."])];
     for (const line of lines) {
       expect(blankCodes(line), line).toEqual([]);
+      // F-9b: the lines the prompts make the model say also pass grounding with an empty ledger ("Help me say it", "Dr. Lee").
+      expect(specificsCodes(line, EMPTY), line).toEqual([]);
       expect(line, line).not.toMatch(/\d/);
       expect(line, line).not.toMatch(finding);
     }

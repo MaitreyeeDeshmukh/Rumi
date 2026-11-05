@@ -7,7 +7,8 @@ import { confirmCovered } from "@/features/practice/confirmCovered";
 import { enabledItems } from "@/features/practice/labels";
 import type { PracticeReplyT, PracticeRequestT } from "@/features/shared/schemas";
 import type { Focus } from "@/features/shared/types";
-import { ADVICE_REFUSAL, CLOSING_LINE, STOP_LINE, WAIT_LINE } from "../../../prompts/persona";
+import { ADVICE_REFUSAL, CLOSING_LINE, NOTES_LINE, STOP_LINE, WAIT_LINE } from "../../../prompts/persona";
+import { MAX_CLINICIAN_TURNS } from "../../../prompts/practice";
 
 export const SCRIPT: Record<Focus, readonly string[]> = {
   problem: ["Hi. What brings you in today?", "When did it start?", "How often does it happen?", "What makes it better or worse?", CLOSING_LINE],
@@ -29,19 +30,48 @@ export const SCRIPT: Record<Focus, readonly string[]> = {
   ],
 };
 
-/** After this many clinician turns the practice closes, whatever the script says. */
-export const MAX_CLINICIAN_TURNS = 7;
+const norm = (s: string): string => s.replace(/[’‘]/g, "'").toLowerCase();
 
-const norm = (s: string): string => s.replace(/[’‘]/g, "'");
-const STOP = /^\s*(please\s+)?stop\b|\b(stop (asking|now|here|this|the practice)|(i want|i'd like|i would like|i need) to stop|let's stop|that's enough|enough( questions)?|too many questions|no more questions|(i am|i'm|im) (so |too |really )?tired (of|to))\b/i;
+/**
+ * A request to stop (rule, tested in both directions):
+ * - "stop" as a whole word is a request, EXCEPT when it is about the person's own life: "should/can/do I stop ...",
+ *   "I can't stop coughing", "stop taking/eating/doing ..." (any -ing word other than asking/talking/questioning),
+ *   "bus stop", "non-stop".
+ * - "tired" is a request only as "I'm/I am/we're (so) tired" in a short turn (6 words or fewer) that gives no symptom or
+ *   time context ("all the time", "after class", "of these headaches"). "I feel tired", "tired of these headaches" are content.
+ * - enough, too many questions, no more questions, a break.
+ */
+const REQUEST_ING = new Set(["asking", "talking", "questioning", "quizzing"]);
+const TIRED_CONTEXT =
+  /\b(headaches?|pain|hurts?|aches?|dizz\w*|sleep\w*|cough\w*|nause\w*|all the time|all day|every|lately|since|after|when|during|because|in the (morning|afternoon|evening)|at night|of (these|my|the)|weeks?|months?|days?)\b/;
+function isStopRequest(text: string): boolean {
+  const t = norm(text);
+  if (/\b(enough( questions)?|too many questions|no more questions|(need|take|have|want) a (break|pause)|end the practice)\b/.test(t)) return true;
+  for (const m of t.matchAll(/\bstop\b/g)) {
+    const before = t.slice(0, m.index);
+    const next = t.slice((m.index ?? 0) + 4).match(/^\s*([a-z']+)/)?.[1];
+    const aboutOwnLife =
+      /\b(should|can|could|do|did|will|would)\s+i\s+$/.test(before) ||
+      /\b(can't|cannot|couldn't|won't|unable to|not able to)\s+(seem to\s+)?$/.test(before) ||
+      /\b(bus|train|tram)\s+$/.test(before) ||
+      /non-?$/.test(before) ||
+      (next !== undefined && next.endsWith("ing") && !REQUEST_ING.has(next));
+    if (!aboutOwnLife) return true;
+  }
+  return /\b(i'm|i am|im|we're|we are)\s+(so |too |really |very |just )?tired\b/.test(t) && t.split(/\s+/).length <= 6 && !TIRED_CONTEXT.test(t);
+}
 const ADVICE =
-  /\b(what|which) (medicine|medication|meds|pills?|drugs?|treatment)\b|\bshould i (take|use|try|stop|start)\b|\bwhat should i (take|do)\b|\bdo i have\b|\bwhat do i have\b|\bwhat('s| is) wrong with me\b|\bdiagnos|\bis (it|this) (cancer|serious|dangerous)\b|\bwhat dose\b|\bhow (much|many) [a-z ]{0,30}\b(take|dose)\b|\bcan i take\b/i;
-const NOT_SURE = /\b(i'?m not sure|i am not sure|not sure|i don'?t know|i do not know|no idea)\b/i;
+  /\b(what|which) (medicine|medication|meds|pills?|drugs?|treatment)\b|\bshould i (take|use|try|stop|start)\b|\b(should|can|could|may|do|must) i (stop|start|skip|increase|reduce|take|use|try)( (my|the|this|that|these|those|taking|using))? (medicine|medication|meds|pills?|drugs?|tablets?|dose|treatment|insulin|ibuprofen)\b|\bwhat should i do(?! next)\b|\bdo i have\b|\bwhat do i have\b|\bwhat('s| is) wrong with me\b|\bdiagnos|\b(dose|dosage)\b|\bprescri|\bis (it|this|my [a-z ]{1,25}) (cancer|serious|dangerous|ok|okay|normal|fine|high|low|bad)\b|\bcan i take\b|\bhow (much|many) [a-z ]{0,30}\b(take|dose)\b/;
+const NOT_SURE = /\b(i'?m not sure|i am not sure|not sure|i don'?t know|i do not know|i dunno|dunno|idk|no idea)\b/;
+const NOTES = /\b(notes?|read(ing)? (from|it))\b/;
 
-type Kind = "stop" | "advice" | "unsure" | "answer";
+type Kind = "stop" | "advice" | "unsure" | "notes" | "answer";
 const kindOf = (text: string): Kind => {
   const t = norm(text);
-  return STOP.test(t) ? "stop" : ADVICE.test(t) ? "advice" : NOT_SURE.test(t) ? "unsure" : "answer";
+  if (isStopRequest(text)) return "stop";
+  if (ADVICE.test(t)) return "advice";
+  if (NOT_SURE.test(t)) return "unsure";
+  return NOTES.test(t) && t.split(/\s+/).length <= 10 ? "notes" : "answer";
 };
 
 export function practiceFallback(r: PracticeRequestT): PracticeReplyT {
@@ -66,5 +96,8 @@ export function practiceFallback(r: PracticeRequestT): PracticeReplyT {
   const at = Math.min(script.length - 1, Math.max(moved, Math.min(1, clinicianTurns)));
   const line = script[at];
   const covered = latest ? confirmCovered(enabledItems(r.plan).map((i) => i.id), r.plan, [latest.text]) : [];
-  return reply(kind === "advice" ? `${ADVICE_REFUSAL} ${line}` : line, at === script.length - 1, covered);
+  // The persona line about notes is said once, not on every turn that mentions them.
+  const notesSaid = r.turns.at(-2)?.text.startsWith(NOTES_LINE) === true;
+  const say = kind === "advice" ? `${ADVICE_REFUSAL} ${line}` : kind === "notes" && !notesSaid ? `${NOTES_LINE} ${line}` : line;
+  return reply(say, at === script.length - 1, covered);
 }

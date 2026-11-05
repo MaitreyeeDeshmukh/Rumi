@@ -104,8 +104,9 @@ describe("names, capitals and medicines", () => {
   it("mid-sentence capitalised words are flagged, whole-token only", () => {
     expect(tokens("I saw Dr. Patel.")).toEqual(["Patel"]);
     expect(tokens("I went to Banner Hospital.")).toEqual(["Banner", "Hospital"]);
-    expect(tokens("I saw Lee.", "I saw Leeds")).toEqual(["Lee"]);
-    ok("I saw Leeds.", "I saw Leeds");
+    expect(tokens("I saw Kim.", "I saw Kimberly")).toEqual(["Kim"]);
+    ok("I saw Kimberly.", "I saw Kimberly");
+    ok("I saw Dr. Lee.");
     ok("I saw Dr. Patel.", "Dr. Patel said hi");
   });
 
@@ -144,7 +145,7 @@ describe("names, capitals and medicines", () => {
     ok("How long? You can start with: It started ...");
     ok("What time? You can start with: Can you say ...");
     expect(tokens("How long? You can start with: Patel ...")).toEqual(["Patel"]);
-    expect(tokens("Who did you see? Try: It was Patel ...")).toEqual(["It", "Patel"]);
+    expect(tokens("Who did you see? Try: It was Patel ...")).toEqual(["Patel"]);
   });
 
   it("only I and Rumi are free", () => {
@@ -231,8 +232,8 @@ describe("codes, not text", () => {
   });
 
   it("tokens are unique, in order of appearance", () => {
-    expect(tokens("Sam saw Lee and Kim and Lee.")).toEqual(["Lee", "Kim"]);
-    expect(tokens("I saw Lee. I saw Lee again.")).toEqual(["Lee"]);
+    expect(tokens("I saw Ann and Kim and Ann.")).toEqual(["Ann", "Kim"]);
+    expect(tokens("I saw Ann. I saw Ann again.")).toEqual(["Ann"]);
   });
 });
 

@@ -34,10 +34,13 @@ const itemFor = (sentence: string, n: number) => {
 
 /** `createdAt` is a parameter because the function must stay pure; the caller may pass the real time. */
 export function planFallback(r: PlanRequestT, createdAt: string = DEMO_PLAN.createdAt): PlanReplyT {
-  const sentences = splitSentences(r.rawText);
-  const id = `plan-${fnv1a(r.rawText)}`;
+  // Copied text is cleaned here too (bidi overrides, zero-width and control characters), not only by the harness.
+  const clean = r.rawText.replace(/\p{Cf}/gu, "").replace(/(?![\n\t])\p{Cc}/gu, "");
+  // A greeting or an "ok" is not a concern: only sentences with at least one content word become items.
+  const sentences = splitSentences(clean).filter((s) => contentWords(s).length > 0);
+  const id = `plan-${fnv1a(clean)}`;
   const base = { id, title: "Visit plan", createdAt, symptomsInMyWords: [] };
-  if (contentWords(r.rawText).length === 0) {
+  if (sentences.length === 0) {
     const item = { id: "q1", text: FIXED_ITEM, kind: "concern" as const, source: "suggested" as const, enabled: true };
     return { plan: { ...base, mainConcern: FIXED_CONCERN, items: [item] }, thin: true, degraded: true };
   }

@@ -18,7 +18,7 @@ const GENERIC: Levels = {
 
 export const SCENARIO_TEMPLATES: Readonly<Record<NonNullable<SayItRequestT["scenario"]>, Levels>> = {
   book: {
-    1: "What do you want to book the visit for? You can start with: I would like to book a visit for ...",
+    1: "What do you want to book the visit for? You can start with: I need to book ...",
     2: "I would like to book an appointment for [what is happening].",
     3: "I would like to book an appointment. Can you tell me which times you have?",
   },
@@ -38,7 +38,7 @@ export const SCENARIO_TEMPLATES: Readonly<Record<NonNullable<SayItRequestT["scen
     3: "Can you write the instructions down for me?",
   },
   next: {
-    1: "What do you want to know about what happens next? You can start with: What should I do ...",
+    1: "What do you want to know about what happens next? You can start with: What should I ...",
     2: "I want to know [what to do next].",
     3: "I want to know what to do next. Can you tell me the next step?",
   },
@@ -55,8 +55,8 @@ const QUESTION_TEMPLATES: readonly (readonly [RegExp, Levels])[] = [
     { 1: "How often does it happen? You can start with: It happens ...", 2: "It happens [how often].", 3: GENERIC[3] },
   ],
   [
-    /\bwhere\b|\bwhich part\b/i,
-    { 1: "Where do you feel it? You can start with: I feel it in ...", 2: "I feel it in [which part of my body].", 3: GENERIC[3] },
+    /\bwhere\b.*\b(hurts?|feels?|pain|aches?|sore)\b|\bwhich part\b/i,
+    { 1: "Which part of the body is it? You can start with: It is in ...", 2: "It is in [which part of my body].", 3: GENERIC[3] },
   ],
 ];
 

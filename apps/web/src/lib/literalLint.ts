@@ -30,8 +30,8 @@ export const IDIOM_PATTERNS: readonly string[] = [
   "(?:run|runs|ran|running) through",
   "a bit",
   "little bit",
-  "sort of",
-  "kind of",
+  // "what kind of pain" is a question about a type, not a hedge: only "kind of"/"sort of" NOT after a word like what/this/any/a.
+  "(?<!\\b(?:what|which|this|that|these|those|any|some|another|same|every|each|other|different|the|a|an|one)\\s)(?:sort|kind) of",
   "kinda",
   "sorta",
   "(?:touch|touched|touches|touching) base",
@@ -111,12 +111,25 @@ const IDIOMS: readonly RegExp[] = IDIOM_PATTERNS.map((p) => new RegExp(`(?<![\\p
 const COMMANDS = [
   "open", "close", "take", "put", "write", "tell", "ask", "bring", "call", "go", "sit", "stand", "wait", "read", "say",
   "pick", "choose", "tap", "press", "drink", "eat", "lie", "keep", "come", "give", "show", "follow", "check", "sign",
-  "fill", "turn", "move", "walk", "book", "send", "make", "bring", "stop", "start", "try", "look", "find", "use", "pay",
+  "fill", "turn", "move", "walk", "book", "send", "make", "stop", "start", "try", "look", "find", "use", "pay", "rest", "see",
 ].join("|");
-const DOUBLE = new RegExp(
-  String.raw`^(?:please )?(?:(?:then|now|first|next|also) )?(?:${COMMANDS})\b.*?\b(?:and then|and|then)\s+(?:please )?(?:${COMMANDS})\b`,
-  "u",
-);
+const COMMAND_SET = new Set(COMMANDS.split("|"));
+const LEAD = /^(?:please |then |now |first |next |also )+/;
+
+/**
+ * Two or more commands in one sentence, joined by "and", "then", a comma or a semicolon: "Open the door, sit down."
+ * The sentence must start with a command, so "Write down when it starts and how strong it is." (one command) passes.
+ */
+function isDoubleCommand(sentence: string): boolean {
+  const clauses = normalizeText(sentence)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}',;]+/gu, " ")
+    .split(/\s*[,;]\s*|\s+(?:and then|and|then)\s+/)
+    .map((c) => c.trim().replace(LEAD, ""))
+    .filter(Boolean);
+  const starts = clauses.map((c) => COMMAND_SET.has(c.split(" ")[0]));
+  return starts[0] === true && starts.filter(Boolean).length >= 2;
+}
 
 export function literalLint(text: string): { ok: boolean; failures: LintFailure[] } {
   const failures: LintFailure[] = [];
@@ -125,7 +138,7 @@ export function literalLint(text: string): { ok: boolean; failures: LintFailure[
     const flat = flatten(sentence);
     if (countWords(sentence) > MAX_WORDS) failures.push({ sentence, reason: "too_long" });
     if (IDIOMS.some((re) => re.test(flat))) failures.push({ sentence, reason: "idiom" });
-    if (DOUBLE.test(flat)) failures.push({ sentence, reason: "double_command" });
+    if (isDoubleCommand(sentence)) failures.push({ sentence, reason: "double_command" });
   }
   return { ok: failures.length === 0, failures };
 }

@@ -5,7 +5,7 @@ import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
 import { FALLBACK_CONCERN_MAX, FALLBACK_ITEM_MAX, FIXED_CONCERN, FIXED_ITEM, planFallback } from "@/features/plan/fallback";
 import { mainConcernCodes } from "@/features/plan/keepSupportedSymptoms";
 import { planMock } from "@/features/plan/mock";
-import { MAX_CLINICIAN_TURNS, SCRIPT, practiceFallback } from "@/features/practice/fallback";
+import { SCRIPT, practiceFallback } from "@/features/practice/fallback";
 import { practiceMock } from "@/features/practice/mock";
 import { recapFallback } from "@/features/recap/fallback";
 import { recapMock } from "@/features/recap/mock";
@@ -32,6 +32,7 @@ import type { Focus, TranscriptLine, Turn } from "@/features/shared/types";
 import { lintCodes } from "@/lib/literalLint";
 import { blankCodes, extractBlanks, ledgerFromTexts, specificsCodes } from "@/lib/text/specifics";
 import { ADVICE_REFUSAL, CLOSING_LINE, STOP_LINE, WAIT_LINE } from "../../prompts/persona";
+import { MAX_CLINICIAN_TURNS } from "../../prompts/practice";
 
 const ramble = "I have been feeling off and my head is full of noise and I cannot say it well ".repeat(24).slice(0, 1900);
 const MESSY = [
@@ -198,7 +199,7 @@ describe("practice fallback and mock", () => {
   });
 
   it("covers a plan item only when the latest user turn touches it (D12)", () => {
-    const t = [clin("Hi. What brings you in today?"), me("I get headaches")];
+    const t = [clin("Hi. What brings you in today?"), me("Why do I get these headaches?")];
     expect(practiceFallback(req("problem", t)).coveredItemIds).toEqual(["q1", "q2"]);
     expect(practiceFallback(req("problem", [clin("Hi."), me("I like trains")])).coveredItemIds).toEqual([]);
     expect(practiceFallback(req("problem", [clin("Hi."), me("I get headaches"), clin("When did it start?"), me("I like trains")])).coveredItemIds).toEqual([]);
@@ -216,7 +217,7 @@ describe("practice fallback and mock", () => {
   });
 
   it("an advice question that also mentions a plan item still counts that item as said", () => {
-    const r = practiceFallback(req("whole", [clin("Hi."), me("My headaches are bad. Should I take something?")]));
+    const r = practiceFallback(req("whole", [clin("Hi."), me("Why are my headaches bad? Should I take something?")]));
     expect(r.clinicianSay.startsWith(ADVICE_REFUSAL)).toBe(true);
     expect(r.coveredItemIds).toEqual(["q1", "q2"]);
   });
@@ -323,7 +324,7 @@ describe("say it fallback and mock", () => {
   it("answers the shape of the clinician's question and never the answer", () => {
     expect(sayitFallback(req(2, { clinicianQuestion: "How long have you had it?" })).script).toBe("It started [how long ago].");
     expect(sayitFallback(req(2, { clinicianQuestion: "How often does it happen?" })).script).toBe("It happens [how often].");
-    expect(sayitFallback(req(2, { clinicianQuestion: "Where does it hurt?" })).script).toBe("I feel it in [which part of my body].");
+    expect(sayitFallback(req(2, { clinicianQuestion: "Where does it hurt?" })).script).toBe("It is in [which part of my body].");
     expect(sayitFallback(req(2, { clinicianQuestion: "Anything else?" })).script).toBe("I want to tell you about [what is happening].");
   });
 
@@ -428,7 +429,21 @@ describe("recap fallback and mock", () => {
     expect(recapEmptyCodes({ items: [], unconfirmed: ["x"] })).toEqual([]);
   });
 
-  it("the mock is the saved recap", () => {
-    expect(RecapReply.parse(recapMock())).toEqual(SAVED_RECAP_REPLY);
+  it("the mock is the saved recap for the sample visit, and built from the request's own lines for any other", () => {
+    expect(RecapReply.parse(recapMock(req(SAMPLE_VISIT, "B")))).toEqual(SAVED_RECAP_REPLY);
+    const m = RecapReply.parse(recapMock(req(other, "B")));
+    expect(m.degraded).toBeUndefined();
+    expect(m.items.map((i) => i.section)).toEqual(["medications", "medications", "discussed", "next_steps"]);
+    expect(m.items.every((i) => i.evidence.every((e) => other.some((l) => l.id === e)))).toBe(true);
+  });
+
+  it("a medicine, instruction or next step is never built from the user's own line", () => {
+    const mine: TranscriptLine[] = [
+      { id: "m1", speaker: "B", text: "I take ibuprofen sometimes for my headaches." },
+      { id: "m2", speaker: "B", text: "Please bring the diary to the next visit." },
+    ];
+    const r = RecapReply.parse(recapFallback(req(mine, "B")));
+    expect(r.items.map((i) => i.section)).toEqual(["discussed", "discussed"]);
+    expect(r.dropped).toBe(0);
   });
 });

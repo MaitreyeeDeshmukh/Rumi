@@ -2,7 +2,8 @@
  * Grounding check (07 D8, D9): a "specific" is a number, an amount, a time, a name or a medicine.
  * Output may only contain specifics that some ledger text also contains, compared as WHOLE TOKENS
  * (no substring tests: 3 is not 13, Lee is not Leeds) and amounts as (number, unit) pairs.
- * Blanks like "[how many days]" are the escape hatch, so they are removed before the scan and judged separately.
+ * Blanks like "[how many days]" are the escape hatch, so they are removed before the scan and judged separately;
+ * `validateGrounding` runs both so a smuggled blank can not be forgotten.
  */
 import type { GuardCode } from "@/features/shared/guards";
 import { COMMON_DRUGS, MONTHS, NUMBER_WORDS, RELATIVE_TIME, SENTENCE_STARTERS, UNITS, WEEKDAYS, toSet } from "@/features/shared/lists";
@@ -17,26 +18,66 @@ export interface SpecificsResult {
 
 const MONTH_SET = toSet(MONTHS);
 const WEEKDAY_SET = toSet(WEEKDAYS);
-const DRUG_SET = toSet(COMMON_DRUGS);
+/** Brands and generics the shared list lacks. Lowercase only. */
+const EXTRA_DRUGS = [
+  "panadol", "percocet", "hydroxychloroquine", "excedrin", "nurofen", "voltaren", "zyrtec", "claritin", "prilosec", "nexium",
+  "zantac", "imodium", "lipitor", "ozempic", "wegovy", "viagra", "cialis", "oxycontin", "vicodin", "dilaudid", "suboxone",
+  "methadone", "prednisolone", "dexamethasone", "hydrocortisone", "ranitidine", "famotidine", "fexofenadine", "ventolin",
+  "salbutamol", "amitriptyline", "propranolol", "buspirone", "hydroxyzine", "modafinil", "vyvanse", "lisdexamfetamine",
+  "dexamfetamine", "dextroamphetamine", "concerta", "strattera", "ketamine", "codamol", "cocodamol", "metoclopramide",
+  "ondansetron", "loperamide", "gaviscon", "benzonatate", "sildenafil",
+];
+const DRUG_SET: ReadonlySet<string> = new Set([...COMMON_DRUGS, ...EXTRA_DRUGS]);
+export const isDrugWord = (w: string): boolean => DRUG_SET.has(w.toLowerCase());
 const NUMBER_WORD_SET = toSet(NUMBER_WORDS);
-const UNIT_SET = new Set(UNITS.map((u) => normalizeText(u).toLowerCase()));
+/** Spelled-out units the shared list lacks. Each maps to the same canonical unit as its symbol (UNIT_CANON). */
+const EXTRA_UNITS = [
+  "milligram", "milligrams", "microgram", "micrograms", "gram", "grams", "kilogram", "kilograms", "millilitre", "millilitres",
+  "milliliter", "milliliters", "litre", "litres", "liter", "liters", "ounce", "ounces", "oz", "pound", "pounds", "lb", "lbs", "cc",
+  "percent", "degree", "degrees",
+];
+const UNIT_SET = new Set([...UNITS, ...EXTRA_UNITS].map((u) => normalizeText(u).toLowerCase()));
 /** Units that may follow a number WORD ("two weeks"). Letters and suffixes like pm/rd are excluded: "ten l" is not a claim. */
-const WORD_UNIT_SET = new Set([...UNIT_SET].filter((u) => !["x", "g", "l", "st", "nd", "rd", "th", "am", "pm", "%"].includes(u)));
+const WORD_UNIT_SET = new Set([...UNIT_SET].filter((u) => !["x", "g", "l", "st", "nd", "rd", "th", "am", "pm", "%", "oz", "lb", "lbs", "cc"].includes(u)));
 
 const KEEP = new Set(["i", "rumi"]);
+/** Pronouns and place words that start a sentence with a verb after them ("She asked ...") without being a person's name. */
+const NOT_NAMES = new Set(["he", "she", "they", "we", "you", "it", "there", "here", "everyone", "someone", "nobody", "somebody", "anyone", "people", "one"]);
 const STARTERS = toSet(SENTENCE_STARTERS);
-/** The word right after a level-1 "You can start with:" begins a new clause, like a sentence start. */
-const AFTER_STARTER_MARKER = /start with:\s*$/i;
+/** Characters after which a word begins a new clause, like a sentence start: "I want to ask: Why ...", "Hello, Thank you", She asked, "Why ...". */
+const CLAUSE_OPENERS = new Set([":", ",", '"', "“", "‘", "(", "["]);
+/** Proper words the app itself uses ("Dr. Lee", the "Help me say it" button, "Hello, Doctor"). */
+const KNOWN_CAPITALS = new Set(["lee", "help", "doctor", "nurse"]);
+/** A sentence that starts with an unknown capitalised word followed by one of these is a person doing something ("Patel told me to rest."). */
+const REPORT_VERBS = new Set([
+  "told", "tells", "said", "says", "asked", "asks", "gave", "gives", "hit", "hits", "shouts", "shouted", "yells", "yelled",
+  "follows", "followed", "called", "calls", "wants", "wanted", "thinks", "thought", "saw", "sees", "prescribed", "diagnosed",
+  "referred", "noticed", "mentioned", "wrote", "writes", "sent", "laughs", "laughed",
+]);
 const TITLES = new Set(["dr", "mr", "mrs", "ms", "prof"]);
 const CAPS_OK = new Set(["I", "AI", "OK", "US"]);
 /** Months that are also ordinary words: counted only when capitalised and not at the start of a sentence. */
 const AMBIGUOUS_MONTHS = new Set(["may", "march"]);
-/** Relatives and carers: inventing one ("Mom hits me") invents a fact about the user's life. */
+/** Relatives, carers and other people: inventing one ("Mom hits me") invents a fact about the user's life. */
 const PERSON_WORDS = new Set([
   "mom", "mum", "mother", "dad", "father", "parent", "parents", "sister", "brother", "wife", "husband", "partner",
   "boyfriend", "girlfriend", "son", "daughter", "grandma", "grandmother", "grandpa", "grandfather", "aunt", "uncle",
-  "cousin", "roommate", "boss", "teacher", "friend", "friends", "carer", "caregiver",
+  "cousin", "roommate", "boss", "teacher", "friend", "friends", "carer", "caregiver", "neighbour", "neighbor", "neighbours",
+  "neighbors", "ex", "kid", "kids", "baby", "child", "children", "nana", "gran", "granny", "nan", "therapist", "manager",
+  "coach", "landlord", "stranger", "guardian", "nanny", "sibling", "siblings", "relative", "relatives", "family", "colleague",
+  "coworker", "classmate", "stepmother", "stepfather", "stepmom", "stepdad", "fiance", "fiancee", "spouse",
 ]);
+/** Ordinal words (not "first", which is ordinary). They are claims like "4th". "second" counts only after "the": "a second" is a moment. */
+const ORDINALS: Record<string, string> = {
+  second: "2", third: "3", fourth: "4", fifth: "5", sixth: "6", seventh: "7", eighth: "8", ninth: "9", tenth: "10",
+  eleventh: "11", twelfth: "12", thirteenth: "13", fourteenth: "14", fifteenth: "15", twentieth: "20", thirtieth: "30",
+};
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const ONES: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9 };
+/** "twenty-one" is 21, not twenty and one. */
+const COMPOUND = new RegExp(`\\b(${Object.keys(TENS).join("|")})[-\\s](${Object.keys(ONES).join("|")})\\b`, "giu");
+/** "a few days", "several weeks", "a million": vague amounts are still amounts. */
+const VAGUE = /(?<!\p{L})(?:(?:a couple of|a couple|a few|several)\s+(?:days?|weeks?|months?|years?|hours?|minutes?|times?)|a (?:million|billion|trillion))(?!\p{L})/giu;
 const EXTRA_RELATIVE = ["tomorrow", "tonight", "this morning", "this week", "next week", "this month", "next month", "last time"];
 const PHRASES = [...RELATIVE_TIME, ...EXTRA_RELATIVE];
 
@@ -52,10 +93,30 @@ const UNIT_CANON: Record<string, string> = {
   days: "day", weeks: "week", months: "month", years: "year", hours: "hour", hrs: "hour", hr: "hour", minutes: "minute",
   mins: "minute", min: "minute", seconds: "second", secs: "second", sec: "second", times: "time", x: "time",
   tablets: "tablet", pills: "pill", caps: "capsule", capsules: "capsule", puffs: "puff", drops: "drop", units: "unit",
+  milligram: "mg", milligrams: "mg", microgram: "mcg", micrograms: "mcg", "μg": "mcg", ug: "mcg", gram: "g", grams: "g",
+  kilogram: "kg", kilograms: "kg", millilitre: "ml", millilitres: "ml", milliliter: "ml", milliliters: "ml", cc: "ml",
+  litre: "l", litres: "l", liter: "l", liters: "l", ounce: "oz", ounces: "oz", pound: "lb", pounds: "lb", lbs: "lb",
+  percent: "%", degrees: "degree", st: "ord", nd: "ord", rd: "ord", th: "ord",
 };
 const canonUnit = (u: string): string => UNIT_CANON[u] ?? u;
+const CALENDAR_UNITS = new Set(["day", "week", "month", "year"]);
 
-const prep = (s: string): string => normalizeText(s).replace(/\p{Cf}/gu, "").replace(/[’‘]/g, "'");
+/** Cyrillic and Greek letters that look like Latin ones. Only words that MIX scripts are folded, so real Greek or Russian names stay. */
+const CONFUSABLE: Record<string, string> = {
+  "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ѕ": "s", "ј": "j", "ԁ": "d", "һ": "h", "ɡ": "g",
+  "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X", "І": "I",
+  "ο": "o", "ν": "v", "ι": "i", "κ": "k", "ρ": "p", "τ": "t", "α": "a", "υ": "u", "ε": "e",
+  "Α": "A", "Β": "B", "Ε": "E", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Χ": "X", "Υ": "Y", "Ζ": "Z",
+};
+const foldMixed = (s: string): string =>
+  s.replace(/[\p{L}\p{M}]+/gu, (w) =>
+    /\p{Script=Latin}/u.test(w) && /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(w) ? [...w].map((ch) => CONFUSABLE[ch] ?? ch).join("") : w,
+  );
+
+const prep = (s: string): string =>
+  foldMixed(normalizeText(s).replace(/\p{Cf}/gu, "").replace(/[’‘]/g, "'")).replace(COMPOUND, (_m, t: string, o: string) =>
+    String(TENS[t.toLowerCase()] + ONES[o.toLowerCase()]),
+  );
 const BLANK_RE = /\[[^[\]]*\]/g;
 const TOKEN = /(\p{Nd}+(?:[.,]\p{Nd}+)*)([\p{L}\p{M}%]*)|([\p{L}\p{M}]+(?:'[\p{L}\p{M}]+)?)/gu;
 const canonNumber = (n: string): string => n.replace(/,(?=\d{3}(?:\D|$))/g, "");
@@ -66,18 +127,26 @@ interface Claim {
   /** Every key this text contributes when it is the ledger. */
   keys: string[];
   raw: string;
+  /** Index of the sentence this claim came from (phrases: -1). */
+  sentence: number;
+  /** Set for a medicine word, and for an amount: used to bind doses to medicines. */
+  drug?: string;
+  amount?: string;
 }
 
-const amount = (value: string, unit: string, raw: string): Claim => {
-  const need = `a:${value}|${canonUnit(unit)}`;
-  return { need, keys: [need, `n:${value}`], raw };
+const amount = (value: string, unit: string, raw: string, sentence: number): Claim => {
+  const u = canonUnit(unit);
+  const need = `a:${value}|${u}`;
+  const keys = [need, `n:${value}`];
+  if (value === "1" && CALENDAR_UNITS.has(u)) keys.push(`p:a ${u}`);
+  return { need, keys, raw, sentence, amount: need };
 };
-const word = (lower: string, raw: string): Claim => ({ need: `w:${lower}`, keys: [`w:${lower}`], raw });
+const word = (lower: string, raw: string, sentence: number): Claim => ({ need: `w:${lower}`, keys: [`w:${lower}`], raw, sentence });
 
-function scan(text: string): Claim[] {
+function scan(text: string, extraDrugs: ReadonlySet<string> = new Set()): Claim[] {
   const claims: Claim[] = [];
   const phrases: Claim[] = [];
-  for (const sentence of splitSentences(prep(text).replace(BLANK_RE, " "))) {
+  splitSentences(prep(text).replace(BLANK_RE, " ")).forEach((sentence, si) => {
     const toks = [...sentence.matchAll(TOKEN)];
     const nextWord = (i: number, from: number, units: ReadonlySet<string>): RegExpMatchArray | undefined => {
       const n = toks[i + 1];
@@ -85,43 +154,60 @@ function scan(text: string): Claim[] {
       return units.has(n[3].toLowerCase()) ? n : undefined;
     };
     const skip = new Set<number>();
+    const unitAmount = (value: string, i: number, from: number, start: number, units: ReadonlySet<string>): Claim | undefined => {
+      const unit = nextWord(i, from, units);
+      if (!unit) return undefined;
+      skip.add(i + 1);
+      return amount(value, unit[3].toLowerCase(), sentence.slice(start, (unit.index ?? 0) + unit[0].length), si);
+    };
     toks.forEach((m, i) => {
       if (skip.has(i)) return;
       const start = m.index ?? 0;
       if (m[1] !== undefined) {
         const value = canonNumber(m[1]);
         const suffix = m[2].toLowerCase();
-        if (suffix && UNIT_SET.has(suffix)) return void claims.push(amount(value, suffix, m[0]));
-        const unit = suffix ? undefined : nextWord(i, start + m[0].length, UNIT_SET);
-        if (unit) {
-          skip.add(i + 1);
-          return void claims.push(amount(value, unit[3].toLowerCase(), sentence.slice(start, (unit.index ?? 0) + unit[0].length)));
-        }
-        return void claims.push({ need: `n:${value}`, keys: [`n:${value}`], raw: m[0] });
+        if (suffix && UNIT_SET.has(suffix)) return void claims.push(amount(value, suffix, m[0], si));
+        const spaced = suffix ? undefined : unitAmount(value, i, start + m[0].length, start, UNIT_SET);
+        return void claims.push(spaced ?? { need: `n:${value}`, keys: [`n:${value}`], raw: m[0], sentence: si });
       }
       const raw = m[3];
       const base = raw.split("'")[0];
       const lower = base.toLowerCase();
       const capital = /^\p{Lu}/u.test(base);
-      if (lower in TIMES) return void claims.push(amount(TIMES[lower], "time", raw));
+      if (lower in TIMES) return void claims.push(amount(TIMES[lower], "time", raw, si));
+      if (lower === "one") {
+        // "one week" is a duration; a bare "one" ("one question at a time", "no one") is ordinary.
+        const one = unitAmount("1", i, start + raw.length, start, WORD_UNIT_SET);
+        if (one) return void claims.push(one);
+      }
       if (NUMBER_WORD_SET.has(lower)) {
         const value = VALUE[lower] ?? lower;
-        const unit = nextWord(i, start + raw.length, WORD_UNIT_SET);
-        if (unit) {
-          skip.add(i + 1);
-          return void claims.push(amount(value, unit[3].toLowerCase(), sentence.slice(start, (unit.index ?? 0) + unit[0].length)));
-        }
-        return void claims.push({ need: `n:${value}`, keys: [`n:${value}`], raw });
+        const withUnit = unitAmount(value, i, start + raw.length, start, WORD_UNIT_SET);
+        return void claims.push(withUnit ?? { need: `n:${value}`, keys: [`n:${value}`], raw, sentence: si });
       }
+      if (lower in ORDINALS && (lower !== "second" || toks[i - 1]?.[3]?.toLowerCase() === "the")) {
+        return void claims.push(amount(ORDINALS[lower], "ord", raw, si));
+      }
+      // A word that still mixes Latin with Cyrillic or Greek after folding the look-alikes is an attempt to hide something.
+      if (/\p{Script=Latin}/u.test(raw) && /[\p{Script=Cyrillic}\p{Script=Greek}]/u.test(raw)) return void claims.push(word(lower, raw, si));
       const month = MONTH_SET.has(lower) && (!AMBIGUOUS_MONTHS.has(lower) || (capital && i > 0));
-      if (WEEKDAY_SET.has(lower) || month || DRUG_SET.has(lower) || PERSON_WORDS.has(lower)) return void claims.push(word(lower, raw));
-      if (base.length >= 2 && base === base.toUpperCase() && base !== base.toLowerCase() && !CAPS_OK.has(base)) return void claims.push(word(lower, raw));
-      const clauseStart = STARTERS.has(lower) && AFTER_STARTER_MARKER.test(sentence.slice(0, start));
-      if (i > 0 && capital && !clauseStart && !KEEP.has(lower) && !TITLES.has(lower) && !CAPS_OK.has(base)) claims.push(word(lower, raw));
+      if (DRUG_SET.has(lower) || extraDrugs.has(lower)) return void claims.push({ ...word(lower, raw, si), drug: lower });
+      if (WEEKDAY_SET.has(lower) || month || PERSON_WORDS.has(lower)) return void claims.push(word(lower, raw, si));
+      if (base.length >= 2 && base === base.toUpperCase() && base !== base.toLowerCase() && !CAPS_OK.has(base)) return void claims.push(word(lower, raw, si));
+      if (!capital || KEEP.has(lower) || TITLES.has(lower) || CAPS_OK.has(base) || KNOWN_CAPITALS.has(lower)) return;
+      const opener = sentence.slice(0, start).trimEnd().slice(-1);
+      const clauseStart = STARTERS.has(lower) && CLAUSE_OPENERS.has(opener);
+      const nameThenVerb = i === 0 && !STARTERS.has(lower) && !NOT_NAMES.has(lower) && REPORT_VERBS.has(toks[1]?.[3]?.toLowerCase() ?? "");
+      if ((i > 0 && !clauseStart) || nameThenVerb) claims.push(word(lower, raw, si));
     });
     const flat = sentence.toLowerCase().replace(/[^\p{L}]+/gu, " ");
-    for (const p of PHRASES) if (new RegExp(`(?<!\\p{L})${p}(?!\\p{L})`, "u").test(flat)) phrases.push({ need: `p:${p}`, keys: [`p:${p}`], raw: p });
-  }
+    for (const p of PHRASES) {
+      if (!new RegExp(`(?<!\\p{L})${p}(?!\\p{L})`, "u").test(flat)) continue;
+      const one = /^a (day|week|month|year)$/.exec(p);
+      phrases.push({ need: `p:${p}`, keys: one ? [`p:${p}`, `a:1|${one[1]}`] : [`p:${p}`], raw: p, sentence: -1 });
+    }
+    for (const v of flat.matchAll(VAGUE)) phrases.push({ need: `v:${v[0].trim()}`, keys: [`v:${v[0].trim()}`], raw: v[0].trim(), sentence: -1 });
+  });
   return [...claims, ...phrases];
 }
 
@@ -144,6 +230,38 @@ export function specificsCodes(text: string | readonly string[], ledger: Evidenc
   return texts.some((t) => !ungroundedSpecifics(t, ledger).ok) ? ["invented_specific"] : [];
 }
 
+/**
+ * Doses bound to medicines: "drug|amount" pairs. An amount belongs to the nearest medicine BEFORE it in its sentence,
+ * else the nearest one AFTER it in the same sentence ("Take 400 mg of ibuprofen"), else the last medicine of an earlier
+ * sentence. `extraNames` are medicine names the lists do not know (a name taken from a "Name: details" item).
+ */
+export function dosesByDrug(text: string, extraNames: readonly string[] = []): Set<string> {
+  const out = new Set<string>();
+  const claims = scan(text, new Set(extraNames.map((n) => n.toLowerCase()))).filter((c) => c.sentence >= 0 && (c.drug || c.amount));
+  let last: string | undefined;
+  for (const sentence of new Set(claims.map((c) => c.sentence))) {
+    const here = claims.filter((c) => c.sentence === sentence);
+    let before: string | undefined;
+    here.forEach((c, i) => {
+      if (c.drug) before = c.drug;
+      else if (c.amount) {
+        const bound = before ?? here.slice(i + 1).find((d) => d.drug)?.drug ?? last;
+        if (bound) out.add(`${bound}|${c.amount}`);
+      }
+    });
+    last = [...here].reverse().find((c) => c.drug)?.drug ?? last;
+  }
+  return out;
+}
+
+/** Dose units ("mg", "milligrams", "ml", "%") by their canonical name; undefined for any other word (days and weeks are not dose units). */
+const MEASURE = new Set(["mg", "mcg", "g", "kg", "ml", "l", "oz", "lb", "%", "degree", "unit", "tablet", "pill", "capsule", "puff", "drop"]);
+export function measureUnit(word: string): string | undefined {
+  const w = normalizeText(word).toLowerCase();
+  const u = canonUnit(w);
+  return UNIT_SET.has(w) && MEASURE.has(u) ? u : undefined;
+}
+
 /** A minimal ledger from plain strings (tests, fallbacks, and the recap check over cited lines). */
 export function ledgerFromTexts(texts: readonly string[]): EvidenceLedger {
   return {
@@ -153,12 +271,15 @@ export function ledgerFromTexts(texts: readonly string[]): EvidenceLedger {
 }
 
 const WH = new Set(["what", "how", "when", "which", "where", "who", "why"]);
-/** D9: at most 6 words, letters only, no capital after the first character, starts with a question word. */
+/**
+ * D9: at most 6 words, no digits, no capital after the first character, starts with a question word.
+ * Letters, spaces, apostrophes, hyphens, commas and a question mark only, so a blank can not hold a sentence.
+ */
 function validBlank(inner: string): boolean {
   const t = inner.trim();
-  if (!t || t.length > 60 || !/^[\p{L}' -]+$/u.test(t) || /\p{Lu}/u.test(t.slice(1))) return false;
+  if (!t || t.length > 60 || !/^[\p{L}' ,?-]+$/u.test(t) || /\p{Lu}/u.test(t.slice(1))) return false;
   const w = t.split(/\s+/);
-  return w.length <= 6 && WH.has(w[0].toLowerCase());
+  return w.length <= 6 && WH.has(w[0].replace(/[,?]+$/, "").split("'")[0].toLowerCase());
 }
 
 /** `invalid_blank` if any bracketed part is not a valid blank, or a bracket is left over (nested or unclosed). */
@@ -174,4 +295,10 @@ export function blankCodes(text: string): GuardCode[] {
 /** The text of each valid blank. Only call after blankCodes returned []. */
 export function extractBlanks(text: string): string[] {
   return (prep(text).match(BLANK_RE) ?? []).map((m) => m.slice(1, -1).trim()).filter(validBlank);
+}
+
+/** The one call a spec makes for free text a model wrote: invented specifics and invalid blanks together. */
+export function validateGrounding(text: string | readonly string[], ledger: EvidenceLedger): GuardCode[] {
+  const texts = typeof text === "string" ? [text] : text;
+  return [...specificsCodes(texts, ledger), ...texts.flatMap((t) => blankCodes(t))].filter((c, n, all) => all.indexOf(c) === n);
 }
