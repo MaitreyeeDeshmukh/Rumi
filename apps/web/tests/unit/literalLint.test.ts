@@ -1,0 +1,127 @@
+import { describe, expect, it } from "vitest";
+import { IDIOM_PATTERNS, MAX_WORDS, countWords, lintCodes, literalLint } from "@/lib/literalLint";
+
+const words = (n: number) => Array.from({ length: n }, (_, i) => `w${String.fromCharCode(97 + (i % 26))}${"x".repeat(Math.floor(i / 26))}`).join(" ");
+const reasons = (text: string) => literalLint(text).failures.map((f) => f.reason);
+
+describe("sentence length", () => {
+  it("14 and 15 words pass, 16 fails", () => {
+    expect(MAX_WORDS).toBe(15);
+    expect(literalLint(`${words(14)}.`).ok).toBe(true);
+    expect(literalLint(`${words(15)}.`).ok).toBe(true);
+    expect(reasons(`${words(16)}.`)).toEqual(["too_long"]);
+  });
+
+  it("a missing space after a full stop does not hide a 16th word", () => {
+    const text = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen.sixteen";
+    expect(countWords(text)).toBe(16);
+    expect(reasons(text)).toEqual(["too_long"]);
+  });
+
+  it("an abbreviation does not split a long sentence into two short ones", () => {
+    const text = "Please ask Dr. Lee about the pain that started last week when I walked to the shop.";
+    expect(countWords(text)).toBe(17);
+    expect(reasons(text)).toEqual(["too_long"]);
+  });
+
+  it("hyphens and extra whitespace do not hide words", () => {
+    expect(reasons(`${words(8)}-${words(8).replace(/ /g, "-")}.`)).toEqual(["too_long"]);
+    expect(literalLint(`${words(15).replace(/ /g, "   ")}.`).ok).toBe(true);
+  });
+
+  it("counts a decimal or a comma-number as one word", () => {
+    expect(countWords("Take 2.5 tablets from 1,000 left.")).toBe(6);
+  });
+
+  it("a sentence can fail for two reasons and both are reported", () => {
+    expect(reasons(`${words(15)} a bit.`)).toEqual(["too_long", "idiom"]);
+  });
+});
+
+describe("idioms", () => {
+  it.each([
+    "I am a bit nervous.",
+    "I FIGURED it out.",
+    "We are still figuring out the plan.",
+    "She said she ran through the list.",
+    "Try to hang in there.",
+    "Try to hang-in-there.",
+    "I am hanging in there.",
+    "Do not cut corners.",
+    "He was cutting corners.",
+    "I am all ears.",
+    "It is a long shot.",
+    "We are in the same boat.",
+    "I am on the fence.",
+    "It is the sort of thing I forget.",
+    "Keep in mind that I need time.",
+    "Please keep an eye on it.",
+    "I feel a little bit tired.",
+    "Take it easy.",
+    "a\n   bit tired",
+  ])("flags %s", (text) => {
+    expect(reasons(text)).toContain("idiom");
+  });
+
+  it("matches whole words only, so near-misses are not idioms", () => {
+    expect(literalLint("I ate a bite of toast.").ok).toBe(true);
+    expect(literalLint("That was a bitter pill.").ok).toBe(true);
+    expect(literalLint("The heads upstairs are quiet.").ok).toBe(true);
+    expect(literalLint("I sorted the forms.").ok).toBe(true);
+    expect(literalLint("Be kinder of heart.").ok).toBe(true);
+    expect(literalLint("I have a cut on my finger.").ok).toBe(true);
+    expect(literalLint("The figure is on the page.").ok).toBe(true);
+    expect(literalLint("I want to ask what to do next.").ok).toBe(true);
+    expect(literalLint("That is an extra bit of toast.").ok).toBe(true);
+  });
+
+  it("invisible characters inside a word do not hide an idiom", () => {
+    expect(reasons("I am a b​it sad.")).toContain("idiom");
+    expect(reasons("I am a b­it sad.")).toContain("idiom");
+  });
+
+  it("the list is large and every pattern compiles", () => {
+    expect(IDIOM_PATTERNS.length).toBeGreaterThan(50);
+    for (const p of IDIOM_PATTERNS) expect(() => new RegExp(p, "u")).not.toThrow();
+  });
+});
+
+describe("double commands", () => {
+  it("two commands in one sentence fail", () => {
+    expect(reasons("Open the door and sit down.")).toEqual(["double_command"]);
+    expect(reasons("Please open the door and then sit down.")).toEqual(["double_command"]);
+    expect(reasons("Come back in four weeks and bring the diary.")).toEqual(["double_command"]);
+  });
+
+  it("one command passes, and so does a second clause that is not a command", () => {
+    expect(literalLint("Open the door.").ok).toBe(true);
+    expect(literalLint("Write down when it starts and how strong it is.").ok).toBe(true);
+    expect(literalLint("I want to ask what to do and when.").ok).toBe(true);
+    expect(literalLint("I will open the door and sit down.").ok).toBe(true);
+  });
+});
+
+describe("whole texts", () => {
+  it("two good sentences and one bad return exactly one failure naming the bad sentence", () => {
+    const r = literalLint("I have a headache. It started this week. Please run through the steps.");
+    expect(r.ok).toBe(false);
+    expect(r.failures).toEqual([{ sentence: "Please run through the steps.", reason: "idiom" }]);
+  });
+
+  it("empty text is fine and newlines separate sentences", () => {
+    expect(literalLint("").ok).toBe(true);
+    expect(literalLint("short line\nanother short line").ok).toBe(true);
+  });
+});
+
+describe("lintCodes", () => {
+  it("returns soft guard codes only, deduplicated, in a fixed order", () => {
+    expect(lintCodes(["Open the door and sit down.", "I am a bit nervous.", `${words(16)}.`, "I am a bit sad."])).toEqual([
+      "lint_too_long",
+      "lint_idiom",
+      "lint_double_command",
+    ]);
+    expect(lintCodes(["I have a headache.", "It hurts."])).toEqual([]);
+    expect(lintCodes([])).toEqual([]);
+  });
+});
