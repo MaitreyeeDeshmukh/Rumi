@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LIMITS } from "@/features/shared/constants";
 import { HttpError, errorResponse, readJson } from "@/lib/ai/http";
+import { AppError } from "@/lib/errors";
 import { logEvent } from "@/lib/ai/telemetry";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { createRateLimiter } from "@/lib/security/rateLimit";
@@ -20,7 +21,8 @@ async function failure(fn: () => unknown): Promise<{ status: number; code: strin
     await fn();
     return null;
   } catch (e) {
-    if (e instanceof HttpError) return { status: e.status, code: e.code, retryAfterSec: e.retryAfterSec };
+    // guardRequest throws AppError (HttpError is a subclass of it).
+    if (e instanceof AppError) return { status: e.status, code: e.code, retryAfterSec: e.retryAfterSec };
     throw e;
   }
 }
@@ -76,11 +78,14 @@ describe("chaos: oversize and malformed bodies", () => {
 });
 
 describe("chaos: floods and cross-site posts", () => {
+  beforeEach(() => void vi.stubEnv("VERCEL", "1")); // address headers are trusted only on Vercel
+  afterEach(() => void vi.unstubAllEnvs());
+
   it("the request after the limit is a 429 with a positive Retry-After, never a 500", async () => {
     const limiter = createRateLimiter({ limits: { perIp: 5, perSession: 100, perInstance: 1000 } });
     const same = { "x-real-ip": "203.0.113.200" };
-    for (let i = 0; i < 5; i += 1) guardRequest(post({}, same), { limiter });
-    const f = await failure(() => guardRequest(post({}, same), { limiter }));
+    for (let i = 0; i < 5; i += 1) await guardRequest(post({}, same), { limiter, authenticate: null });
+    const f = await failure(() => guardRequest(post({}, same), { limiter, authenticate: null }));
     expect(f).toMatchObject({ status: 429, code: "rate_limited" });
     const res = errorResponse(new HttpError(429, "rate_limited", f?.retryAfterSec));
     expect(res.status).toBe(429);
@@ -113,7 +118,7 @@ describe("chaos: floods and cross-site posts", () => {
     ["an origin from another host", { "sec-fetch-site": "same-origin", origin: "https://evil.test" }],
     ["an Origin of null", { "sec-fetch-site": "same-origin", origin: "null" }],
   ])("a post from %s is a 403", async (_n, headers) => {
-    expect(await failure(() => guardRequest(post({}, headers), { limiter: createRateLimiter() }))).toMatchObject({ status: 403, code: "forbidden" });
+    expect(await failure(() => guardRequest(post({}, headers), { limiter: createRateLimiter(), authenticate: null }))).toMatchObject({ status: 403, code: "forbidden" });
   });
 });
 

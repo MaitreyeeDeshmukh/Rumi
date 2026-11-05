@@ -8,6 +8,18 @@ import { ConfigError } from "@/lib/env";
 import { getServerClient } from "@/lib/supabase/server";
 import { hashSecret } from "./secret";
 
+/** Longer than the 3 s fetch deadline in supabase/fetch.ts, so it only fires when a client does not use that fetch. A hung auth call must end. */
+const AUTH_DEADLINE_MS = 4000;
+
+async function withDeadline<T>(work: PromiseLike<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => void (timer = setTimeout(() => reject(new Error("deadline")), ms)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface AuthedUser {
   /** auth.uid(). Never log it, never send it to a client or into telemetry; use `userHash`. */
   userId: string;
@@ -38,7 +50,7 @@ export async function requireUser(req: Request): Promise<AuthedUser> {
   const client = await getServerClient(req);
   let result: Awaited<ReturnType<typeof client.auth.getUser>>;
   try {
-    result = await client.auth.getUser();
+    result = await withDeadline(client.auth.getUser(), AUTH_DEADLINE_MS);
   } catch (e) {
     throw new AppError("store_unavailable", { cause: e });
   }

@@ -30,14 +30,15 @@ describeWhen("observability", ["lib/log"], "chaos: the logger is handed text, se
   it("a long string value is replaced by a stable marker, not written out", async () => {
     const { createLogger } = await loadLane<LogModule>("lib/log");
     const long = `${USER_TEXT} `.repeat(10);
-    createLogger(ctx).warn("odd_value", { detail: long });
-    createLogger(ctx).warn("odd_value", { detail: long });
+    // `names` is an allowlisted string field (lib/log.ts); any field that is not on the list is dropped before it can matter.
+    createLogger(ctx).warn("odd_value", { names: long });
+    createLogger(ctx).warn("odd_value", { names: long });
     expectNoLeak(logs);
-    const [a, b] = logs.lines.filter((l) => l.includes("odd_value")).map((l) => JSON.parse(l) as { detail?: unknown });
-    expect(typeof a.detail).toBe("string");
-    expect(a.detail).not.toBe(long);
-    expect((a.detail as string).length).toBeLessThanOrEqual(120);
-    expect(a.detail, "the same value must give the same marker").toBe(b.detail);
+    const [a, b] = logs.lines.filter((l) => l.includes("odd_value")).map((l) => JSON.parse(l) as { names?: unknown });
+    expect(typeof a.names).toBe("string");
+    expect(a.names).not.toBe(long);
+    expect((a.names as string).length).toBeLessThanOrEqual(120);
+    expect(a.names, "the same value must give the same marker").toBe(b.names);
   });
 
   it("an Error's message is never written, whatever it says", async () => {

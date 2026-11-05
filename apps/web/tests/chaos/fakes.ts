@@ -56,6 +56,7 @@ export function stubLiveEnv(): void {
   vi.stubEnv("GROQ_MODEL_FAST", "model-fast-y");
   vi.stubEnv("SESSION_SECRET", "chaos-session-secret-0123456789-abcdef-xyz");
   vi.stubEnv("MOCK_AI", "");
+  vi.stubEnv("VERCEL", "1"); // client address headers are trusted only on Vercel (lib/security/rateLimit.ts)
 }
 
 // ---------------------------------------------------------------- a task spec
