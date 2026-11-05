@@ -5,8 +5,9 @@ import { z } from "zod";
  * (each is a small, named read next to the code that needs it, never a second parser):
  *  - lib/supabase/config.ts: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Next inlines `NEXT_PUBLIC_*` only when
  *    written as a literal `process.env.NAME`, so the browser bundle cannot go through this module) and AUTH_PROXY_REFRESH.
- *  - lib/supabase/admin.ts: SUPABASE_SECRET_KEY. It is NOT in the schema below, on purpose: the secret must be named in
- *    exactly one source file (tests/unit/authBundle.test.ts pins that), so it cannot reach a bundle or a validation message.
+ *  - lib/supabase/admin.ts: the Supabase secret key (its variable name is written only in that file, on purpose, and is not
+ *    in the schema below: tests/unit/authBundle.test.ts pins that exactly one source file names it, so it cannot reach a
+ *    bundle or a validation message, and this comment must not spell it out).
  *    A missing key is reported by name through adminConfigProblems() and missingEnvNames() in lib/telemetry/config.ts.
  *  - lib/telemetry/config.ts: READY_TOKEN (compared in constant time), RELEASE and the Vercel build ids, TELEMETRY_DB_WRITES,
  *    SENTRY_DSN presence. Names only are ever reported.
