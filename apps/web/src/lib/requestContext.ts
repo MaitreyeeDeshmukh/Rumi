@@ -1,12 +1,13 @@
-/** Request ids: proxy.ts sets one per request, every response echoes it, every log line and error body carries it. */
+/** One id per request. proxy.ts creates it, route handlers read it, every response echoes it. */
 export const REQUEST_ID_HEADER = "x-request-id";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export const newRequestId = (): string => crypto.randomUUID();
 
-/** The id the proxy set, or a new one. A caller-supplied value that is not a uuid is never trusted into a log line. */
+/** UUID shape only. A client-sent value of any other shape (long, with spaces or newlines) is never copied into a log or a response. */
+const ID_SHAPE = /^[0-9a-fA-F-]{36}$/;
+
+/** The id proxy.ts put on the request; a fresh one when it is missing or not shaped like a uuid (tests, direct calls, forged headers). */
 export function requestIdOf(req: Request): string {
   const sent = req.headers.get(REQUEST_ID_HEADER);
-  return sent !== null && UUID_RE.test(sent) ? sent : newRequestId();
+  return sent !== null && ID_SHAPE.test(sent) ? sent : newRequestId();
 }

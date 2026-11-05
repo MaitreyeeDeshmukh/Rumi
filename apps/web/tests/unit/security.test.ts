@@ -1,8 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { HttpError } from "@/lib/ai/http";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AppError } from "@/lib/errors";
 import { assertSameOrigin } from "@/lib/security/origin";
 import { clientIp, createRateLimiter, hashClientIp, type RateLimiter } from "@/lib/security/rateLimit";
 import { guardRequest } from "@/lib/security/guardRequest";
+
+const auth = vi.hoisted(() => ({ requireUser: vi.fn() }));
+const logs = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
+vi.mock("@/lib/auth/requireUser", () => ({ requireUser: auth.requireUser }));
+vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: vi.fn(), error: logs.error, warn: logs.warn }) }));
+
+beforeEach(() => {
+  // On Vercel the platform writes the forwarding headers; these tests simulate that. Without it they are ignored (see below).
+  vi.stubEnv("VERCEL", "1");
+  logs.error.mockReset();
+  auth.requireUser.mockReset().mockRejectedValue(new AppError("unauthorized"));
+  logs.warn.mockReset();
+});
+
+afterEach(() => vi.unstubAllEnvs());
 
 const URL_ = "https://rumi.test/api/plan";
 const req = (headers: Record<string, string>): Request => new Request(URL_, { method: "POST", headers, body: "{}" });
@@ -10,7 +25,7 @@ const status = (fn: () => unknown): number | undefined => {
   try {
     fn();
   } catch (e) {
-    return e instanceof HttpError ? e.status : -1;
+    return e instanceof AppError ? e.status : -1;
   }
   return undefined;
 };
@@ -38,6 +53,30 @@ describe("assertSameOrigin", () => {
     ["neither header", {}],
   ])("rejects %s with 403", (_name, headers) => {
     expect(status(() => assertSameOrigin(req(headers)))).toBe(403);
+  });
+});
+
+describe("clientIp outside Vercel", () => {
+  it("ignores every forwarding header, because a client could have written them", () => {
+    vi.stubEnv("VERCEL", "");
+    const cases: Array<Record<string, string>> = [{ "x-vercel-forwarded-for": "203.0.113.9" }, { "x-real-ip": "203.0.113.7" }, { "x-forwarded-for": "198.51.100.1" }, { "x-forwarded-for": "6.6.6.6, 198.51.100.1", "x-real-ip": "203.0.113.7" }];
+    for (const headers of cases) {
+      expect(clientIp(req(headers))).toBeNull();
+    }
+  });
+
+  it("so rotating a spoofed address does not escape the one shared stricter bucket", async () => {
+    vi.stubEnv("VERCEL", "");
+    const l = createRateLimiter({ now: () => 1 });
+    const spoofed = (i: number): Request => new Request("https://rumi.test/api/plan", { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-real-ip": `203.0.113.${i}` }, body: "{}" });
+    for (let i = 1; i <= 10; i++) await guardRequest(spoofed(i), { limiter: l });
+    const err = await guardRequest(spoofed(11), { limiter: l }).catch((e: unknown) => e);
+    expect((err as AppError).status).toBe(429);
+  });
+
+  it("on Vercel the same headers are used", () => {
+    vi.stubEnv("VERCEL", "1");
+    expect(clientIp(req({ "x-real-ip": "203.0.113.7" }))).toBe("203.0.113.7");
   });
 });
 
@@ -179,60 +218,139 @@ describe("guardRequest", () => {
   const good = (extra: Record<string, string> = {}): Request =>
     new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.7", ...extra }, body: "{}" });
   const fresh = (): RateLimiter => createRateLimiter({ now: () => 1 });
-  const catchError = (fn: () => unknown): HttpError => {
+  const alice = { userId: "00000000-0000-4000-8000-00000000000a", userHash: "a".repeat(16), isAnonymous: true };
+  const catchError = async (fn: () => Promise<unknown>): Promise<AppError> => {
     try {
-      fn();
+      await fn();
     } catch (e) {
-      if (e instanceof HttpError) return e;
+      if (e instanceof AppError) return e;
       throw e;
     }
-    throw new Error("expected an HttpError");
+    throw new Error("expected an AppError");
   };
 
-  it("passes a well formed request and returns the session, a hashed address and no key", () => {
-    const r = guardRequest(good(), { limiter: fresh() });
-    expect(r.session.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(r.session.setCookie).not.toBeNull();
+  it("passes a well formed signed-out request with a hashed address and no user", async () => {
+    const r = await guardRequest(good(), { limiter: fresh() });
+    expect(r.user).toBeNull();
     expect(r.ipHash).toBe(hashClientIp("203.0.113.7"));
-    expect(r.memoryKey).toBeNull();
   });
 
-  it("returns a well formed recovery code and rejects a malformed one before any HMAC", () => {
-    expect(guardRequest(good({ "x-rumi-key": "ABCDE-FGHJK-LMNPQ-RSTUV" }), { limiter: fresh() }).memoryKey).toBe("ABCDE-FGHJK-LMNPQ-RSTUV");
-    for (const bad of ["abcde-fghjk-lmnpq-rstuv", "ABCDEFGHJKLMNPQRSTUV", "ABCDE-FGHJK-LMNPQ", "ABCDE-FGHJK-LMNPQ-RSTU0", "ABCDE-FGHJK-LMNPQ-RSTUI", "ABCDE-FGHJK-LMNPQ-RSTUV-WXYZ2", "ABCDE-FGHJK-LMNPQ-RSTUV,ABCDE-FGHJK-LMNPQ-RSTUV", "<script>"]) {
-      expect(catchError(() => guardRequest(good({ "x-rumi-key": bad }), { limiter: fresh() })).status).toBe(400);
-    }
+  it("returns the user that requireUser verified and ignores any id or recovery code the client sends", async () => {
+    auth.requireUser.mockResolvedValue(alice);
+    const req = good({ "x-user-id": "00000000-0000-4000-8000-00000000000b", "x-rumi-key": "not a code at all" });
+    const r = await guardRequest(req, { limiter: fresh() });
+    expect(r.user).toEqual(alice);
+    expect(auth.requireUser).toHaveBeenCalledWith(req);
   });
 
-  it("refuses a foreign origin with 403 before it touches the limiter", () => {
+  it("refuses a foreign origin with 403 before it touches the limiter or the auth server", async () => {
     let checked = 0;
-    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
-    const err = catchError(() => guardRequest(new Request(URL_, { method: "POST", headers: { origin: "https://evil.test" } }), { limiter: spy }));
+    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), checkUser: () => ({ ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
+    const err = await catchError(() => guardRequest(new Request(URL_, { method: "POST", headers: { origin: "https://evil.test" } }), { limiter: spy }));
     expect(err.status).toBe(403);
-    expect(checked).toBe(0);
+    expect([checked, auth.requireUser.mock.calls.length]).toEqual([0, 0]);
   });
 
-  it("returns 429 with the retry time from the limiter", () => {
+  it("returns 429 with the retry time from the limiter", async () => {
     const l = createRateLimiter({ now: () => 5, limits: { perIp: 1 } });
-    guardRequest(good(), { limiter: l });
-    const err = catchError(() => guardRequest(good(), { limiter: l }));
+    await guardRequest(good(), { limiter: l });
+    const err = await catchError(() => guardRequest(good(), { limiter: l }));
     expect([err.status, err.code, err.retryAfterSec]).toEqual([429, "rate_limited", 60]);
   });
 
-  it("counts the session of a valid cookie but not a freshly issued one", () => {
+  it("counts a signed-in user by their hash, so a second address does not reset the limit", async () => {
+    auth.requireUser.mockResolvedValue(alice);
     const l = createRateLimiter({ now: () => 1, limits: { perSession: 2, perIp: 100 } });
-    const first = guardRequest(good(), { limiter: l });
-    const cookie = (first.session.setCookie ?? "").split(";")[0];
-    guardRequest(good({ cookie }), { limiter: l });
-    guardRequest(good({ cookie }), { limiter: l });
-    expect(catchError(() => guardRequest(good({ cookie }), { limiter: l })).status).toBe(429);
+    await guardRequest(good({ "x-real-ip": "203.0.113.1" }), { limiter: l });
+    await guardRequest(good({ "x-real-ip": "203.0.113.2" }), { limiter: l });
+    expect((await catchError(() => guardRequest(good({ "x-real-ip": "203.0.113.3" }), { limiter: l }))).status).toBe(429);
   });
 
-  it("refuses a declared body that is too large or not a number", () => {
-    expect(catchError(() => guardRequest(good({ "content-length": "64001" }), { limiter: fresh() })).status).toBe(413);
-    expect(guardRequest(good({ "content-length": "64000" }), { limiter: fresh() }).memoryKey).toBeNull();
-    expect(catchError(() => guardRequest(good({ "content-length": "10" }), { limiter: fresh(), maxBytes: 5 })).status).toBe(413);
-    expect(catchError(() => guardRequest(good({ "content-length": "-1" }), { limiter: fresh() })).status).toBe(400);
+  it("refuses a declared body that is too large or not a number", async () => {
+    expect((await catchError(() => guardRequest(good({ "content-length": "64001" }), { limiter: fresh() }))).status).toBe(413);
+    expect((await guardRequest(good({ "content-length": "64000" }), { limiter: fresh() })).user).toBeNull();
+    expect((await catchError(() => guardRequest(good({ "content-length": "10" }), { limiter: fresh(), maxBytes: 5 }))).status).toBe(413);
+    expect((await catchError(() => guardRequest(good({ "content-length": "-1" }), { limiter: fresh() }))).status).toBe(400);
+  });
+
+  it("requireAuth: a signed-out caller gets 401, counted by address only, never as a user", async () => {
+    let checked = 0;
+    let userChecks = 0;
+    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), checkUser: () => ((userChecks += 1), { ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
+    const err = await catchError(() => guardRequest(good(), { limiter: spy, requireAuth: true }));
+    expect([err.status, err.code, checked, userChecks]).toEqual([401, "unauthorized", 1, 0]);
+  });
+
+  it("the address limit runs BEFORE the Auth call: a limited address never reaches Supabase", async () => {
+    const l = createRateLimiter({ now: () => 5, limits: { perIp: 1 } });
+    await guardRequest(good(), { limiter: l });
+    auth.requireUser.mockClear();
+    const err = await catchError(() => guardRequest(good(), { limiter: l }));
+    expect(err.status).toBe(429);
+    expect(auth.requireUser).not.toHaveBeenCalled();
+  });
+
+  it("a signed-in request counts once against the address and once against the user", async () => {
+    auth.requireUser.mockResolvedValue(alice);
+    const l = createRateLimiter({ now: () => 1, limits: { perIp: 2, perSession: 100 } });
+    await guardRequest(good(), { limiter: l });
+    await guardRequest(good(), { limiter: l });
+    expect((await catchError(() => guardRequest(good(), { limiter: l }))).status).toBe(429);
+  });
+
+  it("a configuration fault in auth is logged at ERROR with the code only, and the caller is served signed out", async () => {
+    auth.requireUser.mockRejectedValue(new AppError("config"));
+    const r = await guardRequest(good(), { limiter: fresh() });
+    expect(r.user).toBeNull();
+    expect(logs.error).toHaveBeenCalledWith("auth_unverified", expect.any(AppError), { code: "config" });
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+
+  it("requireAuth: an unreachable auth server is a 503, not a 401", async () => {
+    auth.requireUser.mockRejectedValue(new AppError("store_unavailable"));
+    const err = await catchError(() => guardRequest(good(), { limiter: fresh(), requireAuth: true }));
+    expect([err.status, err.code]).toEqual([503, "store_unavailable"]);
+  });
+
+  it("without requireAuth an auth outage serves the caller as signed out and leaves one warning with the code only", async () => {
+    auth.requireUser.mockRejectedValue(new AppError("store_unavailable"));
+    const r = await guardRequest(good(), { limiter: fresh() });
+    expect(r.user).toBeNull();
+    expect(logs.warn).toHaveBeenCalledWith("auth_unverified", { code: "store_unavailable" });
+  });
+
+  it("a plain signed-out caller is not logged: it is a normal state", async () => {
+    await guardRequest(good(), { limiter: fresh() });
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("guardRequest never throws a plain Error (07 H-16)", () => {
+  const good = (): Request => new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.7" }, body: "{}" });
+
+  it("turns an unexpected failure into a fixed AppError and keeps only the cause", async () => {
+    const boom: RateLimiter = {
+      check: () => {
+        throw new Error("secret detail user text sk-123");
+      },
+      checkUser: () => ({ ok: true }),
+      tracked: () => ({ ips: 0, sessions: 0 }),
+    };
+    const err = await guardRequest(good(), { limiter: boom }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppError);
+    expect([(err as AppError).status, (err as AppError).code]).toEqual([500, "internal"]);
+    expect((err as AppError).message).not.toContain("secret");
+  });
+
+  it("an unexpected throw from requireUser is also turned into a fixed AppError", async () => {
+    auth.requireUser.mockRejectedValue(new Error("secret detail"));
+    const err = await guardRequest(good(), { limiter: createRateLimiter({ now: () => 1 }) }).catch((e: unknown) => e);
+    expect([(err as AppError).code, (err as AppError).message]).toEqual(["internal", "internal"]);
+  });
+
+  it("a request with no readable address is still served (shared stricter bucket)", async () => {
+    const r = new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin" }, body: "{}" });
+    expect((await guardRequest(r, { limiter: createRateLimiter({ now: () => 1 }) })).ipHash).toMatch(/^[0-9a-f]{16}$/);
   });
 });
 
@@ -289,32 +407,6 @@ describe("assertSameOrigin: scheme", () => {
   });
 });
 
-describe("guardRequest never throws a plain Error (07 H-16)", () => {
-  const good = (): Request => new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.7" }, body: "{}" });
-
-  it("turns an unexpected failure into a fixed HttpError", () => {
-    const boom: RateLimiter = {
-      check: () => {
-        throw new Error("secret detail user text sk-123");
-      },
-      tracked: () => ({ ips: 0, sessions: 0 }),
-    };
-    try {
-      guardRequest(good(), { limiter: boom });
-      throw new Error("expected a throw");
-    } catch (e) {
-      expect(e).toBeInstanceOf(HttpError);
-      expect((e as HttpError).status).toBe(503);
-      expect(String((e as HttpError).message)).not.toContain("secret");
-    }
-  });
-
-  it("a request with no readable address is still served (shared stricter bucket)", () => {
-    const r = new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin" }, body: "{}" });
-    expect(guardRequest(r, { limiter: createRateLimiter({ now: () => 1 }) }).ipHash).toMatch(/^[0-9a-f]{16}$/);
-  });
-});
-
 describe("rules pinned by mutation checks", () => {
   it("the limiter tracks at most maxKeys addresses and sessions, and refusals add nothing", () => {
     const l = createRateLimiter({ now: () => 1, limits: { perInstance: 2, maxKeys: 3 } });
@@ -327,11 +419,12 @@ describe("rules pinned by mutation checks", () => {
     expect(small.tracked()).toEqual({ ips: 3, sessions: 3 });
   });
 
-  it("guardRequest gives a request with no readable address the stricter shared limit", () => {
+  it("guardRequest gives a request with no readable address the stricter shared limit", async () => {
     const l = createRateLimiter({ now: () => 1 });
     const anon = (): Request => new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin" }, body: "{}" });
-    for (let i = 0; i < 10; i++) expect(status(() => guardRequest(anon(), { limiter: l }))).toBeUndefined();
-    expect(status(() => guardRequest(anon(), { limiter: l }))).toBe(429);
+    for (let i = 0; i < 10; i++) await guardRequest(anon(), { limiter: l });
+    const err = await guardRequest(anon(), { limiter: l }).catch((e: unknown) => e);
+    expect((err as AppError).status).toBe(429);
   });
 
   it("an origin with another scheme is refused even when the host matches", () => {
