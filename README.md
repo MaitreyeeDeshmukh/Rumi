@@ -101,9 +101,9 @@ Set `enabled = true` to turn it back on. The app caches flags for 30 seconds, so
 | --- | --- |
 | `ai_enabled` | No AI calls. Every reply is the built-in fallback, marked `degraded`. |
 | `memory_sync_enabled` | Saved preferences stop syncing. They stay on the device. |
-| `cloud_sync_enabled` | Plans and settings stop saving to the cloud. They stay on the device. |
+| `cloud_sync_enabled` | Reserved. Nothing reads it yet, because plan and settings sync has not shipped, so changing it does nothing. Plans and settings stay on the device. |
 
-If the database cannot be read, AI stays on and cloud writes stay off. **This is true only after the ai-runtime lane (`lib/ai/flags.ts`) is merged.** Until then nothing reads these flags and flipping one changes nothing.
+If the database cannot be read, AI stays on and memory sync stays off. The app reads `ai_enabled` and `memory_sync_enabled` (in `lib/ai/flags.ts`), so changing those two works. Sentry (below) is not registered by default, and `cloud_sync_enabled` stays reserved until plan sync ships.
 
 ### Runbooks
 **Provider down** (Groq errors, timeouts, many fallbacks). People still get answers: the app serves the fallback and says so.
@@ -158,7 +158,7 @@ If the database cannot be read, AI stays on and cloud writes stay off. **This is
 - Telemetry never slows or fails a request.
 
 ### Sentry (optional, off)
-Not installed. The adapter and the `beforeSend` scrubber are in `apps/web/src/lib/telemetry/sentry.ts`. To turn on: `pnpm add @sentry/nextjs`, set `SENTRY_DSN`, and register the reporter as described at the top of that file. It sends the error code, fingerprint, route and release only: no message, request, user or breadcrumbs.
+Sentry is not registered by default: it is not installed and nothing sends to it until you do the steps below. The adapter and the `beforeSend` scrubber are in `apps/web/src/lib/telemetry/sentry.ts`. To turn on: `pnpm add @sentry/nextjs`, set `SENTRY_DSN`, and register the reporter as described at the top of that file. It sends the error code, fingerprint, route and release only: no message, request, user or breadcrumbs.
 
 ### One-time setup the code cannot do
 - Uptime monitor (see above). Required.

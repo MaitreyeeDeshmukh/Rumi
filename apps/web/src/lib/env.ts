@@ -1,7 +1,21 @@
 import { z } from "zod";
 
 /**
- * The only module that reads process.env. Nothing here runs at import time, and nothing parses the whole
+ * The home of the application's settings. Almost every variable is read here, but not every one. The allowed exceptions
+ * (each is a small, named read next to the code that needs it, never a second parser):
+ *  - lib/supabase/config.ts: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Next inlines `NEXT_PUBLIC_*` only when
+ *    written as a literal `process.env.NAME`, so the browser bundle cannot go through this module) and AUTH_PROXY_REFRESH.
+ *  - lib/supabase/admin.ts: SUPABASE_SECRET_KEY. It is NOT in the schema below, on purpose: the secret must be named in
+ *    exactly one source file (tests/unit/authBundle.test.ts pins that), so it cannot reach a bundle or a validation message.
+ *    A missing key is reported by name through adminConfigProblems() and missingEnvNames() in lib/telemetry/config.ts.
+ *  - lib/telemetry/config.ts: READY_TOKEN (compared in constant time), RELEASE and the Vercel build ids, TELEMETRY_DB_WRITES,
+ *    SENTRY_DSN presence. Names only are ever reported.
+ *  - lib/security/rateLimit.ts: VERCEL (whether the platform's address headers can be trusted). instrumentation.ts: NEXT_RUNTIME.
+ * EVAL_CANARY is read here, by getEvalCanary(), and is deliberately not in the schema: it is an optional override, accepted
+ * only as 8 to 64 letters, digits, underscores or hyphens (anything else falls back to the built-in marker), so a bad value
+ * can never fail validation or reach a prompt. It applies in EVAL_MODE only, never in production.
+ * The Turnstile, Cartesia and speech-to-text variables stay in the schema, so a malformed value is reported by name.
+ * Nothing here runs at import time, and nothing parses the whole
  * environment on a request path: each feature reads only its own variables (`getSessionSecret`, `getGroqConfig`,
  * `getLimits`, `mockAiEnabled`). A typo in an unrelated variable (MOCK_AI="true", AI_DAILY_USER_LIMIT=abc) therefore
  * cannot take down the crisis check or any other path. `parseEnv` and `invalidEnvNames` still validate everything,
