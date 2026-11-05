@@ -10,8 +10,6 @@
  *    keeps what it has) or from a newer app version (this tab goes read-only).
  *  - Data written by a NEWER app version (numeric version above 1) is never overwritten: the store runs in
  *    read-only mode (`readOnly`), keeps working in memory and does not save. "Delete everything" still clears it.
- *  - `verifiedRecoveryCode()` reads the code back from storage; remote writes use it, so a code that did not
- *    reach this device (full disk, other tab) can never create a remote namespace nobody can erase.
  *  - An update function must not call update() itself (the inner change would be lost); that throws.
  */
 import type { RumiState } from '@/features/shared/types';
@@ -56,8 +54,6 @@ export interface StateStore {
   update(fn: Draft): UpdateResult;
   /** Clears storage and state. If storage refuses (blocked), the state is kept and the failure is returned. */
   reset(): SaveResult;
-  /** The recovery code, only if it is valid and stored on this device exactly as it is in memory. */
-  verifiedRecoveryCode(): string | undefined;
 }
 
 const fresh = (): StateSnapshot => ({ state: defaultState(), hydrated: false, lastSave: { ok: true }, readOnly: false, droppedUpdates: 0, dropReason: null });
@@ -125,8 +121,7 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
     // A corrupt value from another tab must not blank this one; the next save writes this tab's valid state back.
     if (stored.status === 'corrupt') return;
     if (stored.status === 'future') {
-      const code = snapshot.state.persona.recoveryCode ?? stored.state.persona.recoveryCode;
-      publish({ ...snapshot, readOnly: true, state: code ? { ...snapshot.state, persona: { ...snapshot.state.persona, recoveryCode: code } } : snapshot.state });
+      publish({ ...snapshot, readOnly: true });
       return;
     }
     publish({ ...snapshot, state: stored.state, readOnly: false });
@@ -155,12 +150,6 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
       }
       publish({ state: defaultState(), hydrated: true, lastSave: result, readOnly: false, droppedUpdates: snapshot.droppedUpdates, dropReason: snapshot.dropReason });
       return result;
-    },
-    verifiedRecoveryCode() {
-      // Read-only mode never writes, so a code seen in a newer blob must not unlock remote writes.
-      if (snapshot.readOnly) return undefined;
-      const inMemory = snapshot.state.persona.recoveryCode;
-      return inspectStorage(storage).state.persona.recoveryCode === inMemory ? inMemory : undefined;
     },
   };
 }

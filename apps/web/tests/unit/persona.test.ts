@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { factsFromState, helpHistoryFor, toWireFacts } from "@/features/memory/persona";
+import { factsFromState, helpHistoryFor, mergeRemote, pendingRemovals, toSyncFacts, toWireRemovals } from "@/features/memory/persona";
 import { factText } from "@/features/memory/factText";
 import { FactsRequest } from "@/features/shared/schemas";
 import { defaultState } from "@/lib/storage";
@@ -66,8 +66,10 @@ describe("factsFromState", () => {
 
   it("keeps the old createdAt for a fact that was already there", () => {
     const s = withCard([preset("p1")]);
-    s.persona.facts = [{ id: "support_pref:p1", kind: "support_pref", key: "p1", createdAt: "earlier" }];
-    expect(factsFromState(s, NOW)[0].createdAt).toBe("earlier");
+    s.persona.facts = [{ id: "support_pref:p1", kind: "support_pref", key: "p1", createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z" }];
+    const [f] = factsFromState(s, NOW);
+    expect(f.createdAt).toBe("2026-10-01T00:00:00.000Z");
+    expect(f.updatedAt).toBe("2026-10-02T00:00:00.000Z");
   });
 
   it("privacy: facts never contain plan text, symptoms or what the person said, for hostile plans", () => {
@@ -88,7 +90,7 @@ describe("factsFromState", () => {
     s.sessions = [
       { ...session("s1", { question: 2, accommodation: 3, concern: 1 }), turns: [{ role: "me", text: "I have panic attacks and take sertraline" }] },
     ];
-    const json = JSON.stringify(factsFromState(s, NOW)) + JSON.stringify(toWireFacts(factsFromState(s, NOW)));
+    const json = JSON.stringify(factsFromState(s, NOW)) + JSON.stringify(toSyncFacts(factsFromState(s, NOW)));
     for (const secret of secrets) expect(json).not.toContain(secret);
     expect(json).not.toContain("Priya");
     expect(json).not.toMatch(/sertraline|HIV|panic|Karen|Okafor/i);
@@ -99,8 +101,8 @@ describe("helpHistoryFor", () => {
   it("returns one entry per session that used the kind, oldest first, stuck at level 3", () => {
     const s = { ...defaultState(), sessions: [session("s1", { question: 3 }), session("s2", { concern: 1 }), session("s3", { question: 1 })] };
     expect(helpHistoryFor(s, "question")).toEqual([
-      { level: 3, stuck: true },
-      { level: 1, stuck: false },
+      { level: 3, stuck: true, at: NOW },
+      { level: 1, stuck: false, at: NOW },
     ]);
     expect(helpHistoryFor(s, "accommodation")).toEqual([]);
   });
@@ -117,17 +119,106 @@ describe("helpHistoryFor", () => {
   });
 });
 
-describe("toWireFacts", () => {
-  it("drops ids and dates and passes the strict wire schema", () => {
+describe("updatedAt", () => {
+  it("a stated fact keeps its time across calls; a help level carries the time of its practice", () => {
+    const first = factsFromState(withCard([preset("p1")]), "2026-11-05T10:00:00.000Z");
+    const again = factsFromState({ ...withCard([preset("p1")]), persona: { facts: first } }, "2026-11-05T12:00:00.000Z");
+    expect(again[0].updatedAt).toBe("2026-11-05T10:00:00.000Z");
+    const s = { ...defaultState(), sessions: [{ ...session("s1", { question: 2 }), startedAt: "2026-11-04T08:00:00+02:00" }] };
+    const [h] = factsFromState(s, NOW);
+    expect(h.updatedAt).toBe("2026-11-04T06:00:00.000Z");
+  });
+
+  it("a changed level gets a new time; an unreadable stored time is replaced, never sent", () => {
+    const old = { id: "help_level:question", kind: "help_level" as const, key: "question", level: 1 as const, createdAt: "x", updatedAt: "garbage" };
+    const s = { ...defaultState(), persona: { facts: [old] }, sessions: [{ ...session("s1", { question: 2 }), startedAt: "not a time" }] };
+    expect(factsFromState(s, NOW)[0].updatedAt).toBe(NOW);
+    const same = { ...defaultState(), persona: { facts: [{ ...old, level: 2 as const }] }, sessions: [{ ...session("s1", { question: 2 }), startedAt: "not a time" }] };
+    expect(factsFromState(same, NOW)[0].updatedAt).toBe(NOW);
+  });
+});
+
+describe("toSyncFacts and toWireRemovals", () => {
+  it("send kind, key, level and the change time, and pass the strict request schema", () => {
     const facts = factsFromState(withCard([preset("p2")]), NOW);
-    const wire = toWireFacts(facts);
+    const wire = toSyncFacts(facts);
     expect(wire).toEqual([
-      { kind: "support_pref", key: "p2" },
-      { kind: "pacing", key: "one_question" },
+      { kind: "support_pref", key: "p2", client_updated_at: NOW },
+      { kind: "pacing", key: "one_question", client_updated_at: NOW },
     ]);
     expect(FactsRequest.safeParse({ facts: wire }).success).toBe(true);
-    const withLevel = toWireFacts([{ id: "help_level:question", kind: "help_level", key: "question", level: 2, createdAt: NOW }]);
-    expect(withLevel).toEqual([{ kind: "help_level", key: "question", level: 2 }]);
+    const withLevel = toSyncFacts([{ id: "help_level:question", kind: "help_level", key: "question", level: 2, createdAt: NOW, updatedAt: NOW }]);
+    expect(withLevel).toEqual([{ kind: "help_level", key: "question", level: 2, client_updated_at: NOW }]);
     expect(FactsRequest.safeParse({ facts: withLevel }).success).toBe(true);
+  });
+
+  it("removals carry stated kinds only", () => {
+    expect(toWireRemovals([{ id: "support_pref:p1", at: NOW }, { id: "help_level:question", at: NOW }, { id: "pacing:extra_time", at: NOW }])).toEqual([
+      { kind: "support_pref", key: "p1", client_updated_at: NOW },
+      { kind: "pacing", key: "extra_time", client_updated_at: NOW },
+    ]);
+  });
+});
+
+describe("pendingRemovals", () => {
+  const f = (kind: "support_pref" | "pacing" | "help_level", key: string) => ({ id: `${kind}:${key}`, kind, key, createdAt: NOW, updatedAt: NOW });
+  const LATER = "2026-11-06T00:00:00.000Z";
+
+  it("a stated fact that is gone while a support card exists becomes a removal at that time", () => {
+    const before = { facts: [f("support_pref", "p1"), f("support_pref", "p2")] };
+    expect(pendingRemovals(before, [f("support_pref", "p2")], true, LATER)).toEqual([{ id: "support_pref:p1", at: LATER }]);
+  });
+
+  it("without a support card nothing is removed: a new device cannot delete what another device saved", () => {
+    expect(pendingRemovals({ facts: [f("support_pref", "p1")] }, [], false, LATER)).toEqual([]);
+  });
+
+  it("help levels are never removed one by one", () => {
+    expect(pendingRemovals({ facts: [f("help_level", "question")] }, [], true, LATER)).toEqual([]);
+  });
+
+  it("a fact that came back is no longer pending; an older pending removal keeps its time", () => {
+    const before = { facts: [], removed: [{ id: "support_pref:p1", at: NOW }, { id: "support_pref:p2", at: NOW }] };
+    expect(pendingRemovals(before, [f("support_pref", "p1")], true, LATER)).toEqual([{ id: "support_pref:p2", at: NOW }]);
+  });
+});
+
+describe("mergeRemote", () => {
+  const OLD = "2026-11-01T00:00:00.000Z";
+  const NEW = "2026-11-05T00:00:00.000Z";
+  const local = (updatedAt: string, level?: 0 | 1 | 2 | 3): RumiState => ({
+    ...defaultState(),
+    persona: { facts: [{ id: "help_level:question", kind: "help_level", key: "question", level: level ?? 1, createdAt: OLD, updatedAt }] },
+  });
+
+  it("a newer stored copy replaces the local one (a stale device does not win)", () => {
+    const merged = mergeRemote(local(OLD), [{ kind: "help_level", key: "question", level: 3, client_updated_at: NEW }]);
+    expect(merged).toEqual([{ id: "help_level:question", kind: "help_level", key: "question", level: 3, createdAt: OLD, updatedAt: NEW }]);
+  });
+
+  it("an older or equal stored copy changes nothing", () => {
+    const s = local(NEW);
+    expect(mergeRemote(s, [{ kind: "help_level", key: "question", level: 3, client_updated_at: OLD }])).toEqual(s.persona.facts);
+    expect(mergeRemote(s, [{ kind: "help_level", key: "question", level: 3, client_updated_at: NEW }])).toEqual(s.persona.facts);
+  });
+
+  it("a local fact with an unreadable time loses to any stored copy", () => {
+    const merged = mergeRemote(local("garbage"), [{ kind: "help_level", key: "question", level: 2, client_updated_at: OLD }]);
+    expect(merged[0].level).toBe(2);
+  });
+
+  it("a new device (no support card) takes what is stored", () => {
+    const merged = mergeRemote(defaultState(), [{ kind: "support_pref", key: "p1", client_updated_at: NEW }]);
+    expect(merged.map((m) => m.id)).toEqual(["support_pref:p1"]);
+  });
+
+  it("a device that has a support card does not take back a stated fact it does not have", () => {
+    const s = withCard([preset("p2")]);
+    expect(mergeRemote(s, [{ kind: "support_pref", key: "p1", client_updated_at: NEW }])).toEqual([]);
+  });
+
+  it("a fact pending removal is not taken back even without a card", () => {
+    const s = { ...defaultState(), persona: { facts: [], removed: [{ id: "support_pref:p1", at: NEW }] } };
+    expect(mergeRemote(s, [{ kind: "support_pref", key: "p1", client_updated_at: OLD }])).toEqual([]);
   });
 });

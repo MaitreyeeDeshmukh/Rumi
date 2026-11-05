@@ -23,7 +23,8 @@ describe("parseEnv", () => {
 
   it("requires signing secrets to be at least 32 characters and never echoes them", () => {
     expect(() => parseEnv({ SESSION_SECRET: "short-secret" })).toThrow(/SESSION_SECRET/);
-    expect(() => parseEnv({ MEMORY_TAG_SECRET: "y".repeat(31) })).toThrow(/MEMORY_TAG_SECRET/);
+    // The Supermemory variables are gone: setting them is ignored, not validated.
+    expect(parseEnv({ MEMORY_TAG_SECRET: "y", SUPERMEMORY_API_KEY: "z" })).toEqual({});
     expect(parseEnv({ SESSION_SECRET: SECRET }).SESSION_SECRET).toBe(SECRET);
     try {
       parseEnv({ SESSION_SECRET: "short-secret" });

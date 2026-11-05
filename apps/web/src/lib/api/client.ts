@@ -4,7 +4,6 @@
  * It never throws: every failure becomes an ApiResult with fixed, friendly wording.
  */
 import type { z } from 'zod';
-import { isRecoveryCode } from '@/features/memory/recoveryCode';
 import type { ApiErrorCode, ApiResult } from '@/features/shared/types';
 
 export type ApiPath = '/api/plan' | '/api/practice' | '/api/sayit' | '/api/recap';
@@ -18,8 +17,6 @@ export interface CallApiDeps {
 }
 
 export interface CallOpts {
-  /** Sent as x-rumi-key only when it is a valid recovery code. */
-  memoryCode?: string;
   /** The strings the person typed in this request. When non-empty, only these get the crisis check
    *  (a clinician turn or a stored plan item that mentions a symptom must not look like a crisis).
    *  An empty list does NOT switch the check off: it falls back to checking the whole body. */
@@ -128,10 +125,7 @@ export function createCallApi({ fetchFn, isCrisis, isOnline, timeoutMs = API_TIM
           method: 'POST',
           credentials: 'same-origin',
           signal: ctl.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            ...(opts.memoryCode !== undefined && isRecoveryCode(opts.memoryCode) ? { 'x-rumi-key': opts.memoryCode } : {}),
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: payload,
         });
         const text = await readCapped(res, MAX_REPLY_BYTES);

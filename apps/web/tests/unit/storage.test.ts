@@ -4,7 +4,6 @@ import { parseState } from "@/lib/storage-schema";
 import { fakeStorage } from "./helpers/fakeStorage";
 import type { RumiState } from "@/features/shared/types";
 
-const CODE = "ABCDE-FGHJK-LMNPQ-RSTUV";
 const session = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
   planId: "plan-1",
@@ -93,14 +92,41 @@ describe("loadState: one bad field never resets everything", () => {
     expect(load(base({ plan: { ...plan(), items: "x" }, sessions: [session("s1")] })).sessions).toHaveLength(1);
   });
 
-  it("a recovery code with a newline is dropped and memory is switched off with it", () => {
-    const bad = load(base({ settings: { ...defaultSettings(), memoryOptIn: true }, persona: { facts: [], recoveryCode: CODE + "\n" } }));
-    expect(bad.persona.recoveryCode).toBeUndefined();
-    expect(bad.settings.memoryOptIn).toBe(false);
-    const good = load(base({ settings: { ...defaultSettings(), memoryOptIn: true }, persona: { facts: [], recoveryCode: CODE } }));
-    expect(good.persona.recoveryCode).toBe(CODE);
-    expect(good.settings.memoryOptIn).toBe(true);
-    expect(load(base({ settings: { ...defaultSettings(), memoryOptIn: true }, persona: { facts: [] } })).settings.memoryOptIn).toBe(false);
+  it("an old recovery code in storage is ignored, and the memory switch is kept as the person left it", () => {
+    const s = load(base({ settings: { ...defaultSettings(), memoryOptIn: true }, persona: { facts: [], recoveryCode: "ABCDE-FGHJK-LMNPQ-RSTUV" } }));
+    expect(s.settings.memoryOptIn).toBe(true);
+    expect(s.persona).toEqual({ facts: [] });
+    expect(load(base({ settings: { ...defaultSettings(), memoryOptIn: true } })).settings.memoryOptIn).toBe(true);
+  });
+
+  it("a fact without updatedAt (saved before it existed) gets its creation time; a bad time is not kept as a time", () => {
+    const f = (extra: object) => load(base({ persona: { facts: [{ kind: "support_pref", key: "p1", createdAt: "2026-11-01T00:00:00.000Z", ...extra }] } })).persona.facts[0];
+    expect(f({}).updatedAt).toBe("2026-11-01T00:00:00.000Z");
+    expect(f({ updatedAt: "2026-11-02T00:00:00.000Z" }).updatedAt).toBe("2026-11-02T00:00:00.000Z");
+    expect(f({ updatedAt: 5 }).updatedAt).toBe("2026-11-01T00:00:00.000Z");
+  });
+
+  it("pending removals: only stated facts with a real time survive; ids are rebuilt, duplicates and hostile entries dropped", () => {
+    const at = "2026-11-03T00:00:00.000Z";
+    const removed = [
+      { id: "support_pref:p1", at },
+      { id: "support_pref:p1", at: "2026-11-04T00:00:00.000Z" },
+      { id: "pacing:one_question", at },
+      { id: "help_level:question", at },
+      { id: "support_pref:p9", at },
+      { id: "support_pref:p2:extra", at },
+      { id: "support_pref:p3", at: "not a time" },
+      { id: "support_pref:p4" },
+      { id: "constructor", at },
+      "x",
+      null,
+    ];
+    expect(load(base({ persona: { facts: [], removed } })).persona.removed).toEqual([
+      { id: "support_pref:p1", at },
+      { id: "pacing:one_question", at },
+    ]);
+    expect(load(base({ persona: { facts: [], removed: "x" } })).persona).toEqual({ facts: [] });
+    expect(load(base({ persona: { facts: [], removed: Array.from({ length: 50 }, () => ({ id: "support_pref:p1", at })) } })).persona.removed).toHaveLength(1);
   });
 
   it("persona facts: invalid, duplicate and old kinds are dropped, ids are rebuilt, no free text survives", () => {
@@ -315,12 +341,12 @@ describe("inspectStorage", () => {
 describe("hostile stored data", () => {
   it("prototype pollution through settings, persona, facts and sessions changes nothing", () => {
     const raw = JSON.parse(
-      '{"version":1,"__proto__":{"polluted":1},"settings":{"__proto__":{"p2":1},"theme":"</style><script>","textScale":null,"speechRate":1e999,"companionName":"x\\ny"},"persona":{"__proto__":{"recoveryCode":"' + CODE + '"},"facts":[{"__proto__":{"kind":"support_pref","key":"p1"}}]},"sessions":[{"__proto__":{"x":1}}]}',
+      '{"version":1,"__proto__":{"polluted":1},"settings":{"__proto__":{"p2":1},"theme":"</style><script>","textScale":null,"speechRate":1e999,"companionName":"x\\ny"},"persona":{"__proto__":{"removed":[{"id":"support_pref:p1","at":"2026-11-03T00:00:00.000Z"}]},"facts":[{"__proto__":{"kind":"support_pref","key":"p1"}}]},"sessions":[{"__proto__":{"x":1}}]}',
     );
     const s = parseState(raw);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(s.settings).toEqual(defaultSettings());
-    expect(s.persona.recoveryCode).toBeUndefined();
+    expect(s.persona.removed).toBeUndefined();
     expect(s.persona.facts).toEqual([]);
     expect(s.sessions).toEqual([]);
   });

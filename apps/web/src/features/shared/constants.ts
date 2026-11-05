@@ -12,6 +12,10 @@ export const HELP_LEVELS = [0, 1, 2, 3] as const;
 export const SUPPORT_PRESET_IDS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'] as const;
 export const PACING_KEYS = ['one_question', 'extra_time'] as const;
 export const FACT_KINDS = ['support_pref', 'pacing', 'help_level'] as const;
+/** The only kinds that may enter a prompt. `help_level` is read by code only. */
+export const STATED_FACT_KINDS = ['support_pref', 'pacing'] as const;
+/** Most facts in one write (matches persona_upsert_facts, which refuses more than 100). */
+export const FACTS_BATCH_MAX = 100;
 
 /** Ids from the browser are untrusted: letters, digits, underscore, hyphen only. */
 export const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;

@@ -21,8 +21,6 @@ const schema = z.object({
   GROQ_MODEL_FAST: nonEmpty.optional(),
   GROQ_MODEL_STT: nonEmpty.optional(),
   SESSION_SECRET: secret.optional(),
-  MEMORY_TAG_SECRET: secret.optional(),
-  SUPERMEMORY_API_KEY: nonEmpty.optional(),
   MEMORY_ENABLED: flag.optional(),
   CARTESIA_API_KEY: nonEmpty.optional(),
   CARTESIA_VERSION: nonEmpty.optional(),

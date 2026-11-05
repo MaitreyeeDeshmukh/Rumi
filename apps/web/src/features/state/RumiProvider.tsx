@@ -33,7 +33,7 @@ export function createRumiProvider(hooks: ProviderHooks) {
 
 export const RumiProvider = createRumiProvider({ useState, useEffect });
 
-/** The store itself, for logic that needs `verifiedRecoveryCode()` (memory actions). */
+/** The store itself, for logic that runs outside React renders (memory actions). */
 export function useRumiStore(): StateStore {
   const store = useContext(StoreContext);
   if (!store) throw new Error('useRumi outside RumiProvider');

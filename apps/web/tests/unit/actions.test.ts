@@ -1,587 +1,403 @@
-import { describe, expect, it, vi } from "vitest";
-import { createMemoryActions, memoryCodeFor } from "@/features/memory/actions";
-import { isRecoveryCode } from "@/features/memory/recoveryCode";
-import { tagFromCode } from "@/features/memory/tag";
+import { describe, expect, it } from "vitest";
 import { createStateStore } from "@/features/state/stateStore";
-import { KEY, defaultState, loadState } from "@/lib/storage";
+import { KEY, loadState } from "@/lib/storage";
+import { fakeMemoryDb } from "./helpers/fakeMemoryDb";
 import { fakeStorage } from "./helpers/fakeStorage";
-import { TEST_SECRET, fakeMemoryApi } from "./helpers/fakeMemoryApi";
-import type { RumiState, SupportItem } from "@/features/shared/types";
+import { json, memoryDevice, practice, preset } from "./helpers/memoryDevice";
+import { createMemoryActions } from "@/features/memory/actions";
 
-const CODE = "ABCDE-FGHJK-LMNPQ-RSTUV";
-const preset = (id: string, enabled = true): SupportItem => ({ id, text: "x", source: "preset", enabled });
+const CARD = [preset("p1"), preset("p2"), preset("p5", false)];
+const T1 = "2026-11-05T10:00:00.000Z";
+const T2 = "2026-11-05T11:00:00.000Z";
+const ids = (d: ReturnType<typeof memoryDevice>) => d.state().persona.facts.map((f) => f.id).sort();
+const stored = (db: ReturnType<typeof fakeMemoryDb>) => [...db.rows.keys()].sort();
 
-function setup(fetchFn: typeof fetch, mutate?: (s: RumiState) => void) {
-  const storage = fakeStorage();
-  const store = createStateStore({ storage });
-  store.hydrate();
-  store.update((d) => {
-    d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1"), preset("p2"), preset("p5", false)] };
-    mutate?.(d);
-  });
-  const actions = createMemoryActions({ store, fetchFn, now: () => "2026-11-05T10:00:00.000Z", timeoutMs: 500 });
-  return { storage, store, actions, state: () => store.getSnapshot().state };
-}
-const ok = (body: unknown) => async () => Response.json(body);
-
-describe("memoryCodeFor", () => {
-  it("returns the code only while memory is on and the code is valid", () => {
-    const s = defaultState();
-    s.persona.recoveryCode = CODE;
-    expect(memoryCodeFor(s)).toBeUndefined();
-    s.settings.memoryOptIn = true;
-    expect(memoryCodeFor(s)).toBe(CODE);
-    s.persona.recoveryCode = CODE + "\n";
-    expect(memoryCodeFor(s)).toBeUndefined();
-    delete s.persona.recoveryCode;
-    expect(memoryCodeFor(s)).toBeUndefined();
+describe("setAuthStatus", () => {
+  it("without any sign-in information nothing goes out; once the screen reports ready it does, and offline stops it again", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    const bare = createMemoryActions({ store: d.store, fetchFn: (async () => json(200, {})) as typeof fetch });
+    expect(await bare.enableMemory()).toEqual({ ok: false, remote: "paused" });
+    bare.setAuthStatus("ready");
+    expect((await bare.enableMemory()).remote).toBe("failed"); // reached the fake network, which answered nothing useful
+    bare.setAuthStatus("offline");
+    expect(await bare.enableMemory()).toEqual({ ok: false, remote: "paused" });
   });
 });
 
-describe("syncPersona with memory off", () => {
-  it("saves facts on the device and makes no network call", async () => {
-    const fetchFn = vi.fn(ok({ saved: 0, rejected: 0 }));
-    const { actions, state, storage } = setup(fetchFn);
-    expect(await actions.syncPersona()).toEqual({ saved: 3, remote: "off" });
-    expect(fetchFn).not.toHaveBeenCalled();
-    const ids = ["support_pref:p1", "support_pref:p2", "pacing:one_question"];
-    expect(state().persona.facts.map((f) => f.id)).toEqual(ids);
-    expect(loadState(storage).persona.facts.map((f) => f.id)).toEqual(ids);
+describe("syncPersona: local first", () => {
+  it("memory off: facts are saved on the device, nothing goes over the network", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    expect(await d.actions.syncPersona()).toEqual({ saved: 3, remote: "off" });
+    expect(ids(d)).toEqual(["pacing:one_question", "support_pref:p1", "support_pref:p2"]);
+    expect(loadState(d.storage).persona.facts).toHaveLength(3);
+    expect(d.calls).toEqual([]);
+    expect(db.calls).toEqual([]);
+  });
+
+  it("nothing runs before the state is hydrated", async () => {
+    const d = memoryDevice(fakeMemoryDb(), { hydrate: false, card: [] });
+    expect(await d.actions.syncPersona()).toEqual({ saved: 0, remote: "failed" });
+    expect(await d.actions.enableMemory()).toEqual({ ok: false, remote: "failed" });
+    expect(await d.actions.disableMemory()).toEqual({ ok: false, remote: "failed" });
+    expect(await d.actions.forgetAll()).toEqual({ remote: "failed" });
+    expect(d.calls).toEqual([]);
   });
 });
 
 describe("enableMemory", () => {
-  it("creates a valid code once, keeps it on a second call, and posts the wire facts with the header", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state } = setup(api.fetchFn);
-    const first = await actions.enableMemory();
-    expect(first).toEqual({ ok: true, remote: "ok" });
-    const code = state().persona.recoveryCode as string;
-    expect(isRecoveryCode(code)).toBe(true);
-    expect(state().settings.memoryOptIn).toBe(true);
-    await actions.enableMemory();
-    expect(state().persona.recoveryCode).toBe(code);
-    const call = api.calls[0];
-    expect(call.path).toBe("/api/memory/facts");
-    expect(call.headers["x-rumi-key"]).toBe(code);
-    expect(JSON.parse(call.body)).toEqual({
+  it("grants consent on the server, switches on, and pushes the facts", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    expect(await d.actions.enableMemory()).toEqual({ ok: true, remote: "ok" });
+    expect(d.state().settings.memoryOptIn).toBe(true);
+    expect(db.consent).toBe(true);
+    expect(stored(db)).toEqual(["pacing:one_question", "support_pref:p1", "support_pref:p2"]);
+    expect(d.calls.map((c) => c.path)).toEqual(["/api/memory/consent", "/api/memory/facts"]);
+    expect(d.calls[0].body).toEqual({ granted: true });
+  });
+
+  it("sends only kind, key, level and a change time: no ids, no text, no code", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    expect(d.calls[1].body).toEqual({
       facts: [
-        { kind: "support_pref", key: "p1" },
-        { kind: "support_pref", key: "p2" },
-        { kind: "pacing", key: "one_question" },
+        { kind: "support_pref", key: "p1", client_updated_at: T1 },
+        { kind: "support_pref", key: "p2", client_updated_at: T1 },
+        { kind: "pacing", key: "one_question", client_updated_at: T1 },
       ],
+      removed: [],
     });
   });
 
-  it("does not switch memory on when the code cannot be saved on this device, and sends nothing", async () => {
-    const fetchFn = vi.fn(ok({ saved: 0, rejected: 0 }));
-    const { actions, state, storage } = setup(fetchFn);
-    storage.failWrites = new DOMException("full", "QuotaExceededError");
-    expect(await actions.enableMemory()).toEqual({ ok: false, remote: "failed" });
-    expect(state().settings.memoryOptIn).toBe(false);
-    expect(state().persona.recoveryCode).toBeUndefined();
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-});
-
-describe("syncPersona with memory on", () => {
-  it("a failing, rejecting or malformed answer is `failed`, and local facts are still saved", async () => {
-    for (const fetchFn of [
-      async () => new Response("no", { status: 500 }),
-      async () => Promise.reject(new Error("net")),
-      ok({ unexpected: true }),
-      async () => new Response("not json", { status: 200 }),
-    ]) {
-      const { actions, state } = setup(fetchFn);
-      const r = await actions.enableMemory();
-      expect(r.remote).toBe("failed");
-      expect(state().persona.facts.length).toBeGreaterThan(0);
-      expect(state().settings.memoryOptIn).toBe(true);
+  it("sign-in not ready: paused, memory stays off, nothing is sent", async () => {
+    for (const status of ["signing_in", "degraded", "offline"] as const) {
+      const d = memoryDevice(fakeMemoryDb(), { card: CARD, auth: status });
+      expect(await d.actions.enableMemory()).toEqual({ ok: false, remote: "paused" });
+      expect(d.state().settings.memoryOptIn).toBe(false);
+      expect(d.calls).toEqual([]);
     }
   });
 
-  it("an error status counts as failed even when its body looks like a good answer", async () => {
-    const bad = (async () => Response.json({ saved: 1, rejected: 0 }, { status: 500 })) as typeof fetch;
-    const { actions } = setup(bad);
-    expect((await actions.enableMemory()).remote).toBe("failed");
-    const badForget = (async () => Response.json({ status: "ok" }, { status: 500 })) as typeof fetch;
-    const second = setup(badForget);
-    second.store.update((d) => void (d.persona.recoveryCode = CODE));
-    expect(await second.actions.forgetAll()).toEqual({ remote: "failed" });
+  it("the server cannot be reached: memory stays off, the person is told it failed", async () => {
+    const d = memoryDevice(fakeMemoryDb(), { card: CARD });
+    d.answers.push("throw", "throw", "throw");
+    expect(await d.actions.enableMemory()).toEqual({ ok: false, remote: "failed" });
+    expect(d.state().settings.memoryOptIn).toBe(false);
+  });
+});
+
+describe("syncPersona: remote", () => {
+  async function enabled(over = {}) {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD, ...over });
+    await d.actions.enableMemory();
+    d.calls.length = 0;
+    return { db, d };
+  }
+
+  it("while sign-in is not ready the facts stay on the device and the status is paused; the next sync catches up", async () => {
+    const { db, d } = await enabled();
+    d.auth.status = "offline";
+    d.store.update((x) => void (x.supportCard = { id: "c", topQuestionIds: [], items: [preset("p3")] }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "paused" });
+    expect(d.calls).toEqual([]);
+    expect(stored(db)).not.toContain("support_pref:p3");
+    d.auth.status = "ready";
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "ok" });
+    expect(stored(db)).toContain("support_pref:p3");
   });
 
-  it("times out instead of hanging", async () => {
-    const hang = ((_u: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_res, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("a", "AbortError"))))) as typeof fetch;
-    const { actions } = setup(hang);
-    expect((await actions.enableMemory()).remote).toBe("failed");
+  it("retries a 503 twice with growing, jittered waits, then succeeds", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(503, {}), json(503, {}));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "ok" });
+    expect(d.calls).toHaveLength(3);
+    expect(d.sleeps).toEqual([300, 600]);
   });
 
-  it("a sync that re-saves the code to storage may go ahead", async () => {
-    const api = fakeMemoryApi();
-    const { actions, storage, state } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const code = state().persona.recoveryCode;
-    expect(isRecoveryCode(code as string)).toBe(true);
-    const raw = JSON.parse(storage.data.get(KEY) as string);
-    delete raw.persona.recoveryCode;
-    storage.data.set(KEY, JSON.stringify(raw));
-    expect((await actions.syncPersona()).remote).toBe("ok");
-    expect(JSON.parse(storage.data.get(KEY) as string).persona.recoveryCode).toBe(code);
+  it("honours Retry-After on a 429", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(429, {}, { "retry-after": "2" }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "ok" });
+    expect(d.sleeps).toEqual([2000]);
   });
 
-  it("does not write remotely when the code can no longer be read back from storage", async () => {
-    const api = fakeMemoryApi();
-    const { actions, storage } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const before = api.calls.length;
-    const raw = JSON.parse(storage.data.get(KEY) as string);
-    raw.persona.recoveryCode = "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ";
-    storage.data.set(KEY, JSON.stringify(raw));
-    storage.failWrites = new DOMException("full", "QuotaExceededError");
-    expect((await actions.syncPersona()).remote).toBe("failed");
-    expect(api.calls.length).toBe(before);
+  it("never retries a 4xx", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(400, { error: { code: "bad_input" } }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+    expect(d.calls).toHaveLength(1);
+    expect(d.sleeps).toEqual([]);
   });
 
-  it("turning a preference off sends the shorter list, so the server can remove it remotely", async () => {
-    const api = fakeMemoryApi();
-    const { actions, store } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const ns = tagFromCode(store.getSnapshot().state.persona.recoveryCode as string, TEST_SECRET);
-    expect(api.sm.docs(ns).size).toBe(3);
-    store.update((d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1"), preset("p2", false)] }));
-    await actions.syncPersona();
-    expect([...api.sm.docs(ns).keys()]).toEqual(["support_pref:p1"]);
-    store.update((d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1", false)] }));
-    await actions.syncPersona();
-    expect(JSON.parse(api.calls.at(-1)?.body ?? "{}")).toEqual({ facts: [] });
-    expect(api.sm.docs(ns).size).toBe(0);
+  it("network down: gives up after the last try as failed, loses nothing, and the next sync works", async () => {
+    const { db, d } = await enabled();
+    d.answers.push("throw", "throw", "throw");
+    const before = d.state().persona.facts;
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+    expect(d.calls).toHaveLength(3);
+    expect(d.state().persona.facts).toEqual(before);
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "ok" });
+    expect(stored(db)).toHaveLength(3);
   });
 
-  it("two quick syncs run one after the other", async () => {
-    let inFlight = 0;
-    let max = 0;
-    const slow = (async () => {
-      inFlight++;
-      max = Math.max(max, inFlight);
-      await new Promise((r) => setTimeout(r, 15));
-      inFlight--;
-      return Response.json({ saved: 1, rejected: 0 });
-    }) as typeof fetch;
-    const { actions } = setup(slow);
-    await actions.enableMemory();
-    await Promise.all([actions.syncPersona(), actions.syncPersona(), actions.syncPersona()]);
-    expect(max).toBe(1);
+  it("an answer that is not the expected shape is a failure, not a success", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(200, { saved: 3 }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+  });
+
+  it("a stored fact in the answer that fails the allowlist makes the answer a failure and nothing from it is kept", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(200, { saved: 0, rejected: 0, facts: [{ kind: "support_pref", key: "free text", client_updated_at: T1 }] }));
+    const before = d.state().persona.facts;
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+    expect(d.state().persona.facts).toEqual(before);
+  });
+
+  it("a request the client itself cannot make valid is not sent (poisoned clock)", async () => {
+    const { d } = await enabled();
+    d.clock.at = "not a time";
+    d.store.update((x) => void (x.supportCard = { id: "c", topQuestionIds: [], items: [preset("p3")] }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+    expect(d.calls).toEqual([]);
+  });
+
+  it("consent revoked on the server mid-sync: writing stops, memory switches off here, and it is not reported as a failure", async () => {
+    const { db, d } = await enabled();
+    db.consent = false;
+    d.store.update((x) => void (x.supportCard = { id: "c", topQuestionIds: [], items: [preset("p3")] }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "off" });
+    expect(d.state().settings.memoryOptIn).toBe(false);
+    expect(stored(db)).not.toContain("support_pref:p3");
+    d.calls.length = 0;
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "off" });
+    expect(d.calls).toEqual([]); // no more pushes
+  });
+
+  it("a 403 that is not about consent is a failure, and memory stays on", async () => {
+    const { d } = await enabled();
+    d.answers.push(json(403, { error: { code: "forbidden" } }));
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+    expect(d.state().settings.memoryOptIn).toBe(true);
+  });
+
+  it("the sync flag off on the server: failed (503 is retried and then reported), local data untouched", async () => {
+    const { d } = await enabled();
+    d.flag.on = false;
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "failed" });
+    expect(d.calls).toHaveLength(3);
+    expect(d.state().persona.facts).toHaveLength(3);
+  });
+
+  it("two quick taps run one after another, never interleaved", async () => {
+    const { db, d } = await enabled();
+    db.delayMs = 5;
+    const order: string[] = [];
+    await Promise.all([
+      d.actions.syncPersona().then(() => order.push("a")),
+      d.actions.syncPersona().then(() => order.push("b")),
+    ]);
+    expect(order).toEqual(["a", "b"]);
+    expect(stored(db)).toHaveLength(3);
+  });
+});
+
+describe("two devices: last write wins", () => {
+  const withHelp = (at: string, level: 0 | 1 | 2 | 3) => (d: ReturnType<typeof memoryDevice>) =>
+    d.store.update((x) => void (x.sessions = [practice("s", at, { question: level })]));
+
+  it("a stale device does not overwrite a newer fact, and it adopts the newer one", async () => {
+    const db = fakeMemoryDb();
+    const a = memoryDevice(db, { card: [] });
+    const b = memoryDevice(db, { card: [] });
+    withHelp(T2, 3)(a); // newer practice, on device A
+    withHelp(T1, 0)(b); // older practice, on device B
+    await a.actions.enableMemory();
+    await b.actions.enableMemory();
+    expect(db.rows.get("help_level:question")).toMatchObject({ level: 3, client_updated_at: T2 });
+    expect(b.state().persona.facts.find((f) => f.id === "help_level:question")?.level).toBe(3);
+  });
+
+  it("a new device (no support card yet) takes what the account already holds", async () => {
+    const db = fakeMemoryDb();
+    const a = memoryDevice(db, { card: CARD });
+    await a.actions.enableMemory();
+    const fresh = memoryDevice(db);
+    expect(await fresh.actions.enableMemory()).toEqual({ ok: true, remote: "ok" });
+    expect(ids(fresh)).toEqual(["pacing:one_question", "support_pref:p1", "support_pref:p2"]);
+  });
+
+  it("a new device never deletes what another device saved", async () => {
+    const db = fakeMemoryDb();
+    await memoryDevice(db, { card: CARD }).actions.enableMemory();
+    const fresh = memoryDevice(db);
+    await fresh.actions.enableMemory();
+    await fresh.actions.syncPersona();
+    expect(stored(db)).toHaveLength(3);
+  });
+
+  it("turning a preference off removes it from the account, and a second device without a card does not bring it back", async () => {
+    const db = fakeMemoryDb();
+    const a = memoryDevice(db, { card: CARD });
+    await a.actions.enableMemory();
+    a.clock.at = T2;
+    a.store.update((x) => void (x.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1", false), preset("p2")] }));
+    expect(await a.actions.syncPersona()).toMatchObject({ remote: "ok" });
+    expect(stored(db)).toEqual(["pacing:one_question", "support_pref:p2"]);
+    expect(a.state().persona.removed).toBeUndefined();
+    expect(ids(a)).toEqual(["pacing:one_question", "support_pref:p2"]);
+  });
+
+  it("a removal made offline waits and is sent on the next good sync; a newer copy from another device survives it", async () => {
+    const db = fakeMemoryDb();
+    const a = memoryDevice(db, { card: CARD });
+    await a.actions.enableMemory();
+    a.auth.status = "offline";
+    a.clock.at = "2026-11-05T10:30:00.000Z"; // between the first write and device B's newer one
+    a.store.update((x) => void (x.supportCard = { id: "c", topQuestionIds: [], items: [preset("p2")] }));
+    expect(await a.actions.syncPersona()).toMatchObject({ remote: "paused" });
+    expect(a.state().persona.removed).toEqual([{ id: "support_pref:p1", at: "2026-11-05T10:30:00.000Z" }]);
+    // Device B re-enabled p1 after A turned it off.
+    db.rows.set("support_pref:p1", { kind: "support_pref", key: "p1", level: null, client_updated_at: T2 });
+    a.auth.status = "ready";
+    await a.actions.syncPersona();
+    expect(stored(db)).toContain("support_pref:p1");
+    expect(a.state().persona.removed).toBeUndefined();
+  });
+
+  it("a removal made while a sync is in flight is kept for the next sync", async () => {
+    const db = fakeMemoryDb();
+    const a = memoryDevice(db, { card: CARD });
+    await a.actions.enableMemory();
+    db.delayMs = 10;
+    a.clock.at = T2;
+    a.store.update((x) => void (x.supportCard = { id: "c", topQuestionIds: [], items: [preset("p2")] }));
+    const syncing = a.actions.syncPersona();
+    await new Promise((r) => setTimeout(r, 2));
+    a.store.update((x) => void (x.persona.removed = [...(x.persona.removed ?? []), { id: "support_pref:p9", at: T2 }]));
+    await syncing;
+    expect(a.state().persona.removed?.map((r) => r.id)).toContain("support_pref:p9");
   });
 });
 
 describe("disableMemory", () => {
-  it("switches memory off, keeps the code and the facts, and never calls the server", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const code = state().persona.recoveryCode;
-    const calls = api.calls.length;
-    await actions.disableMemory();
-    expect(state().settings.memoryOptIn).toBe(false);
-    expect(state().persona.recoveryCode).toBe(code);
-    expect(state().persona.facts.length).toBeGreaterThan(0);
-    expect(api.calls.length).toBe(calls);
-    expect(await actions.syncPersona()).toMatchObject({ remote: "off" });
-    expect(api.calls.length).toBe(calls);
+  it("revokes consent on the server first, then switches off; saved facts stay until deleted", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    expect(await d.actions.disableMemory()).toEqual({ ok: true, remote: "off" });
+    expect(db.consent).toBe(false);
+    expect(d.state().settings.memoryOptIn).toBe(false);
+    expect(stored(db)).toHaveLength(3);
+    d.calls.length = 0;
+    expect(await d.actions.syncPersona()).toMatchObject({ remote: "off" });
+    expect(d.calls).toEqual([]);
+  });
+
+  it("if the server cannot be told, memory is still on there and must not look off here", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    d.answers.push("throw", "throw", "throw");
+    expect(await d.actions.disableMemory()).toEqual({ ok: false, remote: "failed" });
+    expect(d.state().settings.memoryOptIn).toBe(true);
+    d.auth.status = "offline";
+    expect(await d.actions.disableMemory()).toEqual({ ok: false, remote: "paused" });
+    expect(d.state().settings.memoryOptIn).toBe(true);
+  });
+
+  it("already off: nothing to do and nothing sent", async () => {
+    const d = memoryDevice(fakeMemoryDb(), { card: CARD });
+    expect(await d.actions.disableMemory()).toEqual({ ok: true, remote: "off" });
+    expect(d.calls).toEqual([]);
   });
 });
 
 describe("forgetAll and deleteEverything", () => {
-  it("forget removes the remote copy, then clears the code, the switch and the facts", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state, store } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const ns = tagFromCode(state().persona.recoveryCode as string, TEST_SECRET);
-    expect(api.sm.docs(ns).size).toBe(3);
-    expect(await actions.forgetAll()).toEqual({ remote: "ok" });
-    expect(api.sm.docs(ns).size).toBe(0);
-    expect(state().persona).toEqual({ facts: [] });
-    expect(state().settings.memoryOptIn).toBe(false);
-    expect(store.getSnapshot().state.supportCard?.items.map((i) => i.id)).toEqual(["p1", "p2", "p5"]);
-    const forget = api.calls.at(-1);
-    expect(forget?.path).toBe("/api/memory/forget");
-    const sent = JSON.parse(forget?.body ?? "") as { sinceSyncMs: number };
-    expect(Object.keys(sent)).toEqual(["sinceSyncMs"]);
-    expect(sent.sinceSyncMs).toBeGreaterThanOrEqual(0);
+  it("erases the account's copy, then clears facts here and switches memory off", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    expect(await d.actions.forgetAll()).toEqual({ remote: "ok" });
+    expect(db.rows.size).toBe(0);
+    expect(d.state().persona).toEqual({ facts: [] });
+    expect(d.state().settings.memoryOptIn).toBe(false);
   });
 
-  it("when the server says failed, the code, the switch and the facts stay", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const ns = tagFromCode(state().persona.recoveryCode as string, TEST_SECRET);
-    api.sm.stuckIds.add("support_pref:p1");
-    const code = state().persona.recoveryCode;
-    expect(await actions.forgetAll()).toEqual({ remote: "failed" });
-    expect(state().persona.recoveryCode).toBe(code);
-    expect(state().settings.memoryOptIn).toBe(true);
-    expect(state().persona.facts.length).toBeGreaterThan(0);
-    expect(api.sm.docs(ns).has("support_pref:p1")).toBe(true);
+  it("rows left on the server: failed, and the facts, the switch and the pending removals stay", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    db.stuckRows = 2;
+    expect(await d.actions.forgetAll()).toEqual({ remote: "failed" });
+    expect(d.state().persona.facts).toHaveLength(3);
+    expect(d.state().settings.memoryOptIn).toBe(true);
   });
 
-  it("an error, a bad answer or a timeout is failed too", async () => {
-    for (const fetchFn of [async () => new Response("x", { status: 500 }), ok({ status: "maybe" }), ok({}), async () => Promise.reject(new Error("net"))]) {
-      const { actions, state, store } = setup(fetchFn);
-      store.update((d) => {
-        d.persona.recoveryCode = CODE;
-        d.settings.memoryOptIn = true;
-      });
-      expect(await actions.forgetAll()).toEqual({ remote: "failed" });
-      expect(state().persona.recoveryCode).toBe(CODE);
-    }
+  it("memory switched off earlier does not stop the erase: what was saved is still deleted", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    await d.actions.disableMemory();
+    expect(await d.actions.forgetAll()).toEqual({ remote: "ok" });
+    expect(db.rows.size).toBe(0);
   });
 
-  it("with no code there is nothing remote: local facts are cleared and remote is off", async () => {
-    const fetchFn = vi.fn(ok({ status: "ok" }));
-    const { actions, state } = setup(fetchFn);
-    await actions.syncPersona();
-    expect(state().persona.facts.length).toBeGreaterThan(0);
-    expect(await actions.forgetAll()).toEqual({ remote: "off" });
-    expect(state().persona.facts).toEqual([]);
-    expect(fetchFn).not.toHaveBeenCalled();
+  it("sign-in not ready on a device that saved facts: paused, nothing is cleared (an unproven erase is not an erase)", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    d.auth.status = "offline";
+    expect(await d.actions.forgetAll()).toEqual({ remote: "paused" });
+    expect(d.state().persona.facts).toHaveLength(3);
+    expect(db.rows.size).toBe(3);
   });
 
-  it("delete everything after switching memory off still calls forget when a code exists", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state, storage } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const ns = tagFromCode(state().persona.recoveryCode as string, TEST_SECRET);
-    await actions.disableMemory();
-    expect(await actions.deleteEverything()).toEqual({ status: "ok" });
-    expect(api.calls.some((c) => c.path === "/api/memory/forget")).toBe(true);
-    expect(api.sm.docs(ns).size).toBe(0);
-    expect(storage.data.has(KEY)).toBe(false);
-    expect(state()).toEqual(defaultState());
+  it("a device that never saved anything can clear itself without a network", async () => {
+    const d = memoryDevice(fakeMemoryDb(), { auth: "degraded" });
+    expect(await d.actions.forgetAll()).toEqual({ remote: "off" });
+    expect(d.calls).toEqual([]);
   });
 
-  it("delete everything does not reset the device when forget failed", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state, storage } = setup(api.fetchFn);
-    await actions.enableMemory();
-    const code = state().persona.recoveryCode;
-    api.sm.stuckIds.add("support_pref:p2");
-    expect(await actions.deleteEverything()).toEqual({ status: "failed" });
-    expect(storage.data.has(KEY)).toBe(true);
-    expect(state().persona.recoveryCode).toBe(code);
-    expect(state().supportCard?.items.map((i) => i.id)).toEqual(["p1", "p2", "p5"]);
+  it("deleteEverything resets the device only after the erase worked", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD });
+    await d.actions.enableMemory();
+    db.stuckRows = 1;
+    expect(await d.actions.deleteEverything()).toEqual({ status: "failed" });
+    expect(d.storage.data.has(KEY)).toBe(true);
+    d.auth.status = "offline";
+    expect(await d.actions.deleteEverything()).toEqual({ status: "paused" });
+    expect(d.storage.data.has(KEY)).toBe(true);
+    d.auth.status = "ready";
+    db.stuckRows = 0;
+    expect(await d.actions.deleteEverything()).toEqual({ status: "ok" });
+    expect(d.storage.data.has(KEY)).toBe(false);
+    expect(db.rows.size).toBe(0);
   });
 
-  it("delete everything with no code resets the device without any request", async () => {
-    const fetchFn = vi.fn(ok({ status: "ok" }));
-    const { actions, state } = setup(fetchFn);
-    expect(await actions.deleteEverything()).toEqual({ status: "ok" });
-    expect(fetchFn).not.toHaveBeenCalled();
-    expect(state()).toEqual(defaultState());
-  });
-
-  it("if the device cannot be reset, delete everything says failed", async () => {
-    const fetchFn = vi.fn(ok({ status: "ok" }));
-    const { actions, storage } = setup(fetchFn);
-    storage.removeItem = () => {
+  it("deleteEverything reports failed when the device cannot be cleared", async () => {
+    const d = memoryDevice(fakeMemoryDb(), { card: [] });
+    d.storage.removeItem = () => {
       throw new Error("blocked");
     };
-    expect(await actions.deleteEverything()).toEqual({ status: "failed" });
+    expect(await d.actions.deleteEverything()).toEqual({ status: "failed" });
   });
 });
 
-describe("actions before the state is loaded", () => {
-  const OLD = "KKKKK-MMMMM-NNNNN-PPPPP";
-  const storedWithCode = () =>
-    fakeStorage({ [KEY]: JSON.stringify({ ...defaultState(), settings: { ...defaultState().settings, memoryOptIn: true }, persona: { facts: [], recoveryCode: OLD } }) });
-
-  it("enableMemory before hydrate does not replace or delete the stored recovery code, and sends nothing", async () => {
-    const storage = storedWithCode();
-    const store = createStateStore({ storage });
-    const api = fakeMemoryApi();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    expect(await actions.enableMemory()).toEqual({ ok: false, remote: "failed" });
-    store.hydrate();
-    expect(store.getSnapshot().state.persona.recoveryCode).toBe(OLD);
-    expect(store.getSnapshot().state.settings.memoryOptIn).toBe(true);
-    expect(JSON.parse(storage.data.get(KEY) as string).persona.recoveryCode).toBe(OLD);
-    expect(api.calls).toHaveLength(0);
-  });
-
-  it("every action answers failed until hydrated and changes nothing", async () => {
-    const storage = storedWithCode();
-    const store = createStateStore({ storage });
-    const api = fakeMemoryApi();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    expect(await actions.syncPersona()).toEqual({ saved: 0, remote: "failed" });
-    expect(await actions.disableMemory()).toEqual({ ok: false });
-    expect(await actions.forgetAll()).toEqual({ remote: "failed" });
-    expect(await actions.deleteEverything()).toEqual({ status: "failed" });
-    expect(storage.writes).toBe(0);
-    expect(api.calls).toHaveLength(0);
-    store.hydrate();
-    expect(store.getSnapshot().state.persona.recoveryCode).toBe(OLD);
-    expect(store.getSnapshot().state.settings.memoryOptIn).toBe(true);
-  });
-});
-
-describe("time since the last sync is sent with forget", () => {
-  function timed() {
-    const api = fakeMemoryApi();
+describe("blocked or full storage", () => {
+  it("a sync still reaches the server when this device cannot save, and nothing throws", async () => {
     const storage = fakeStorage();
     const store = createStateStore({ storage });
     store.hydrate();
     store.update((d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1")] }));
-    let t = 1_000_000;
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn, clock: () => t });
-    return { api, store, actions, tick: (ms: number) => void (t += ms) };
-  }
-  const bodyOf = (api: ReturnType<typeof fakeMemoryApi>) => JSON.parse(api.calls.at(-1)?.body ?? "") as Record<string, unknown>;
-
-  it("sends the milliseconds since the last remote sync, on the browser's own clock", async () => {
-    const { api, actions, tick } = timed();
-    await actions.enableMemory();
-    tick(2500);
-    await actions.forgetAll();
-    expect(bodyOf(api)).toEqual({ sinceSyncMs: 2500 });
-  });
-
-  it("sends an empty body when nothing was ever synced from this page", async () => {
-    const { api, store, actions } = timed();
-    store.update((d) => {
-      d.persona.recoveryCode = "ABCDE-FGHJK-LMNPQ-RSTUV";
-      d.settings.memoryOptIn = true;
-    });
-    await actions.forgetAll();
-    expect(bodyOf(api)).toEqual({});
-  });
-
-  it("a lost answer still counts as a recent write", async () => {
-    const bodies: string[] = [];
-    const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/facts")) throw new Error("net");
-      bodies.push(String(init?.body));
-      return Response.json({ status: "ok" });
-    }) as typeof fetch;
-    const store = createStateStore({ storage: fakeStorage() });
-    store.hydrate();
-    store.update((d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p1")] }));
-    let t = 5000;
-    const actions = createMemoryActions({ store, fetchFn, clock: () => t });
-    expect((await actions.enableMemory()).remote).toBe("failed");
-    t += 700;
-    await actions.forgetAll();
-    expect(bodies).toEqual(['{"sinceSyncMs":700}']);
-  });
-});
-
-describe("privacy end to end", () => {
-  it("custom lines, plan text and symptoms never reach the network, and the code never reaches Supermemory", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state } = setup(api.fetchFn, (s) => {
-      s.settings.name = "Priya Raman";
-      s.supportCard?.items.push(
-        { id: "u1", text: "I have bipolar disorder and take lithium.", source: "user", enabled: true },
-        { id: "p3", text: "I have bipolar disorder and take lithium.", source: "preset", enabled: true },
-      );
-      s.plan = {
-        id: "plan-1",
-        title: "HIV test",
-        createdAt: "",
-        mainConcern: "I want an HIV test and I take sertraline",
-        symptomsInMyWords: ["panic attacks"],
-        items: [{ id: "q1", text: "Can I stop sertraline?", kind: "question", source: "user", enabled: true }],
-      };
-      s.sessions = [{ id: "s1", planId: "plan-1", startedAt: "", focus: "whole", turns: [{ role: "me", text: "panic attacks" }], coveredItemIds: [], helpCount: 0, helpLevelUsed: { question: 2 } }];
-    });
-    await actions.enableMemory();
-    await actions.syncPersona();
-    const code = state().persona.recoveryCode as string;
-    const toOurApi = JSON.stringify(api.calls.map((c) => c.body));
-    const toSupermemory = JSON.stringify(api.sm.calls);
-    for (const text of [toOurApi, toSupermemory, JSON.stringify([...api.sm.store.values()].map((m) => [...m.values()]))]) {
-      expect(text).not.toMatch(/bipolar|lithium|sertraline|HIV|panic|Priya|Raman/i);
-    }
-    expect(toSupermemory).not.toContain(code);
-    expect(toSupermemory).not.toContain(tagFromCode(code, TEST_SECRET).slice(2).toUpperCase());
-    const ns = tagFromCode(code, TEST_SECRET);
-    expect(api.sm.docs(ns).get("support_pref:p3")?.content).toBe("Please write down instructions for me.");
-    expect(api.sm.docs(ns).get("help_level:question")?.content).toBe("When I practice asking my questions, I needed a sentence with blanks last time.");
-    expect(api.sm.docs(ns).has("support_pref:u1")).toBe(false);
-  });
-
-  it("tampered preset text in localStorage cannot change what is synced", async () => {
-    const api = fakeMemoryApi();
-    const storage = fakeStorage();
-    const tampered = {
-      ...defaultState(),
-      supportCard: { id: "c", topQuestionIds: [], items: [{ id: "p1", text: "I have bipolar disorder and take lithium.", source: "preset", enabled: true }] },
-    };
-    storage.data.set(KEY, JSON.stringify(tampered));
-    const store = createStateStore({ storage });
-    store.hydrate();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    await actions.enableMemory();
-    const ns = tagFromCode(store.getSnapshot().state.persona.recoveryCode as string, TEST_SECRET);
-    expect(api.sm.docs(ns).get("support_pref:p1")?.content).toBe("Please speak slowly.");
-    expect(JSON.stringify(api.sm.calls) + JSON.stringify(api.calls)).not.toMatch(/bipolar|lithium/);
-  });
-});
-
-describe("hostile state and two people", () => {
-  it("nothing typed reaches the memory API or Supermemory, even with colliding ids and tampered presets", async () => {
-    const HOT = ["HIV test", "sertraline", "panic attacks", "Jane Doe", "Okafor", "bipolar", "lithium", "555-0100", "jane@x.org", "ZEROWIDTH"];
-    const api = fakeMemoryApi();
-    const { actions, state } = setup(api.fetchFn, (d) => {
-      d.settings.name = "Jane Doe";
-      d.settings.companionName = "Jane";
-      d.plan = {
-        id: "pl1",
-        title: "HIV test at Dr. Okafor",
-        createdAt: "x",
-        mainConcern: "I take sertraline and have panic attacks, call 555-0100 jane@x.org",
-        symptomsInMyWords: ["panic attacks"],
-        items: [{ id: "i1", text: "Ask about my HIV test", kind: "question", source: "user", enabled: true }],
-      };
-      d.supportCard = {
-        id: "c",
-        topQuestionIds: ["i1"],
-        items: [
-          { id: "p1", text: "I have bipolar and take lithium", source: "preset", enabled: true },
-          { id: "p2", text: "I have bipolar disorder and take lithium.", source: "user", enabled: true },
-          { id: "p3", text: "HIV test", source: "user", enabled: true },
-          { id: "constructor", text: "ZEROWIDTH", source: "user", enabled: true },
-          { id: "__proto__", text: "ZEROWIDTH", source: "preset", enabled: true },
-        ],
-      };
-      d.sessions = [{ id: "s1", planId: "pl1", startedAt: "x", focus: "whole", turns: [{ role: "me", text: "panic attacks sertraline" }], coveredItemIds: ["i1"], helpCount: 1, helpLevelUsed: { concern: 2 } }];
-    });
-    expect((await actions.enableMemory()).ok).toBe(true);
-    const code = state().persona.recoveryCode as string;
-    const wire = JSON.stringify(api.calls);
-    const sm = JSON.stringify(api.sm.calls);
-    for (const h of HOT) {
-      expect(wire).not.toContain(h);
-      expect(sm).not.toContain(h);
-    }
-    expect(sm).not.toContain(code);
-    expect(sm).not.toContain(code.replaceAll("-", ""));
-    expect(state().persona.facts.map((f) => f.id)).toEqual(["support_pref:p1", "help_level:concern"]);
-  });
-
-  it("two people with different codes never touch each other's documents", async () => {
-    const api = fakeMemoryApi();
-    const a = setup(api.fetchFn);
-    const b = setup(api.fetchFn, (d) => void (d.supportCard = { id: "c", topQuestionIds: [], items: [preset("p3")] }));
-    await a.actions.enableMemory();
-    await b.actions.enableMemory();
-    expect(api.sm.store.size).toBe(2);
-    await a.actions.deleteEverything();
-    const left = [...api.sm.store.values()].map((m) => [...m.keys()]).filter((k) => k.length);
-    expect(left).toEqual([["support_pref:p3"]]);
-  });
-
-  it("delete everything after switching memory off lists until it is empty, then clears the device", async () => {
-    const api = fakeMemoryApi();
-    const { actions, state } = setup(api.fetchFn);
-    await actions.enableMemory();
-    await actions.disableMemory();
-    const before = api.sm.calls.length;
-    expect((await actions.deleteEverything()).status).toBe("ok");
-    const lists = api.sm.calls.slice(before).filter((c) => c.path.endsWith("/list/documents"));
-    expect(lists.length).toBeGreaterThanOrEqual(4); // one with documents, then three empty
-    expect(state()).toEqual(defaultState());
-  });
-});
-
-describe("delete everything with data from a newer app version", () => {
-  const CODE_F = "ABCDE-FGHJK-LMNPQ-RSTUV";
-  const blob = (code: unknown) => JSON.stringify({ version: 2, persona: { recoveryCode: code }, plan: { keep: "me" } });
-
-  async function remoteWithDocs() {
-    const api = fakeMemoryApi();
-    const ns = tagFromCode(CODE_F, TEST_SECRET);
-    api.sm.docs(ns).set("support_pref:p1", { content: "Please speak slowly.", metadata: { kind: "support_pref", key: "p1", v: 1 } });
-    return { api, ns };
-  }
-
-  it("erases the remote copy first, then removes the blob", async () => {
-    const { api, ns } = await remoteWithDocs();
-    const storage = fakeStorage({ [KEY]: blob(CODE_F) });
-    const store = createStateStore({ storage });
-    store.hydrate();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    expect(await actions.deleteEverything()).toEqual({ status: "ok" });
-    expect(api.calls.map((c) => c.path)).toEqual(["/api/memory/forget"]);
-    expect(api.calls[0].headers["x-rumi-key"]).toBe(CODE_F);
-    expect(api.sm.docs(ns).size).toBe(0);
-    expect(storage.data.has(KEY)).toBe(false);
-    expect(store.getSnapshot().readOnly).toBe(false);
-  });
-
-  it("if the remote erase fails, the blob (and so the code) stays", async () => {
-    const { api } = await remoteWithDocs();
-    api.sm.stuckIds.add("support_pref:p1");
-    const storage = fakeStorage({ [KEY]: blob(CODE_F) });
-    const store = createStateStore({ storage });
-    store.hydrate();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    expect(await actions.deleteEverything()).toEqual({ status: "failed" });
-    expect(storage.data.get(KEY)).toBe(blob(CODE_F));
-  });
-
-  it("with no valid code in the blob it deletes locally and calls nothing", async () => {
-    const api = fakeMemoryApi();
-    const storage = fakeStorage({ [KEY]: blob("not-a-code") });
-    const store = createStateStore({ storage });
-    store.hydrate();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    expect(await actions.deleteEverything()).toEqual({ status: "ok" });
-    expect(api.calls).toHaveLength(0);
-    expect(storage.data.has(KEY)).toBe(false);
-  });
-
-  it("enabling memory in read-only mode sends nothing", async () => {
-    const api = fakeMemoryApi();
-    const store = createStateStore({ storage: fakeStorage({ [KEY]: blob(CODE_F) }) });
-    store.hydrate();
-    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
-    expect((await actions.enableMemory()).ok).toBe(false);
-    expect(api.calls).toHaveLength(0);
-  });
-});
-
-describe("forget clears only the code it erased", () => {
-  const NEWER = "KKKKK-MMMMM-NNNNN-PPPPP";
-
-  it("a newer code that appears while the request runs is kept, with its switch and facts", async () => {
-    const { store, state } = setup(ok({ status: "ok" }));
-    store.update((d) => {
-      d.persona.recoveryCode = CODE;
-      d.settings.memoryOptIn = true;
-    });
-    const swapping = (async () => {
-      store.update((d) => {
-        d.persona.recoveryCode = NEWER;
-        d.persona.facts = [{ id: "support_pref:p1", kind: "support_pref", key: "p1", createdAt: "t" }];
-      });
-      return Response.json({ status: "ok" });
-    }) as typeof fetch;
-    const racing = createMemoryActions({ store, fetchFn: swapping });
-    expect(await racing.forgetAll()).toEqual({ remote: "ok" });
-    expect(state().persona.recoveryCode).toBe(NEWER);
-    expect(state().settings.memoryOptIn).toBe(true);
-    expect(state().persona.facts.map((f) => f.id)).toEqual(["support_pref:p1"]);
-  });
-
-  it("when the code is unchanged everything is cleared as before", async () => {
-    const { store, actions, state } = setup(ok({ status: "ok" }));
-    store.update((d) => {
-      d.persona.recoveryCode = CODE;
-      d.settings.memoryOptIn = true;
-    });
-    expect(await actions.forgetAll()).toEqual({ remote: "ok" });
-    expect(state().persona).toEqual({ facts: [] });
-    expect(state().settings.memoryOptIn).toBe(false);
+    const actions = createMemoryActions({ store, fetchFn: (async () => json(200, { saved: 0, rejected: 0, facts: [] })) as typeof fetch, authStatus: () => "ready", now: () => T1 });
+    store.update((d) => void (d.settings.memoryOptIn = true));
+    storage.failWrites = new DOMException("full", "QuotaExceededError");
+    await expect(actions.syncPersona()).resolves.toMatchObject({ remote: "ok" });
   });
 });

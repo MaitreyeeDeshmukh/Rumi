@@ -3,7 +3,7 @@ import { buildSupportCardText, newSupportCard, supportSection } from "@/features
 import { SUPPORT_PRESETS } from "@/features/support/presets";
 import type { PersonaFact, SupportCard, VisitPlan } from "@/features/shared/types";
 
-const fact = (kind: PersonaFact["kind"], key: string): PersonaFact => ({ id: `${kind}:${key}`, kind, key, createdAt: "" });
+const fact = (kind: PersonaFact["kind"], key: string): PersonaFact => ({ id: `${kind}:${key}`, kind, key, createdAt: "", updatedAt: "" });
 const plan = (over: Partial<VisitPlan> = {}): VisitPlan => ({
   id: "plan-1",
   title: "Visit",
