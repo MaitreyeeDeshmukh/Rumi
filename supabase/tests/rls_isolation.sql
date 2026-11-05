@@ -1,5 +1,5 @@
 -- RLS isolation test. Run against a database with the Rumi schema:
---   npx supabase db query --remote -f supabase/tests/rls_isolation.sql
+--   bash scripts/db/run-sql.sh supabase/tests/rls_isolation.sql      (LOCAL stack: npx supabase start)
 -- Everything runs in one transaction and is rolled back. Any broken rule raises an error.
 begin;
 
