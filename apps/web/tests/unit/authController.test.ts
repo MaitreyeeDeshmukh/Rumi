@@ -11,7 +11,7 @@ type Reply = { data: { session: { user: { id: string; is_anonymous: boolean } } 
 const signedIn = (id = ME): Reply => ({ data: { session: { user: { id, is_anonymous: true } } }, error: null });
 const failedWith = (error: unknown): Reply => ({ data: { session: null }, error });
 
-function setup(options: { session?: { user: { id: string; is_anonymous?: boolean } } | null; signIns?: Array<Reply | Error>; online?: boolean; last?: string | null; captcha?: string | undefined; configured?: boolean } = {}) {
+function setup(options: { session?: { user: { id: string; is_anonymous?: boolean } } | null; signIns?: Array<Reply | Error>; online?: boolean; last?: string | null; captcha?: string | undefined; configured?: boolean; rpc?: () => unknown } = {}) {
   let online = options.online ?? true;
   let last = options.last ?? null;
   let clock = 1_000_000;
@@ -31,11 +31,13 @@ function setup(options: { session?: { user: { id: string; is_anonymous?: boolean
     }),
     updateUser: vi.fn(() => Promise.resolve({ data: {}, error: null as unknown })),
   };
+  const rpc = vi.fn(options.rpc ?? (() => Promise.resolve({ data: null, error: null })));
+  const onEnsureRowsFailed = vi.fn();
   const sleeps: number[] = [];
   const deps: AuthDeps = {
     getClient: () => {
       if (options.configured === false) throw new Error("supabase_not_configured");
-      return { auth } as unknown as AuthClientLike;
+      return { auth, rpc } as unknown as AuthClientLike;
     },
     isOnline: () => online,
     onNetworkChange: (h) => ((netHandler = h), () => (netHandler = undefined)),
@@ -46,11 +48,14 @@ function setup(options: { session?: { user: { id: string; is_anonymous?: boolean
     lastUser: { get: () => last, set: (id) => (last = id) },
     getCaptchaToken: options.captcha === undefined ? undefined : () => Promise.resolve(options.captcha),
     redirectTo: () => "https://rumi.test",
+    onEnsureRowsFailed,
   };
   const controller = createAuthController(deps);
   return {
     controller,
     auth,
+    rpc,
+    onEnsureRowsFailed,
     sleeps,
     emit: (event: string, session: Parameters<Listener>[1]) => listeners.slice().forEach((l) => l(event, session)),
     network: (value: boolean) => ((online = value), netHandler?.(value)),
@@ -66,7 +71,15 @@ function setup(options: { session?: { user: { id: string; is_anonymous?: boolean
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
+/** What a screen that needs the cloud does: start (restore), then ask for a sign-in. Most of this file tests the sign-in itself. */
 const started = async (s: ReturnType<typeof setup>) => {
+  const stop = s.controller.start();
+  await s.controller.ensureSignedIn();
+  await settle();
+  return stop;
+};
+/** What every page does on load: start and nothing else. */
+const loaded = async (s: ReturnType<typeof setup>) => {
   const stop = s.controller.start();
   await settle();
   return stop;
@@ -166,6 +179,156 @@ describe("sign-in", () => {
     await started(s);
     expect(s.controller.getState().status).toBe("offline");
     expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("lazy sign-in: a visit that uses no cloud feature makes no account", () => {
+  it("a fresh visit looks for a session and makes NO sign-in call", async () => {
+    const s = setup();
+    await loaded(s);
+    expect(s.auth.getSession).toHaveBeenCalledTimes(1);
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(s.rpc).not.toHaveBeenCalled();
+    expect(s.controller.getState()).toMatchObject({ status: "signed_out", userId: null });
+  });
+
+  it("an existing session is restored on load, with no sign-in call", async () => {
+    const s = setup({ session: { user: { id: ME, is_anonymous: true } } });
+    await loaded(s);
+    expect(s.controller.getState()).toMatchObject({ status: "ready", userId: ME });
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(s.rpc).not.toHaveBeenCalled();
+  });
+
+  it("the network coming back or going away never signs anyone in by itself", async () => {
+    const s = setup();
+    await loaded(s);
+    s.network(false);
+    s.network(true);
+    await settle();
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(s.controller.getState().status).toBe("signed_out");
+  });
+
+  it("offline at load, then online: still no sign-in unless something asked", async () => {
+    const s = setup({ online: false });
+    await loaded(s);
+    expect(s.controller.getState().status).toBe("offline");
+    s.network(true);
+    await settle();
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(s.controller.getState().status).toBe("signed_out");
+  });
+
+  it("ensureSignedIn signs in anonymously once and answers with the ready state", async () => {
+    const s = setup();
+    await loaded(s);
+    const state = await s.controller.ensureSignedIn();
+    expect(state).toMatchObject({ status: "ready", userId: ME, isAnonymous: true });
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+  });
+
+  it("is idempotent: when ready it does nothing, and callers at the same moment share one sign-in", async () => {
+    const s = setup();
+    await loaded(s);
+    const [a, b, c] = await Promise.all([s.controller.ensureSignedIn(), s.controller.ensureSignedIn(), s.controller.ensureSignedIn()]);
+    expect([a.status, b.status, c.status]).toEqual(["ready", "ready", "ready"]);
+    await s.controller.ensureSignedIn();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+    expect(s.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("asked for before the first look has finished, it waits for that look and then signs in once", async () => {
+    const s = setup();
+    s.controller.start();
+    const state = await s.controller.ensureSignedIn();
+    expect(state.status).toBe("ready");
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+  });
+
+  it("asked for when a session exists, it reuses it and signs nobody in", async () => {
+    const s = setup({ session: { user: { id: ME, is_anonymous: true } } });
+    s.controller.start();
+    expect((await s.controller.ensureSignedIn()).userId).toBe(ME);
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+  });
+
+  it("keeps the retry rules: a network fault is tried MAX_SIGN_IN_TRIES times, then degraded", async () => {
+    const s = setup({ signIns: [failedWith(new AuthRetryableFetchError("fetch failed", 0))] });
+    await loaded(s);
+    expect((await s.controller.ensureSignedIn()).status).toBe("degraded");
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(MAX_SIGN_IN_TRIES);
+    expect(s.rpc).not.toHaveBeenCalled();
+  });
+
+  it("after a failure, asking again is held to the retry cooldown", async () => {
+    const s = setup({ signIns: [failedWith(new AuthApiError("x", 429, "over_request_rate_limit"))] });
+    await loaded(s);
+    await s.controller.ensureSignedIn();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+    await s.controller.ensureSignedIn();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(2); // the first retry is allowed
+    for (let i = 0; i < 5; i++) {
+      s.tick(RETRY_COOLDOWN_MS / 10);
+      await s.controller.ensureSignedIn();
+    }
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(2);
+    s.tick(RETRY_COOLDOWN_MS);
+    await s.controller.ensureSignedIn();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(3);
+  });
+
+  it("offline when asked: reports offline, and signs in when the network returns because someone asked", async () => {
+    const s = setup({ online: false });
+    await loaded(s);
+    expect((await s.controller.ensureSignedIn()).status).toBe("offline");
+    expect(s.auth.signInAnonymously).not.toHaveBeenCalled();
+    s.network(true);
+    await settle();
+    expect(s.controller.getState()).toMatchObject({ status: "ready", userId: ME });
+  });
+
+  it("Supabase not configured: ensureSignedIn answers degraded and does not throw", async () => {
+    const s = setup({ configured: false });
+    await loaded(s);
+    await expect(s.controller.ensureSignedIn()).resolves.toMatchObject({ status: "degraded" });
+  });
+});
+
+describe("core_ensure_my_rows after a new sign-in", () => {
+  it("is called once, by name, right after a successful sign-in", async () => {
+    const s = setup();
+    await started(s);
+    expect(s.rpc).toHaveBeenCalledTimes(1);
+    expect(s.rpc).toHaveBeenCalledWith("core_ensure_my_rows");
+    expect(s.onEnsureRowsFailed).not.toHaveBeenCalled();
+  });
+
+  it("is not called for a session that was already in the browser", async () => {
+    const s = setup({ session: { user: { id: ME, is_anonymous: true } } });
+    await started(s);
+    expect(s.rpc).not.toHaveBeenCalled();
+  });
+
+  const thrower = (): never => {
+    throw new Error("boom");
+  };
+  it.each([
+    ["an error answer", () => Promise.resolve({ data: null, error: { code: "42501" } })],
+    ["a rejected call", () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["a throw", thrower],
+  ])("%s is swallowed and counted: the sign-in still succeeds", async (_n, rpc) => {
+    const s = setup({ rpc });
+    await started(s);
+    expect(s.controller.getState().status).toBe("ready");
+    expect(s.onEnsureRowsFailed).toHaveBeenCalledTimes(1);
+    expect(s.controller.ensureRowsFailures()).toBe(1);
+  });
+
+  it("does not wait for it: the state is ready while the call is still pending", async () => {
+    const s = setup({ rpc: () => new Promise(() => undefined) });
+    await started(s);
+    expect(s.controller.getState().status).toBe("ready");
   });
 });
 

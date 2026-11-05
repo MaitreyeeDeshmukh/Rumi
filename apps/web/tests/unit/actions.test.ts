@@ -25,6 +25,75 @@ describe("setAuthStatus", () => {
   });
 });
 
+describe("ensureSignedIn: sign-in happens only when memory needs the cloud", () => {
+  it("turning memory on asks for sign-in first, then goes ahead", async () => {
+    const db = fakeMemoryDb();
+    let asked = 0;
+    const d = memoryDevice(db, {
+      card: CARD,
+      auth: "signed_out",
+      ensureSignedIn: async () => {
+        asked += 1;
+        d.auth.status = "ready";
+        return "ready";
+      },
+    });
+    expect(await d.actions.enableMemory()).toEqual({ ok: true, remote: "ok" });
+    expect(asked).toBe(1);
+    expect(d.state().settings.memoryOptIn).toBe(true);
+  });
+
+  it("sign-in that fails keeps the answer `paused`: memory stays off and nothing is sent", async () => {
+    for (const result of ["degraded", "offline", "signed_out"] as const) {
+      const d = memoryDevice(fakeMemoryDb(), { card: CARD, auth: "signed_out", ensureSignedIn: async () => result });
+      expect(await d.actions.enableMemory()).toEqual({ ok: false, remote: "paused" });
+      expect(d.state().settings.memoryOptIn).toBe(false);
+      expect(d.calls).toEqual([]);
+    }
+  });
+
+  it("a sign-in step that throws is `paused`, not a crash", async () => {
+    const d = memoryDevice(fakeMemoryDb(), {
+      card: CARD,
+      auth: "signed_out",
+      ensureSignedIn: async () => {
+        throw new Error("boom");
+      },
+    });
+    expect(await d.actions.enableMemory()).toEqual({ ok: false, remote: "paused" });
+  });
+
+  it("memory off: syncing saves on the device and never asks for sign-in", async () => {
+    let asked = 0;
+    const d = memoryDevice(fakeMemoryDb(), { card: CARD, auth: "signed_out", ensureSignedIn: async () => (asked++, "ready") });
+    expect(await d.actions.syncPersona()).toEqual({ saved: 3, remote: "off" });
+    expect(asked).toBe(0);
+  });
+
+  it("memory on and signed out: a sync asks for sign-in once", async () => {
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD, ensureSignedIn: async () => (d.auth.status = "ready") });
+    await d.actions.enableMemory();
+    d.auth.status = "signed_out";
+    d.calls.length = 0;
+    expect((await d.actions.syncPersona()).remote).toBe("ok");
+    expect(d.calls.map((c) => c.path)).toEqual(["/api/memory/facts"]);
+  });
+
+  it("when already ready it does not ask; disabling and forgetting never ask", async () => {
+    let asked = 0;
+    const db = fakeMemoryDb();
+    const d = memoryDevice(db, { card: CARD, ensureSignedIn: async () => (asked++, "ready") });
+    await d.actions.enableMemory();
+    await d.actions.syncPersona();
+    expect(asked).toBe(0);
+    d.auth.status = "signed_out";
+    expect(await d.actions.disableMemory()).toEqual({ ok: false, remote: "paused" });
+    expect(await d.actions.forgetAll()).toEqual({ remote: "paused" });
+    expect(asked).toBe(0);
+  });
+});
+
 describe("syncPersona: local first", () => {
   it("memory off: facts are saved on the device, nothing goes over the network", async () => {
     const db = fakeMemoryDb();

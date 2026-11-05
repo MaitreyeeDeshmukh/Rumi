@@ -2,12 +2,18 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { reportClientError } from "@/lib/telemetry/reportClientError";
 import { LAST_USER_KEY, EMAIL_SENT_KEY } from "./afterAccountDeleted";
 import { createAuthController, INITIAL_AUTH_STATE, type AuthDeps, type AuthState, type UpgradeResult } from "./authController";
 
 export interface AuthValue extends AuthState {
   /** Manual retry after `degraded` or `offline`. */
   retry(): void;
+  /**
+   * Signs in anonymously if nobody is signed in yet, then answers with the state (check `status === "ready"`). Call it right
+   * before a cloud feature needs a user (turning memory on, a sync). Safe to call again and again; never throws.
+   */
+  ensureSignedIn(): Promise<AuthState>;
   /** Adds an email to this anonymous identity. The reply is the same whether or not the address is already in use. */
   upgradeWithEmail(email: string): Promise<UpgradeResult>;
 }
@@ -78,6 +84,7 @@ const browserDeps = (): AuthDeps => ({
     },
   },
   redirectTo: () => window.location.origin,
+  onEnsureRowsFailed: () => reportClientError("ensure_rows_failed"),
 });
 
 /** Used when no provider is mounted: the app still renders and runs on this device. */
@@ -85,19 +92,24 @@ const NO_PROVIDER: AuthValue = {
   ...INITIAL_AUTH_STATE,
   status: "degraded",
   retry: () => undefined,
+  ensureSignedIn: () => Promise.resolve({ ...INITIAL_AUTH_STATE, status: "degraded" }),
   upgradeWithEmail: () => Promise.resolve({ ok: false, message: "Saving is paused, so email sign-in is not available yet." }),
 };
 
 const AuthContext = createContext<AuthValue>(NO_PROVIDER);
 
-/** Signs in anonymously once and keeps the session. Renders its children at once; it never waits for auth. */
+/**
+ * Restores a session this browser already has and keeps it fresh. It does NOT sign anyone in on load: a cloud feature
+ * calls `ensureSignedIn()` when it needs a user. Renders its children at once; it never waits for auth.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [controller] = useState(() => createAuthController(browserDeps()));
   useEffect(() => controller.start(), [controller]);
   const state = useSyncExternalStore(controller.subscribe, controller.getState, () => INITIAL_AUTH_STATE);
   const retry = useCallback(() => controller.retry(), [controller]);
+  const ensureSignedIn = useCallback(() => controller.ensureSignedIn(), [controller]);
   const upgradeWithEmail = useCallback((email: string) => controller.upgradeWithEmail(email), [controller]);
-  const value = useMemo<AuthValue>(() => ({ ...state, retry, upgradeWithEmail }), [state, retry, upgradeWithEmail]);
+  const value = useMemo<AuthValue>(() => ({ ...state, retry, ensureSignedIn, upgradeWithEmail }), [state, retry, ensureSignedIn, upgradeWithEmail]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -3,7 +3,8 @@
  * Talks only to our own routes (/api/memory/*) through an injected fetch.
  * Rules it keeps:
  *  - nothing runs before the state is hydrated (every action answers `failed` until then);
- *  - facts are always saved on the device; the network is touched only when memory is on AND sign-in is `ready`;
+ *  - facts are always saved on the device; the network is touched only when memory is on AND sign-in is `ready`
+ *    (turning memory on, or syncing with it on, first asks for sign-in through `ensureSignedIn`; nothing else does);
  *  - local state is the source of truth: a sync that cannot finish loses nothing, and the next one retries;
  *  - a write is retried with growing, jittered waits only for faults that may clear (network, 5xx, 429), never for a 4xx,
  *    and Retry-After is honoured;
@@ -25,13 +26,18 @@ import { parseFactBatch } from './sanitize';
 /** `paused`: sign-in is not ready, so nothing was sent. The facts are safe on this device. */
 export type RemoteStatus = 'off' | 'ok' | 'failed' | 'paused';
 export type LocalStore = Pick<StateStore, 'getSnapshot' | 'update' | 'reset'>;
-export type AuthStatus = 'signing_in' | 'ready' | 'degraded' | 'offline';
+export type AuthStatus = 'signing_in' | 'signed_out' | 'ready' | 'degraded' | 'offline';
 
 export interface MemoryActionDeps {
   store: LocalStore;
   fetchFn: typeof fetch;
   /** The sign-in state right now. Remote calls start only when it is `ready`. A screen keeps it current with `setAuthStatus`. */
   authStatus?: () => AuthStatus;
+  /**
+   * Signs in anonymously when nobody is signed in yet, and answers with the state afterwards. Called only by a call that needs
+   * the cloud (turning memory on, a sync with memory on), never on load. Without it those calls stay `paused` until sign-in is ready.
+   */
+  ensureSignedIn?: () => Promise<AuthStatus>;
   /** ISO time stamp for new facts. */
   now?: () => string;
   timeoutMs?: number;
@@ -62,6 +68,7 @@ export function createMemoryActions({
   store,
   fetchFn,
   authStatus = () => 'signing_in',
+  ensureSignedIn,
   now = () => new Date().toISOString(),
   timeoutMs = 25_000,
   attempts = 3,
@@ -82,6 +89,17 @@ export function createMemoryActions({
   const ready = (): boolean => store.getSnapshot().hydrated;
   let pushed: AuthStatus | undefined;
   const online = (): boolean => (pushed ?? authStatus()) === 'ready';
+  /** True when sign-in is ready, asking for it first if it is not. Never throws. */
+  async function goOnline(): Promise<boolean> {
+    if (online()) return true;
+    if (ensureSignedIn === undefined) return false;
+    try {
+      pushed = await ensureSignedIn();
+    } catch {
+      return false;
+    }
+    return online();
+  }
 
   /** POST JSON. Never throws. Retries only faults that may clear; a 4xx ends it at once. */
   async function post(path: string, body: unknown): Promise<Answer> {
@@ -127,7 +145,7 @@ export function createMemoryActions({
     const s = state();
     const saved = s.persona.facts.length;
     if (!s.settings.memoryOptIn) return { saved, remote: 'off' };
-    if (!online()) return { saved, remote: 'paused' };
+    if (!(await goOnline())) return { saved, remote: 'paused' };
 
     const removed = toWireRemovals(s.persona.removed ?? [], stamp);
     const body = { facts: toSyncFacts(s.persona.facts), removed };
@@ -154,7 +172,7 @@ export function createMemoryActions({
 
   async function doEnable(): Promise<{ ok: boolean; remote: RemoteStatus }> {
     if (!ready()) return { ok: false, remote: 'failed' };
-    if (!online()) return { ok: false, remote: 'paused' };
+    if (!(await goOnline())) return { ok: false, remote: 'paused' };
     const answer = await post(CONSENT_PATH, { granted: true });
     if (answer.kind !== 'ok') return { ok: false, remote: 'failed' };
     store.update((d) => void (d.settings.memoryOptIn = true));

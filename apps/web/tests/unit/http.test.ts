@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HttpError, json, readJson, retryAfter } from "@/lib/ai/http";
+import { json, readJson, retryAfter } from "@/lib/ai/http";
 
 const post = (body: BodyInit | null, headers: Record<string, string> = {}): Request =>
   new Request("https://rumi.test/api/plan", { method: "POST", body, headers });

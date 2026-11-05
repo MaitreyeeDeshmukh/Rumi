@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>
-        {/* A client component inside a server layout is fine: it renders its children at once and signs in quietly after load. */}
+        {/* A client component inside a server layout is fine: it renders its children at once and only restores an existing session after load. */}
         <AuthProvider>
           <ClientErrorListener />
           <a className="skip-link" href="#main">

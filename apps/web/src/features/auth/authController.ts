@@ -1,7 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { classifyError, isRetryable, mapSupabaseError } from "./mapError";
 
-export type AuthStatus = "signing_in" | "ready" | "degraded" | "offline";
+/**
+ * signing_in: checking this browser for a session, or signing in because something asked for it.
+ * signed_out: no session, and nobody has asked for one (a visit that uses no cloud feature stays here).
+ */
+export type AuthStatus = "signing_in" | "signed_out" | "ready" | "degraded" | "offline";
 
 export interface AuthState {
   status: AuthStatus;
@@ -13,7 +17,11 @@ export interface AuthState {
 
 export type UpgradeResult = { ok: true } | { ok: false; message: string };
 
-export type AuthClientLike = { auth: Pick<SupabaseClient["auth"], "getSession" | "signInAnonymously" | "onAuthStateChange" | "updateUser"> };
+export type AuthClientLike = {
+  auth: Pick<SupabaseClient["auth"], "getSession" | "signInAnonymously" | "onAuthStateChange" | "updateUser">;
+  /** Used once after a new sign-in for `core_ensure_my_rows`. Optional: without it that step is skipped. */
+  rpc?: SupabaseClient["rpc"];
+};
 
 export interface AuthDeps {
   /** Throws when Supabase is not configured; the controller then goes `degraded`. */
@@ -33,6 +41,8 @@ export interface AuthDeps {
   getCaptchaToken?: () => Promise<string | undefined>;
   /** Where the email link returns to. */
   redirectTo?: () => string;
+  /** Called when the one-time `core_ensure_my_rows` call after a new sign-in failed. It is counted and never shown. */
+  onEnsureRowsFailed?: () => void;
 }
 
 export const MAX_SIGN_IN_TRIES = 3;
@@ -49,19 +59,31 @@ interface SessionLike {
   user: { id: string; is_anonymous?: boolean };
 }
 
+interface Attempt {
+  done: Promise<void>;
+  /** True when this attempt may create an account. */
+  creates: boolean;
+}
+
 /**
- * The sign-in state machine, with no React in it: signing_in -> ready | degraded | offline.
+ * The sign-in state machine, with no React in it: signing_in -> signed_out | ready | degraded | offline.
+ * `start()` only looks for a session this browser already has (a local read, no sign-in call), so a person who never uses a
+ * cloud feature never creates an account. `ensureSignedIn()` is what a cloud feature calls before it needs a user: it signs
+ * in anonymously, and it is safe to call again and again (one sign-in at a time, one answer for every caller).
  * It never throws, never blocks the UI, and never touches the app's own saved state: going `degraded` only means
  * cloud saving is paused. Anonymous sign-in is tried at most MAX_SIGN_IN_TRIES times with jittered backoff, and only
  * for faults worth retrying (network, server, rate limit); a disabled provider or a failed captcha stops at once.
- * After that only `retry()` tries again.
+ * After that only `retry()` or a later `ensureSignedIn()` tries again, at most once per RETRY_COOLDOWN_MS.
  */
 export function createAuthController(deps: AuthDeps) {
   let state = INITIAL_AUTH_STATE;
   const listeners = new Set<() => void>();
-  let running = false;
+  let current: Attempt | null = null;
+  /** True once something asked for an account; from then on a network that comes back signs in. */
+  let wanted = false;
   let active = false;
   let lastRetryAt: number | null = null;
+  let ensureRowsFailures = 0;
 
   const set = (patch: Partial<AuthState>): void => {
     const next = { ...state, ...patch };
@@ -83,9 +105,28 @@ export function createAuthController(deps: AuthDeps) {
 
   const failed = (): void => set({ status: deps.isOnline() ? "degraded" : "offline" });
 
-  async function signIn(): Promise<void> {
-    if (running) return;
-    running = true;
+  /** Once per new sign-in, not awaited. It heals a profile row the sign-up trigger could not create. A failure is only counted. */
+  function ensureRows(client: AuthClientLike): void {
+    const count = (): void => {
+      ensureRowsFailures += 1;
+      try {
+        deps.onEnsureRowsFailed?.();
+      } catch {
+        // A broken counter must not matter.
+      }
+    };
+    try {
+      if (client.rpc === undefined) return;
+      void Promise.resolve(client.rpc("core_ensure_my_rows")).then((result) => {
+        if (result.error) count();
+      }, count);
+    } catch {
+      count();
+    }
+  }
+
+  /** One pass of the machine. With `create` false it only restores a session that is already here. */
+  async function run(create: boolean): Promise<void> {
     try {
       if (!deps.isOnline()) return set({ status: "offline" });
       set({ status: "signing_in" });
@@ -93,10 +134,14 @@ export function createAuthController(deps: AuthDeps) {
       // A session already in this browser (cookie) wins; it is read locally and refreshed by supabase-js when needed.
       const existing = await client.auth.getSession();
       if (existing.data.session) return applySession(existing.data.session);
+      if (!create) return set({ status: "signed_out" });
       for (let attempt = 1; attempt <= MAX_SIGN_IN_TRIES; attempt++) {
         const captchaToken = await deps.getCaptchaToken?.();
         const { data, error } = await client.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined);
-        if (!error && data.session) return applySession(data.session);
+        if (!error && data.session) {
+          applySession(data.session);
+          return ensureRows(client);
+        }
         if (error && (!isRetryable(classifyError(error)) || attempt === MAX_SIGN_IN_TRIES)) return failed();
         if (!deps.isOnline()) return set({ status: "offline" });
         await deps.sleep(BACKOFF_BASE_MS * 2 ** (attempt - 1) * (0.5 + deps.random() / 2));
@@ -106,9 +151,31 @@ export function createAuthController(deps: AuthDeps) {
       // supabase-js reports faults as values; a throw here means a missing configuration or a network layer fault.
       // Either way the person keeps working on this device: the failure is shown as a status, not an error.
       failed();
-    } finally {
-      running = false;
     }
+  }
+
+  /** One attempt at a time. A caller that wants an account while a restore is running waits for it, then signs in if still needed. */
+  function attempt(create: boolean): Promise<void> {
+    if (current !== null) {
+      const running = current;
+      if (!create || running.creates) return running.done;
+      return running.done.then(() => (state.status === "ready" ? undefined : attempt(true)));
+    }
+    const mine: Attempt = { creates: create, done: Promise.resolve() };
+    mine.done = run(create).finally(() => {
+      current = null;
+    });
+    current = mine;
+    return mine.done;
+  }
+
+  /** The manual-retry rule: only from degraded or offline, never while an attempt runs, at most one per RETRY_COOLDOWN_MS. */
+  function mayRetry(): boolean {
+    if (current !== null || (state.status !== "degraded" && state.status !== "offline")) return false;
+    const t = deps.now();
+    if (lastRetryAt !== null && t >= lastRetryAt && t - lastRetryAt < RETRY_COOLDOWN_MS) return false;
+    lastRetryAt = t;
+    return true;
   }
 
   return {
@@ -117,7 +184,7 @@ export function createAuthController(deps: AuthDeps) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    /** Starts listening and signs in. Returns the stop function. Safe to call again after stopping (React strict mode). */
+    /** Starts listening and restores a session this browser already has. It never signs in. Returns the stop function. Safe to call again after stopping (React strict mode). */
     start(): () => void {
       active = true;
       const stops: Array<() => void> = [];
@@ -126,11 +193,11 @@ export function createAuthController(deps: AuthDeps) {
           if (!active) return;
           if (session && event !== "SIGNED_OUT") applySession(session);
           // Our own sign-in clears a dead session first, which emits SIGNED_OUT; that is not the end of the story.
-          else if (event === "SIGNED_OUT" && !running) set({ status: "degraded", userId: null });
+          else if (event === "SIGNED_OUT" && current === null) set({ status: "degraded", userId: null });
         });
         stops.push(() => data.subscription.unsubscribe());
       } catch {
-        // Not configured: signIn() hits the same fault and reports `degraded`.
+        // Not configured: the first attempt hits the same fault and reports `degraded`.
       }
       stops.push(
         deps.onNetworkChange((online) => {
@@ -138,10 +205,10 @@ export function createAuthController(deps: AuthDeps) {
           if (!online) return set({ status: "offline" });
           if (state.status !== "offline") return;
           if (state.userId !== null) set({ status: "ready" });
-          else void signIn();
+          else void attempt(wanted);
         }),
       );
-      void signIn();
+      void attempt(wanted);
       return () => {
         active = false;
         for (const stop of stops) stop();
@@ -152,12 +219,27 @@ export function createAuthController(deps: AuthDeps) {
      * one retry is accepted per RETRY_COOLDOWN_MS, so a button pressed again and again cannot hammer Auth.
      */
     retry(): void {
-      if (running || (state.status !== "degraded" && state.status !== "offline")) return;
-      const t = deps.now();
-      if (lastRetryAt !== null && t >= lastRetryAt && t - lastRetryAt < RETRY_COOLDOWN_MS) return;
-      lastRetryAt = t;
-      void signIn();
+      if (mayRetry()) {
+        wanted = true;
+        void attempt(true);
+      }
     },
+    /**
+     * Makes sure there is a signed-in user before a cloud feature runs, and answers with the state afterwards (check
+     * `status === "ready"`). Safe to call many times: it does nothing when ready, shares one sign-in between callers, and
+     * after a failure it is held to the same cooldown as `retry()`. Never throws.
+     */
+    async ensureSignedIn(): Promise<AuthState> {
+      wanted = true;
+      if (state.status === "ready") return state;
+      if (current !== null) await attempt(true);
+      else if (state.status === "degraded" || state.status === "offline") {
+        if (mayRetry()) await attempt(true);
+      } else await attempt(true);
+      return state;
+    },
+    /** How many one-time row checks failed after a sign-in. For tests and diagnostics; no user data. */
+    ensureRowsFailures: (): number => ensureRowsFailures,
     async upgradeWithEmail(email: string): Promise<UpgradeResult> {
       const address = email.trim();
       if (address.length > 254 || !EMAIL_RE.test(address)) return { ok: false, message: "That email address does not look right." };

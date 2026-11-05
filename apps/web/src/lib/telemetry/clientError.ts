@@ -14,7 +14,7 @@ import { knownRoute } from "./routes";
 import { recordAppEvent } from "./sinks";
 
 export const CLIENT_ERROR_MAX_BYTES = 2048;
-export const CLIENT_ERROR_CODES = ["render_error", "global_error", "unhandled_rejection"] as const;
+export const CLIENT_ERROR_CODES = ["render_error", "global_error", "unhandled_rejection", "ensure_rows_failed"] as const;
 
 const schema = z.strictObject({
   code: z.enum(CLIENT_ERROR_CODES),

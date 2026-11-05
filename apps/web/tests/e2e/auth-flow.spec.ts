@@ -105,12 +105,29 @@ test.describe("Supabase is unreachable: every page still works", () => {
 test.describe("anonymous flow with a working Supabase", () => {
   test.skip(process.env.RUMI_E2E_AUTH !== "1", "set RUMI_E2E_AUTH=1 (the CI e2e job does)");
 
-  test("a fresh browser signs in anonymously without being asked, and the page stays usable", async ({ page, context }) => {
+  // Sign-in is lazy: AuthProvider only restores a session that already exists. A visit that uses no cloud feature
+  // (reading a page, using the AI helper signed out) must not create an account. Turning memory on is what signs in
+  // (useMemoryControls -> ensureSignedIn); that half is covered by tests/unit/authController.test.ts and actions.test.ts,
+  // and by the fixme test below once the memory switch exists in the UI.
+  test("a fresh browser makes NO sign-in call on any page, and the page stays usable", async ({ page, context }) => {
+    const mock = await mockSupabase(context);
+    for (const route of ["/", "/privacy", "/help"]) {
+      await page.goto(route);
+      await expect(page.locator("main")).toBeVisible();
+      await page.waitForLoadState("networkidle");
+    }
+    expect(mock.to("/auth/v1/signup"), "no anonymous sign-in without a cloud feature").toEqual([]);
+    expect(mock.to("/rest/v1/"), "no database call without a cloud feature").toEqual([]);
+    expect(await page.locator("body").innerText()).not.toContain(UI.pausedLine);
+  });
+
+  // Needs UI lane: the memory switch. Turning it on is what must sign in, exactly once.
+  test.fixme("turning memory on signs in anonymously once", async ({ page, context }) => {
     const mock = await mockSupabase(context);
     await page.goto("/");
+    expect(mock.to("/auth/v1/signup")).toEqual([]);
+    await page.getByRole("checkbox", { name: /remember|memory/i }).check();
     await expect.poll(() => mock.to("/auth/v1/signup").length, { message: "anonymous sign-in call" }).toBe(1);
-    await expect(page.locator("main")).toBeVisible();
-    expect(await page.locator("body").innerText()).not.toContain(UI.pausedLine);
   });
 
   // Needs UI lane: a cloud-sync consent checkbox and a "Save plan" button. Neither exists in the built app.
@@ -164,6 +181,7 @@ test.describe("anonymous flow with a working Supabase", () => {
 });
 
 // Needs UI lane: nothing renders the paused-saving line from useAuth().status yet, so these cannot find it.
+// When the UI lands, sign-in is lazy: turn memory on first (that is what calls ensureSignedIn), then expect the line.
 test.describe.fixme("sign-in refused", () => {
   test.skip(process.env.RUMI_E2E_AUTH !== "1", "set RUMI_E2E_AUTH=1 (the CI e2e job does)");
 

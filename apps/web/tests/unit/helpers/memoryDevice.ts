@@ -26,6 +26,8 @@ export interface DeviceOptions {
   at?: string;
   hydrate?: boolean;
   attempts?: number;
+  /** What the screen's sign-in would do when a call needs the cloud. Without it a call that needs sign-in stays paused. */
+  ensureSignedIn?: () => Promise<AuthStatus>;
 }
 
 /**
@@ -71,6 +73,7 @@ export function memoryDevice(db: FakeMemoryDb, options: DeviceOptions = {}) {
     store,
     fetchFn,
     authStatus: () => auth.status,
+    ensureSignedIn: options.ensureSignedIn,
     now: () => clock.at,
     attempts: options.attempts ?? 3,
     sleep: async (ms) => void sleeps.push(ms),
