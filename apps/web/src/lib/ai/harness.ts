@@ -267,7 +267,7 @@ const withDegraded = (reply: unknown, degraded: boolean): unknown => ({ ...(repl
 
 /** A refused body is scanned this deep, for this many strings, and each string for this many characters (tier 1 only). */
 const RAW_SCAN_DEPTH = 6;
-const RAW_SCAN_LEAVES = 100;
+const RAW_SCAN_LEAVES = 300; // a full practice request (plan, symptoms, 20 turns) has about 110 strings before the newest turn
 const RAW_SCAN_CHARS = 4_000;
 
 /**
@@ -405,10 +405,11 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       if (!demo && (await classify(run, provider, nonce, classifierText(flagged))) !== "no") return finish(crisis());
     } else if (!demo) {
       // Tier none fails open: the regex layer misses about a third of real phrasings, so enough text is asked about, but an outage must
-      // not turn every message into a card. Text with an injection hit is not sent (a steered "no" would change nothing here).
+      // not turn every message into a card. Text with an injection-scan hit is still asked about: the scan counts ordinary words
+      // ("secret", "password"), and a steered answer can only turn a yes into a no, which is what skipping would do anyway.
       const typed = fields.filter((t) => t.trim() !== "");
       const timeLeft = DEADLINE_MS - (now() - run.startedAt);
-      if (typed.reduce((n, t) => n + t.trim().length, 0) >= CLASSIFY_NONE_MIN_CHARS && timeLeft >= CLASSIFY_NONE_MIN_LEFT_MS && !typed.some((t) => scanInjection(t) > 0)) {
+      if (typed.reduce((n, t) => n + t.trim().length, 0) >= CLASSIFY_NONE_MIN_CHARS && timeLeft >= CLASSIFY_NONE_MIN_LEFT_MS) {
         stage = "provider";
         const verdict = await classify(run, provider, nonce, classifierText(typed));
         ev.classifier = verdict === "failed" ? "none_failed" : "none_ok";

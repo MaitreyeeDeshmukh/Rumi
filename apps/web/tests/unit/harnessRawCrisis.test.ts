@@ -89,6 +89,12 @@ describe("P2-1: a crisis phrase in a request that is refused before the crisis c
     expect(await bodyOf(await runTask(fakeTask().spec, post(shallow), deps(fakeProvider([]))))).toEqual({ crisis: true });
   });
 
+  it("a full practice request (about 110 strings before the newest turn) with an over-long last turn still gets the card", async () => {
+    const body = { plan: Array.from({ length: 150 }, (_, i) => `plan item ${i}`), latest: `${CRISIS} ${"x ".repeat(400)}` };
+    const res = await runTask(fakeTask().spec, post(body), deps(fakeProvider([])));
+    expect(await bodyOf(res)).toEqual({ crisis: true });
+  });
+
   it("a plain string body that is a certain phrase gets the card (a leaf at the top)", async () => {
     expect(await bodyOf(await runTask(fakeTask().spec, post(null, {}, JSON.stringify(CRISIS)), deps(fakeProvider([]))))).toEqual({ crisis: true });
   });

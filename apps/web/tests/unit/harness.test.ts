@@ -1106,7 +1106,7 @@ describe("runTask: cookie, headers and telemetry", () => {
       inTokens: 11,
       outTokens: 5,
       ms: 321,
-      attempts: 1,
+      attempts: 2, // the classifier question (asked even though the text trips the injection scan) plus the task call
     });
   });
 
