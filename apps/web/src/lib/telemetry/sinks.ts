@@ -4,7 +4,7 @@
  * Rows carry counts and codes only: no text, no user id, no key (see lib/ai/telemetry.ts for the field whitelist).
  */
 import { after } from "next/server";
-import { aiRecord, emitLine, type AiEvent } from "@/lib/ai/telemetry";
+import { aiRecord, emitLine, toDbOutcome, type AiEvent, type DbOutcome } from "@/lib/ai/telemetry";
 import { dbWritesEnabled, getRelease } from "./config";
 import { telemetryDb, type TelemetryTable } from "./db";
 import { hit } from "./throttle";
@@ -101,50 +101,14 @@ function persist(store: TelemetryTable, job: () => PromiseLike<{ error: unknown 
   }
 }
 
-type DbOutcome =
-  | "ok"
-  | "degraded"
-  | "crisis"
-  | "rate_limited"
-  | "invalid_input"
-  | "provider_error"
-  | "guard_blocked"
-  | "unauthorized"
-  | "timeout"
-  | "config_error";
-
-const ERROR_OUTCOME: Record<string, DbOutcome> = {
-  forbidden: "unauthorized",
-  rate_limited: "rate_limited",
-  bad_input: "invalid_input",
-  too_large: "invalid_input",
-  ai_unavailable: "provider_error",
-  ai_invalid: "guard_blocked",
-  config: "config_error",
-  timeout: "timeout",
-};
-
-/** Addendum section 2. `mock` is not stored (null). An error with a missing or new code counts as a provider error. */
-export function dbOutcome(e: Pick<AiEvent, "outcome" | "errorCode">): DbOutcome | null {
-  switch (e.outcome) {
-    case "mock":
-      return null;
-    case "ok":
-      return "ok";
-    case "crisis":
-      return "crisis";
-    case "fallback":
-      return "degraded";
-    default:
-      return ERROR_OUTCOME[e.errorCode ?? ""] ?? "provider_error";
-  }
-}
+/** Addendum section 2. The one mapping lives in lib/ai/telemetry.ts; `mock` is not stored (null). */
+export const dbOutcome = (e: Pick<AiEvent, "outcome" | "errorCode">): DbOutcome | null => toDbOutcome(e.outcome, e.errorCode);
 
 export type CacheStatus = "miss" | "hit" | "bypass";
 const CACHE: readonly string[] = ["miss", "hit", "bypass"];
 const BUCKET = /^[a-z0-9:_-]{1,40}$/;
 
-export function recordAiEvent(e: AiEvent, extra: { cacheStatus: CacheStatus; cachedTokens: number; bucket: string }): void {
+export function recordAiEvent(e: AiEvent, extra: { cacheStatus: CacheStatus; cachedTokens: number; bucket?: string }): void {
   try {
     const rec = aiRecord(e);
     const cacheStatus = CACHE.includes(extra?.cacheStatus) ? extra.cacheStatus : "bypass";

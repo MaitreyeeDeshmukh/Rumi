@@ -14,7 +14,7 @@
  *   -> daily usage limit (Supabase counters) -> ledger -> prompt (nonce regions, canary)
  *   -> provider calls (at most 3, 22 s) -> output guards (model crisis flag before Zod, Zod, links, advice, task rules)
  *   -> finalize -> reply schema -> on any hard failure or a provider that is down: spec.fallback with degraded:true
- *   -> one telemetry call (codes and counts only) -> JSON answer, no-store, x-request-id, session cookie appended.
+ *   -> one telemetry call (codes and counts only) -> JSON answer, no-store, x-request-id.
  * With MOCK_AI=1 nothing touches Supabase: no auth lookup, no flags, no limits, no caches.
  *
  * Nothing the user typed, nothing from memory and no key is ever written to a log line or an error body.
@@ -448,7 +448,6 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   };
   const ev = run.ev;
   let stage: Stage = "guard";
-  let cookie: string | null = null;
   let ipHash = "0000000000000000";
   let user: SignedIn | null = null;
   let cacheStatus: CacheStatus = "bypass";
@@ -462,7 +461,6 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     // The cache header is for operators and tests; on a production deployment it is not sent.
     if (!isVercelProduction()) res.headers.set("x-rumi-cache", cacheStatus);
     if (mockHeader) res.headers.set("x-rumi-mock", "1");
-    if (cookie !== null) res.headers.append("Set-Cookie", cookie);
     try {
       // A crisis event carries no bucket: nothing may tie a crisis to a person or an address.
       const bucket = ev.outcome === "crisis" ? {} : { bucket: bucketOf(user === null ? null : user.userHash, ipHash) };
@@ -510,7 +508,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     return json(done.reply);
   };
   const failure = (e: HttpError | AppError): Response => {
-    const app = e instanceof AppError ? e : new AppError(e.code);
+    const app: AppError = e; // HttpError is an AppError
     ev.outcome = "error";
     ev.degraded = false;
     ev.errorCode = app.code as EventErrorCode;
@@ -524,25 +522,22 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   };
 
   try {
-    // 1. same origin, session, limits, declared size, key format
-    const guard = guardRequest(req, { limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
-    cookie = guard.session.setCookie;
-    ipHash = guard.ipHash;
+    // 1. same origin, declared size, address limit, who is asking (Supabase Auth), that user's limit.
+    //    Signed out is allowed unless the route says "required"; auth being down counts as signed out.
+    //    With MOCK_AI=1 nothing touches Supabase: no auth lookup.
     const mock = mockAiEnabled();
+    const lookup = deps.requireUser ?? requireUser;
+    const guard = await guardRequest(req, {
+      limiter: deps.limiter,
+      maxBytes: LIMITS.bodyBytesMax,
+      requireAuth: deps.auth === "required",
+      authenticate: mock ? null : (r) => within(lookup(r), AUTH_MS).catch((e: unknown) => Promise.reject(e instanceof AppError ? e : new AppError("store_unavailable"))),
+    });
+    user = guard.user;
+    ipHash = guard.ipHash;
     if (mock && mockOutsideLocalDev()) {
       mockHeader = true;
       announceMock(spec.name);
-    }
-
-    // 2. who is asking. Signed out is allowed unless the route says "required"; auth being down counts as signed out.
-    if (!mock) {
-      stage = "auth";
-      try {
-        user = await within((deps.requireUser ?? requireUser)(req), AUTH_MS);
-      } catch (e) {
-        if (deps.auth === "required") throw e instanceof AppError ? e : new AppError("unauthorized");
-        user = null;
-      }
     }
 
     // 3. body with a byte cap, then the request schema

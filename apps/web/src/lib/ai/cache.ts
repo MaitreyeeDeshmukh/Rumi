@@ -7,7 +7,7 @@
  */
 import { createHmac, createHash } from "node:crypto";
 import type { TaskName } from "@/features/shared/task";
-import { hashingKey } from "@/lib/security/session";
+import { hashingKey } from "@/lib/auth/secret";
 
 const inFlight = new Map<string, Promise<unknown>>();
 

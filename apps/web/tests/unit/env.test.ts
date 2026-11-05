@@ -36,7 +36,7 @@ describe("parseEnv", () => {
   it("only accepts 1 or 0 for the on/off switches, so a typo is caught", () => {
     expect(parseEnv({ MOCK_AI: "1" }).MOCK_AI).toBe("1");
     expect(() => parseEnv({ MOCK_AI: "yes" })).toThrow(/MOCK_AI/);
-    expect(() => parseEnv({ MEMORY_ENABLED: "true" })).toThrow(/MEMORY_ENABLED/);
+    expect(() => parseEnv({ AI_FORCE_OFF: "true" })).toThrow(/AI_FORCE_OFF/);
   });
 
   it("turns numeric limits into numbers", () => {

@@ -9,7 +9,7 @@
 import { createHmac } from "node:crypto";
 import { emitLine, type LogLevel } from "@/lib/ai/telemetry";
 import { AppError, fingerprintOf } from "@/lib/errors";
-import { hashingKey } from "@/lib/security/session";
+import { hashingKey } from "@/lib/auth/secret";
 import { getRelease } from "@/lib/telemetry/config";
 import { reportError } from "@/lib/telemetry/sentry";
 

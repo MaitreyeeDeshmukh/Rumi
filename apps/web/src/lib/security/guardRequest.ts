@@ -18,6 +18,8 @@ export interface GuardOptions {
   limiter?: RateLimiter;
   /** Routes that need a user: a signed-out caller gets 401 (or 503 when Supabase Auth cannot be reached). */
   requireAuth?: boolean;
+  /** How the caller is verified. Default: requireUser. `null` skips the lookup (MOCK_AI: nothing may touch Supabase). */
+  authenticate?: ((req: Request) => Promise<AuthedUser>) | null;
 }
 
 /**
@@ -46,8 +48,9 @@ export async function guardRequest(req: Request, options: GuardOptions = {}): Pr
     if (!ipVerdict.ok) throw new AppError("rate_limited", { retryAfterSec: ipVerdict.retryAfterSec });
 
     let user: AuthedUser | null = null;
+    const authenticate = options.authenticate === undefined ? requireUser : options.authenticate;
     try {
-      user = await requireUser(req);
+      if (authenticate !== null) user = await authenticate(req);
     } catch (e) {
       if (!(e instanceof AppError)) throw e;
       if (options.requireAuth) throw e;

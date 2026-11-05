@@ -16,12 +16,12 @@ const schema = z.object({
   NODE_ENV: z.string().min(1).optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: nonEmpty.optional(),
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: nonEmpty.optional(),
   GROQ_API_KEY: nonEmpty.optional(),
   GROQ_MODEL_QUALITY: nonEmpty.optional(),
   GROQ_MODEL_FAST: nonEmpty.optional(),
   GROQ_MODEL_STT: nonEmpty.optional(),
   SESSION_SECRET: secret.optional(),
-  MEMORY_ENABLED: flag.optional(),
   CARTESIA_API_KEY: nonEmpty.optional(),
   CARTESIA_VERSION: nonEmpty.optional(),
   SENTRY_DSN: nonEmpty.optional(),
@@ -33,6 +33,11 @@ const schema = z.object({
   VERCEL_ENV: z.string().min(1).optional(),
   MOCK_AI: flag.optional(),
   EVAL_MODE: flag.optional(),
+  READY_TOKEN: nonEmpty.optional(),
+  RELEASE: nonEmpty.optional(),
+  TELEMETRY_DB_WRITES: nonEmpty.optional(),
+  AUTH_PROXY_REFRESH: nonEmpty.optional(),
+  TURNSTILE_SECRET_KEY: nonEmpty.optional(),
 });
 
 export type Env = z.infer<typeof schema>;
