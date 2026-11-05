@@ -358,6 +358,14 @@ describe("forgetNamespace: options and clock", () => {
     }
   });
 
+  it("an emptyStreak of 0 or 0.5 is not accepted: at least one empty list, never zero", async () => {
+    for (const zero of [0, 0.5]) {
+      const s = scripted([[]]);
+      await run(NS, s.client, s.tk, { emptyStreak: zero });
+      expect(s.listCalls()).toBe(3);
+    }
+  });
+
   it("emptyStreak is a whole number: 2.7 means 2", async () => {
     const s = scripted([[]]);
     await run(NS, s.client, s.tk, { emptyStreak: 2.7 });
