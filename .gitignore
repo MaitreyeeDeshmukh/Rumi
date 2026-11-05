@@ -40,3 +40,9 @@ Thumbs.db
 .claude/settings.local.json
 .handoff/
 *.log
+
+# Eval runs, throwaway roast tests and generated prompt export (summaries are committed as JSON, runs are not)
+apps/web/tests/evals/runs/
+apps/web/tests/evals/last-run.json
+apps/web/tests/roast/
+prompts-export.html
