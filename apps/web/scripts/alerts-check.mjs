@@ -6,7 +6,7 @@
 // A missing variable or an unreachable service is itself an alert (metrics_unreachable / not_ready), written to the file
 // with exit 0, so an issue opens. Exit 1 happens only on a bug in this script. Prints alert keys only, never a value.
 import { writeFileSync } from "node:fs";
-import { DEFAULT_THRESHOLDS, evaluateAlerts, undecidedAlerts } from "../src/lib/telemetry/alerts.ts";
+import { DEFAULT_THRESHOLDS, evaluateAlerts, informational, undecidedAlerts } from "../src/lib/telemetry/alerts.ts";
 
 const { SUPABASE_URL, SUPABASE_SECRET_KEY, APP_URL, READY_TOKEN, AI_DAILY_GLOBAL_SPEND_CAP_USD, ALERTS_OUT = "alerts.json" } = process.env;
 const TIMEOUT_MS = 10_000;
@@ -68,6 +68,25 @@ async function readReady() {
   return probeReady(base);
 }
 
+/** Fields added by the A-E migrations. null (not undefined) when the snapshot lacks one or has the wrong type: the rule is then undecided. */
+function newFields(snap) {
+  if (snap === null) return { maintenance: null, defaultPartitionRows: null, anonPurgeEnabled: null, anonymousBacklog: null };
+  const m = snap.last_maintenance;
+  const maintenance =
+    typeof m === "object" && m !== null && !Array.isArray(m)
+      ? Object.fromEntries(Object.entries(m).map(([job, v]) => [job, { status: typeof v?.status === "string" ? v.status : null, at: typeof v?.at === "string" ? v.at : null }]))
+      : null;
+  const at = Date.parse(snap.at);
+  const backlog = snap.anonymous_user_backlog;
+  return {
+    maintenance,
+    defaultPartitionRows: typeof snap.default_partition_rows === "boolean" ? snap.default_partition_rows : null,
+    anonPurgeEnabled: typeof snap.anon_purge_enabled === "boolean" ? snap.anon_purge_enabled : null,
+    anonymousBacklog: backlog !== null && backlog !== undefined && Number.isFinite(Number(backlog)) ? Number(backlog) : null,
+    nowMs: Number.isNaN(at) ? Date.now() : at,
+  };
+}
+
 const count = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const [snap, ready] = await Promise.all([readSnapshot(), readReady()]);
 
@@ -79,8 +98,10 @@ const snapshot = {
   spendUsd: snap === null || typeof snap.usage_today !== "object" || snap.usage_today === null ? null : count(snap.usage_today.global_cost_usd),
   appErrors: snap === null || typeof appEvents !== "object" || appEvents === null ? null : Object.values(appEvents).reduce((sum, n) => sum + count(n), 0),
   ready,
+  ...newFields(snap),
 };
 
 const result = { alerts: evaluateAlerts(snapshot, thresholds), undecided: undecidedAlerts(snapshot, thresholds) };
 writeFileSync(ALERTS_OUT, JSON.stringify(result, null, 2));
 console.log(`alerts: ${result.alerts.length === 0 ? "none" : result.alerts.map((a) => a.key).join(", ")}; undecided: ${result.undecided.join(", ") || "none"}`);
+for (const note of informational(snapshot, thresholds)) console.log(`info: ${note}`);

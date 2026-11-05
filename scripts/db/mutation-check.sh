@@ -7,7 +7,7 @@ set -uo pipefail
 unset SUPABASE_DB_URL
 cd "$(dirname "$0")/../.."
 project="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml | head -1)"
-container="supabase_db_${project}"
+container="${RUMI_DB_CONTAINER:-supabase_db_${project}}" # project_id from supabase/config.toml; RUMI_DB_CONTAINER overrides
 docker ps --format '{{.Names}}' | grep -qx "$container" || { echo "local stack not running" >&2; exit 2; }
 
 # patch <function signature> <exact text> <replacement>: rewrites a function body in place

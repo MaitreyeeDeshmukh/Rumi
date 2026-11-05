@@ -11,7 +11,7 @@ set -uo pipefail
 unset SUPABASE_DB_URL
 cd "$(dirname "$0")/../.."
 project="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml | head -1)"
-container="supabase_db_${project}"
+container="${RUMI_DB_CONTAINER:-supabase_db_${project}}" # project_id from supabase/config.toml; RUMI_DB_CONTAINER overrides
 sql() { docker exec -i "$container" psql -U postgres -d postgres -X -q -t -A -v ON_ERROR_STOP=1 "$@"; }
 hex=$(printf '%08x' $$); bucket="u:$hex"; shared="ip:$hex"
 cleanup() { echo "delete from public.ops_ai_usage_daily where bucket in ('$bucket', '$shared', 'u:0000000a', 'u:0000000b')" | sql >/dev/null; }

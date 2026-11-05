@@ -5,11 +5,19 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_THRESHOLDS, evaluateAlerts, undecidedAlerts, type AlertSnapshot } from "@/lib/telemetry/alerts";
+import { DEFAULT_THRESHOLDS, MAINTENANCE_JOBS, evaluateAlerts, informational, undecidedAlerts, type AlertSnapshot } from "@/lib/telemetry/alerts";
 import { CLEARED_COMMENT, NO_DATA_COMMENT, syncIssues, type Gh } from "@/lib/telemetry/alertIssues";
 
 const healthy: AlertSnapshot = { recent: { calls: 100, errorCalls: 0, degradedCalls: 0 }, spendUsd: 1, appErrors: 0, ready: { ok: true, failed: [] } };
 const keys = (s: Partial<AlertSnapshot>): string[] => evaluateAlerts({ ...healthy, ...s }).map((a) => a.key);
+
+const NOW = Date.parse("2026-11-06T12:00:00Z");
+const HOUR = 3_600_000;
+const ranAt = (hoursAgo: number, status = "succeeded") => ({ status, at: new Date(NOW - hoursAgo * HOUR).toISOString() });
+/** All five jobs ran 9 hours ago and succeeded. */
+const freshJobs = () => Object.fromEntries(MAINTENANCE_JOBS.map((j) => [j, ranAt(9)]));
+const db = (s: Partial<AlertSnapshot>): string[] =>
+  evaluateAlerts({ ...healthy, nowMs: NOW, maintenance: freshJobs(), defaultPartitionRows: false, anonPurgeEnabled: false, anonymousBacklog: 0, ...s }).map((a) => a.key);
 
 describe("evaluateAlerts", () => {
   it("is quiet when everything is fine", () => {
@@ -60,6 +68,53 @@ describe("evaluateAlerts", () => {
     const all = evaluateAlerts({ recent: { calls: 100, errorCalls: 50, degradedCalls: 50 }, spendUsd: 9, appErrors: 50, ready: { ok: false, failed: ["env"] } });
     expect(all.map((a) => a.key)).toEqual(["provider_errors", "degraded_replies", "spend_cap", "app_errors", "not_ready"]);
     for (const a of all) expect(a.title.length).toBeGreaterThan(5);
+  });
+});
+
+describe("evaluateAlerts: database maintenance (ops_alert_snapshot from migrations A-E)", () => {
+  it("is quiet when every job ran within 36 hours and succeeded", () => {
+    expect(db({})).toEqual([]);
+    expect(db({ maintenance: Object.fromEntries(MAINTENANCE_JOBS.map((j) => [j, ranAt(36)])) })).toEqual([]); // exactly at the limit is fine
+  });
+
+  it("raises maintenance_stale for a job older than 36 hours, one that never ran, one that is missing, and one that failed", () => {
+    expect(db({ maintenance: { ...freshJobs(), prune: ranAt(37) } })).toEqual(["maintenance_stale"]);
+    expect(db({ maintenance: { ...freshJobs(), prune: { status: null, at: null } } })).toEqual(["maintenance_stale"]);
+    const { health: _gone, ...fewer } = freshJobs();
+    expect(db({ maintenance: fewer })).toEqual(["maintenance_stale"]);
+    expect(db({ maintenance: { ...freshJobs(), retention: ranAt(1, "failed") } })).toEqual(["maintenance_stale"]);
+    expect(db({ maintenance: {} })).toEqual(["maintenance_stale"]);
+  });
+
+  it("names the jobs and the reason in the detail, and nothing else", () => {
+    const a = evaluateAlerts({ ...healthy, nowMs: NOW, maintenance: { ...freshJobs(), prune: ranAt(40), health: ranAt(2, "failed") } }).find((x) => x.key === "maintenance_stale");
+    expect(a?.detail).toContain("prune (last run 40 h ago)");
+    expect(a?.detail).toContain("health (last run failed)");
+    expect(a?.detail).not.toContain("partitions");
+  });
+
+  it("a job that is still running is not a failure", () => {
+    expect(db({ maintenance: { ...freshJobs(), partitions: ranAt(0, "running") } })).toEqual([]);
+  });
+
+  it("raises default_partition_rows when rows sit in a default partition", () => {
+    expect(db({ defaultPartitionRows: true })).toEqual(["default_partition_rows"]);
+  });
+
+  it("anonymous backlog: informational between 20000 and 50000 while the purge is off, an alert above 50000, an alert above 20000 once armed", () => {
+    expect(db({ anonymousBacklog: 20_001 })).toEqual([]);
+    expect(informational({ ...healthy, anonPurgeEnabled: false, anonymousBacklog: 20_001 })).toHaveLength(1);
+    expect(db({ anonymousBacklog: 50_000 })).toEqual([]);
+    expect(db({ anonymousBacklog: 50_001 })).toEqual(["anonymous_backlog"]);
+    expect(db({ anonPurgeEnabled: true, anonymousBacklog: 20_000 })).toEqual([]);
+    expect(db({ anonPurgeEnabled: true, anonymousBacklog: 20_001 })).toEqual(["anonymous_backlog"]);
+    expect(informational({ ...healthy, anonPurgeEnabled: true, anonymousBacklog: 30_000 })).toEqual([]);
+  });
+
+  it("skips these rules when the snapshot does not carry them (undefined), and leaves them undecided when it lacks them (null)", () => {
+    expect(keys({})).toEqual([]);
+    expect(undecidedAlerts({ ...healthy, maintenance: null, defaultPartitionRows: null, anonymousBacklog: null })).toEqual(["maintenance_stale", "default_partition_rows", "anonymous_backlog"]);
+    expect(undecidedAlerts({ ...healthy, maintenance: freshJobs(), defaultPartitionRows: false, anonymousBacklog: 0 })).toEqual([]);
   });
 });
 
@@ -166,7 +221,7 @@ describe("alerts-check.mjs", () => {
     const printed = run({}, out);
     const r = read(out);
     expect(r.alerts.map((a) => a.key)).toEqual(["metrics_unreachable", "not_ready"]);
-    expect(r.undecided).toEqual(["provider_errors", "degraded_replies", "spend_cap", "app_errors"]);
+    expect(r.undecided).toEqual(["provider_errors", "degraded_replies", "spend_cap", "app_errors", "maintenance_stale", "default_partition_rows", "anonymous_backlog"]);
     expect(printed).toContain("metrics_unreachable");
   });
 
@@ -198,7 +253,18 @@ describe("alerts-check.mjs", () => {
       child.on("error", reject);
     });
 
-  const snapshot = { at: "x", ai_30m: { calls: 100, error_calls: 30, degraded_calls: 5 }, usage_today: { global_calls: 5, global_cost_usd: 9.5 }, app_events_30m: { app: 8, auth: 5 }, default_partition_rows: false };
+  const nowIso = new Date().toISOString();
+  /** The shape of ops_alert_snapshot() from migration 20261105130000. */
+  const snapshot = {
+    at: nowIso,
+    ai_30m: { calls: 100, error_calls: 30, degraded_calls: 5 },
+    usage_today: { global_calls: 5, global_cost_usd: 9.5 },
+    app_events_30m: { app: 8, auth: 5 },
+    default_partition_rows: false,
+    last_maintenance: Object.fromEntries(MAINTENANCE_JOBS.map((j) => [j, { status: "succeeded", at: nowIso }])),
+    anon_purge_enabled: false,
+    anonymous_user_backlog: 0,
+  };
 
   it("reads ops_alert_snapshot() and /api/ready, and raises the matching alerts", async () => {
     const m = await mock((url) => (url.startsWith("/rest/v1/rpc/ops_alert_snapshot") ? { status: 200, body: snapshot } : { status: 200, body: { ok: true } }));
@@ -208,6 +274,28 @@ describe("alerts-check.mjs", () => {
     expect(r.alerts.map((a) => a.key)).toEqual(["provider_errors", "spend_cap", "app_errors"]);
     expect(r.undecided).toEqual([]);
     expect(m.seen).toContain("POST /rest/v1/rpc/ops_alert_snapshot");
+  });
+
+  it("raises the database maintenance alerts from the snapshot, and prints an informational note without raising", async () => {
+    const stale = new Date(Date.now() - 40 * HOUR).toISOString();
+    const bad = { ...snapshot, ai_30m: { calls: 100, error_calls: 0, degraded_calls: 0 }, usage_today: { global_cost_usd: 1 }, app_events_30m: {}, default_partition_rows: true, last_maintenance: { ...snapshot.last_maintenance, prune: { status: "succeeded", at: stale } }, anonymous_user_backlog: 60_000 };
+    const m = await mock((url) => (url.startsWith("/rest/v1/") ? { status: 200, body: bad } : { status: 200, body: { ok: true } }));
+    const out = outFile();
+    await runAsync({ SUPABASE_URL: m.url, SUPABASE_SECRET_KEY: "k", APP_URL: m.url }, out);
+    expect(read(out).alerts.map((a) => a.key)).toEqual(["maintenance_stale", "default_partition_rows", "anonymous_backlog"]);
+
+    const quiet = await mock((url) => (url.startsWith("/rest/v1/") ? { status: 200, body: { ...bad, default_partition_rows: false, last_maintenance: snapshot.last_maintenance, anonymous_user_backlog: 30_000 } } : { status: 200, body: { ok: true } }));
+    const out2 = outFile();
+    await runAsync({ SUPABASE_URL: quiet.url, SUPABASE_SECRET_KEY: "k", APP_URL: quiet.url }, out2);
+    expect(read(out2)).toEqual({ alerts: [], undecided: [] });
+  });
+
+  it("an old snapshot without the new fields leaves those three rules undecided instead of passing them", async () => {
+    const { last_maintenance: _a, default_partition_rows: _b, anon_purge_enabled: _c, anonymous_user_backlog: _d, ...old } = snapshot;
+    const m = await mock((url) => (url.startsWith("/rest/v1/") ? { status: 200, body: { ...old, ai_30m: { calls: 100, error_calls: 0, degraded_calls: 0 }, usage_today: { global_cost_usd: 1 }, app_events_30m: {} } } : { status: 200, body: { ok: true } }));
+    const out = outFile();
+    await runAsync({ SUPABASE_URL: m.url, SUPABASE_SECRET_KEY: "k", APP_URL: m.url }, out);
+    expect(read(out)).toEqual({ alerts: [], undecided: ["maintenance_stale", "default_partition_rows", "anonymous_backlog"] });
   });
 
   it("raises not_ready only after two failed probes, and a single blip is not an alert", async () => {

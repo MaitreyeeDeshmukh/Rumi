@@ -121,7 +121,7 @@ jobs:
           [ "${#files[@]}" -gt 0 ] || { echo "no supabase/tests/*.sql files found" >&2; exit 1; }
           for f in "${files[@]}"; do
             echo "== $f"
-            psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -X -q -f "$f"
+            bash scripts/db/run-sql.sh "$f"
           done
       - name: Schema lint
         if: steps.db.outputs.present == 'true'

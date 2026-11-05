@@ -70,7 +70,7 @@ describe(".github/workflows/ci.yml", () => {
   it("sql-tests starts local Supabase, runs the SQL files, lints and runs advisors, and fails on main without a database folder", () => {
     const j = J["sql-tests"];
     expect(j).toContain("supabase start");
-    expect(j).toMatch(/psql .*ON_ERROR_STOP=1/);
+    expect(j).toContain('bash scripts/db/run-sql.sh "$f"'); // psql inside the local db container, ON_ERROR_STOP=1 (scripts/db/run-sql.sh)
     expect(j).toContain("supabase/tests/*.sql");
     expect(j).toMatch(/supabase db lint .*--fail-on error/);
     expect(j).toMatch(/supabase db advisors .*--fail-on error/);

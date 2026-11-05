@@ -18,7 +18,7 @@ set -euo pipefail
 unset SUPABASE_DB_URL PGPASSWORD   # this drill only ever touches the local stack
 cd "$(dirname "$0")/../.."
 project="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml | head -1)"
-container="supabase_db_${project}"
+container="${RUMI_DB_CONTAINER:-supabase_db_${project}}" # project_id from supabase/config.toml; RUMI_DB_CONTAINER overrides
 psql_() { docker exec -i "$container" psql -U postgres -d postgres -X -q -t -A -v ON_ERROR_STOP=1 "$@"; }
 q() { echo "$1" | psql_; }
 expect() { [ "$2" = "$3" ] || { echo "DRILL FAILED: $1 (got '$2', expected '$3')" >&2; exit 1; }; echo "ok: $1"; }

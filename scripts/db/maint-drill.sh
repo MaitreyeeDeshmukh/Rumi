@@ -10,7 +10,7 @@ set -uo pipefail
 unset SUPABASE_DB_URL
 cd "$(dirname "$0")/../.."
 project="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml | head -1)"
-container="supabase_db_${project}"
+container="${RUMI_DB_CONTAINER:-supabase_db_${project}}" # project_id from supabase/config.toml; RUMI_DB_CONTAINER overrides
 psql_() { docker exec -i "$container" psql -U postgres -d postgres -X -q -t -A -v ON_ERROR_STOP=1 "$@"; }
 q() { echo "$1" | psql_; }
 fast() { echo "$1" | docker exec -i -e PGOPTIONS="-c statement_timeout=0" "$container" psql -U postgres -d postgres -X -q -t -A -v ON_ERROR_STOP=1; }

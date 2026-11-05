@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   down: false,
   hang: false,
   /** "ok" | "missing" (function does not exist) | "garbage" (answers with something that is not a boolean) */
-  take: "ok" as "ok" | "missing" | "garbage",
+  take: "ok" as "ok" | "missing" | "garbage" | "lock_timeout" | "deadlock",
   day: "",
   now: (): number => 0,
   calls: [] as Rpc[],
@@ -32,6 +32,9 @@ vi.mock("@/lib/supabase/admin", () => ({
         }
         if (fn === "ops_take_ai_quota") {
           if (mocks.take === "missing") return Promise.resolve({ data: null, error: { code: "42883", message: "function does not exist" } });
+          // 55P03: the function could not lock a bucket row within its lock_timeout. 40P01: two callers locked buckets in opposite order.
+          if (mocks.take === "lock_timeout") return Promise.resolve({ data: null, error: { code: "55P03", message: "could not obtain lock on row" } });
+          if (mocks.take === "deadlock") return Promise.resolve({ data: null, error: { code: "40P01", message: "deadlock detected" } });
           if (mocks.take === "garbage") return Promise.resolve({ data: "yes", error: null });
           // Atomic like the SQL function: refuse if ANY bucket is at its limit, otherwise count them ALL.
           const names = args.p_buckets as string[];
@@ -194,6 +197,8 @@ describe("checkAndBump with the store down or without the function: in-memory co
     ["the function does not exist (42883)", () => (mocks.take = "missing")],
     ["the store is down", () => (mocks.down = true)],
     ["the store answers with something that is not true or false", () => (mocks.take = "garbage")],
+    ["a bucket row is locked past lock_timeout (55P03)", () => (mocks.take = "lock_timeout")],
+    ["the quota function is the loser of a deadlock (40P01)", () => (mocks.take = "deadlock")],
   ])("%s: the request is served and ONE usage_store_down event is written for many failures", async (_label, breakIt) => {
     breakIt();
     for (let i = 0; i < 2; i++) expect(await checkAndBump(asAnon)).toEqual({ ok: true });

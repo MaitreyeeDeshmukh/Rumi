@@ -237,7 +237,7 @@ describe("supabaseStore failure handling", () => {
       expect(await store.upsertFacts([fact("p1")])).toBe(1);
       expect(db.calls).toHaveLength(2);
     }
-    for (const refused of [{ status: 400 }, { code: "23514" }, { code: "22023" }, { status: 404 }]) {
+    for (const refused of [{ status: 400 }, { code: "23514" }, { code: "22023" }, { code: "54000" }, { status: 404 }]) {
       const { db, store } = setup();
       db.script = [refused];
       expect(await reason(store.upsertFacts([fact("p1")]))).toBe("invalid");

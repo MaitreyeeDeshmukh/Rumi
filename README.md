@@ -81,9 +81,12 @@ The workflow `.github/workflows/alerts.yml` runs every 15 minutes. Rules are in 
 | `[alert] spend_cap` | Spend today is over 80% of `AI_DAILY_GLOBAL_SPEND_CAP_USD` (default 10) | Cost spike |
 | `[alert] app_errors` | More than 10 app error events in 30 minutes | Bad deploy |
 | `[alert] not_ready` | `/api/ready` failed twice in a row, 5 seconds apart | Database down, or Bad deploy |
+| `[alert] maintenance_stale` | Any of the five `rumi-maint-*` cron jobs has not run for 36 hours, never ran, is not scheduled, or its last run failed | Database maintenance |
+| `[alert] default_partition_rows` | Rows sit in `ops_app_events_default` or `ops_ai_events_default`, so a monthly partition is missing | Database maintenance |
+| `[alert] anonymous_backlog` | More than 50,000 anonymous users are old enough to purge (more than 20,000 once `anon_purge_enabled` is on). Between 20,000 and 50,000 with the purge off is only a line in the job log, no issue | Database maintenance |
 | `[alert] metrics_unreachable` | The job could not read the database, or a job secret is missing | Check the alert secrets and the Supabase project |
 
-An issue is closed as "Cleared" only when its rule was judged and is fine. If the last 30 minutes had too few calls to judge (`provider_errors`, `degraded_replies`) or the metrics were unreadable, the issue stays open and gets one comment "No data". Close it by hand once you have looked.
+An issue is closed as "Cleared" only when its rule was judged and is fine. If the last 30 minutes had too few calls to judge (`provider_errors`, `degraded_replies`) or the metrics were unreadable (or the snapshot lacks the maintenance fields), the issue stays open and gets one comment "No data". Close it by hand once you have looked.
 
 Things to know:
 - **The workflow file must be on the default branch.** GitHub runs schedules only from there. A merge to another branch does nothing.
@@ -102,6 +105,7 @@ Set `enabled = true` to turn it back on. The app caches flags for 30 seconds, so
 | --- | --- |
 | `ai_enabled` | No AI calls. Every reply is the built-in fallback, marked `degraded`. |
 | `memory_sync_enabled` | Saved preferences stop syncing. They stay on the device. |
+| `anon_purge_enabled` | Off (the default) means the daily anonymous-user purge only counts and logs `anon_purge_dry_run`; it deletes nothing. See "Database maintenance" before turning it on. |
 | `cloud_sync_enabled` | Reserved. Nothing reads it yet, because plan and settings sync has not shipped, so changing it does nothing. Plans and settings stay on the device. |
 
 If the database cannot be read, AI stays on and memory sync stays off. The app reads `ai_enabled` and `memory_sync_enabled` (in `lib/ai/flags.ts`), so changing those two works. Sentry (below) is not registered by default, and `cloud_sync_enabled` stays reserved until plan sync ships.
@@ -123,10 +127,17 @@ If the database cannot be read, AI stays on and memory sync stays off. The app r
 3. When `/api/ready` is 200 again, close the issue.
 
 **Event tables too big, or the database is read-only** (disk full: writes fail, `telemetry_store_failed` lines, Supabase warns about disk).
-1. The daily job `ops_maintenance_daily()` already drops event partitions older than 90 days. Check that it ran: `select * from cron.job_run_details order by start_time desc limit 5;`.
+1. The daily jobs `rumi-maint-retention` and `rumi-maint-prune` already drop event partitions older than 90 days. Check that they ran: `select j.jobname, d.status, d.start_time from cron.job j left join lateral (select * from cron.job_run_details r where r.jobid = j.jobid order by r.start_time desc limit 1) d on true where j.jobname like 'rumi-maint-%';`.
 2. To free space now, drop the oldest month: `select tablename from pg_tables where tablename like 'ops_ai_events_2%' or tablename like 'ops_app_events_2%' order by 1;` then `drop table public.ops_ai_events_YYYY_MM;` (and the same for `ops_app_events_`) for the oldest month. Events are only telemetry.
 3. If the database is already read-only, raise the disk size first (Supabase, Settings, Compute and Disk), then do step 2.
 4. Telemetry writes pause by themselves while this happens. Turn them off with "Telemetry stuck" if it lasts.
+
+**Database maintenance** (`maintenance_stale`, `default_partition_rows`, `anonymous_backlog`). Five pg_cron jobs run daily from 03:17 UTC, each in its own transaction: `rumi-maint-partitions`, `-retention`, `-prune`, `-anon-purge`, `-health`.
+1. Which job and why: `select j.jobname, d.status, d.start_time, d.return_message from cron.job j left join lateral (select * from cron.job_run_details r where r.jobid = j.jobid order by r.start_time desc limit 1) d on true where j.jobname like 'rumi-maint-%';` and `select code, count(*) from ops_app_events where code like 'maintenance_%' and created_at > now() - interval '2 days' group by 1;`.
+2. Run a step by hand. A manual run MUST begin with the timeout, because a function cannot set its own: `set statement_timeout = '10min'; select public.ops_maint_partitions();` (or `ops_maint_retention()`, `ops_maint_prune()`, `ops_maint_anon_purge()`, `ops_maint_health()`). A step that is already running skips itself and logs `maintenance_skipped_locked`.
+3. `default_partition_rows`: run `ops_maint_partitions()` as in step 2; it creates the missing month and moves the rows out of the default partition. The alert clears on the next run (15 minutes).
+4. `anonymous_backlog` and **arming the purge.** The purge starts OFF. Each night it logs how many anonymous users it would delete: `select created_at, fingerprint from ops_app_events where code = 'anon_purge_dry_run' order by created_at desc limit 7;` (the count is in the `fingerprint` column as `would_delete:<n>`). Review that count against the number of people you expect to be inactive for 60 days. Only then arm it: `update public.ops_feature_flags set enabled = true where key = 'anon_purge_enabled';`. It deletes up to 2000 users a night. To stop: set `enabled = false`. Deleting a user cascades to every row they own.
+5. Never edit `cron.job` by hand; to change a schedule ship a migration (applying migration E again replaces the jobs).
 
 **Telemetry stuck** (many `telemetry_store_failed` or `telemetry_dropped` lines, or request latency up after a telemetry change).
 1. Set `TELEMETRY_DB_WRITES=off` in Vercel and redeploy. Logs keep every event; only the database copy stops.
@@ -167,7 +178,21 @@ Sentry is not registered by default: it is not installed and nothing sends to it
 - Vercel env: `READY_TOKEN` (any long random string, Sensitive), optionally `RELEASE` for manual deploys.
 - GitHub: create the environment `alerts` (Settings, Environments), restrict its deployment branches to `main`, and put these ENVIRONMENT secrets in it: `ALERTS_SUPABASE_URL`, `ALERTS_SUPABASE_KEY`, `ALERTS_APP_URL`, `ALERTS_READY_TOKEN` (same value as `READY_TOKEN`). Optional environment variable `AI_DAILY_GLOBAL_SPEND_CAP_USD`.
 - `ALERTS_SUPABASE_KEY` is a service-role key today, because `ops_alert_snapshot()` is granted to `service_role` only. The workflow only calls that one function, but the key can do more. Swap it for a read-only database role that can execute only `ops_alert_snapshot()` once the database lane creates one. Until then keep it only in the restricted `alerts` environment.
-- Apply the migration `20261105130000_rumi_metric_views.sql` (it also creates `ops_alert_snapshot()`) before the first deploy of this code.
+- **Apply the migrations in this order, one file at a time, before the first deploy of this code.** Each file is one transaction that gives up after 3 s on a busy table instead of queueing, so a failed file changes nothing and can be applied again:
+  1. `20261105000000_rumi_schema_v1.sql` (base schema)
+  2. `20261105120000_rumi_prod_a_objects.sql` (additive: tables, columns, functions, flags)
+  3. `20261105121000_rumi_prod_b_constraints_not_valid.sql` (new constraints, not validated; stops with a message if existing rows break a rule, and never deletes data)
+  4. `20261105122000_rumi_prod_c_validate.sql` (validates them, drops the superseded ones; does not block writes)
+  5. `20261105123000_rumi_prod_d_triggers.sql` (persona tombstone trigger)
+  6. `20261105124000_rumi_prod_e_cron_and_roles.sql` (the five cron jobs, role timeouts, default privileges)
+  7. `20261105130000_rumi_metric_views.sql` (metric views and `ops_alert_snapshot()`)
+- **Checks after applying** (SQL editor):
+  - `select jobname, username from cron.job;` shows five `rumi-maint-*` jobs, all run by `postgres`.
+  - `select proname, proowner::regrole, prosecdef from pg_proc where proname like 'ops_maint%';` shows owner `postgres` and `prosecdef = true`.
+  - `select key, enabled from public.ops_feature_flags order by 1;` shows `anon_purge_enabled = false`.
+  - `select public.ops_alert_snapshot();` returns the keys `at, ai_30m, usage_today, app_events_30m, default_partition_rows, last_maintenance, anon_purge_enabled, anonymous_user_backlog`. `last_maintenance` fills in after the first night.
+  - `select count(*) from public.ops_app_events_default;` and the same for `ops_ai_events_default` are 0.
+- Local checks: `supabase start`, then `bash scripts/db/run-sql.sh supabase/tests/<file>.sql` for each file in `supabase/tests/` (CI does this in the `sql-tests` job). The script finds the container from `project_id` in `supabase/config.toml` (`supabase_db_<project_id>`); set `RUMI_DB_CONTAINER` to use another one.
 
 ## Build the prototype
 Requires Node (version in `.nvmrc`).

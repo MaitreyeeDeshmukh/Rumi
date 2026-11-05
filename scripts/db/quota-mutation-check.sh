@@ -6,7 +6,7 @@ set -uo pipefail
 unset SUPABASE_DB_URL
 cd "$(dirname "$0")/../.."
 project="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml | head -1)"
-container="supabase_db_${project}"
+container="${RUMI_DB_CONTAINER:-supabase_db_${project}}" # project_id from supabase/config.toml; RUMI_DB_CONTAINER overrides
 mig=supabase/migrations/20261105120000_rumi_prod_a_objects.sql
 sql() { docker exec -i "$container" psql -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 "$@"; }
 restore() { awk '/^create or replace function public.ops_take_ai_quota/{p=1} p{print} p&&/^end \$\$;/{exit}' "$mig" | sql; }
