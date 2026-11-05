@@ -12,7 +12,7 @@ export interface PlanItemRef {
 }
 
 /** Shared content words between a plan item and a line (whole tokens). */
-export function overlapCount(itemText: string, lineText: string): number {
+function overlapCount(itemText: string, lineText: string): number {
   const have = wordSet(lineText);
   return [...new Set(contentWords(itemText))].filter((w) => have.has(w)).length;
 }

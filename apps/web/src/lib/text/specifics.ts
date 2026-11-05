@@ -5,7 +5,7 @@
  * Blanks like "[how many days]" are the escape hatch, so they are removed before the scan and judged separately.
  */
 import type { GuardCode } from "@/features/shared/guards";
-import { COMMON_DRUGS, MONTHS, NUMBER_WORDS, RELATIVE_TIME, UNITS, WEEKDAYS, toSet } from "@/features/shared/lists";
+import { COMMON_DRUGS, MONTHS, NUMBER_WORDS, RELATIVE_TIME, SENTENCE_STARTERS, UNITS, WEEKDAYS, toSet } from "@/features/shared/lists";
 import type { EvidenceLedger } from "@/features/shared/task";
 import { normalizeText, splitSentences, wordList } from "@/lib/text/tokens";
 
@@ -24,6 +24,9 @@ const UNIT_SET = new Set(UNITS.map((u) => normalizeText(u).toLowerCase()));
 const WORD_UNIT_SET = new Set([...UNIT_SET].filter((u) => !["x", "g", "l", "st", "nd", "rd", "th", "am", "pm", "%"].includes(u)));
 
 const KEEP = new Set(["i", "rumi"]);
+const STARTERS = toSet(SENTENCE_STARTERS);
+/** The word right after a level-1 "You can start with:" begins a new clause, like a sentence start. */
+const AFTER_STARTER_MARKER = /start with:\s*$/i;
 const TITLES = new Set(["dr", "mr", "mrs", "ms", "prof"]);
 const CAPS_OK = new Set(["I", "AI", "OK", "US"]);
 /** Months that are also ordinary words: counted only when capitalised and not at the start of a sentence. */
@@ -113,7 +116,8 @@ function scan(text: string): Claim[] {
       const month = MONTH_SET.has(lower) && (!AMBIGUOUS_MONTHS.has(lower) || (capital && i > 0));
       if (WEEKDAY_SET.has(lower) || month || DRUG_SET.has(lower) || PERSON_WORDS.has(lower)) return void claims.push(word(lower, raw));
       if (base.length >= 2 && base === base.toUpperCase() && base !== base.toLowerCase() && !CAPS_OK.has(base)) return void claims.push(word(lower, raw));
-      if (i > 0 && capital && !KEEP.has(lower) && !TITLES.has(lower) && !CAPS_OK.has(base)) claims.push(word(lower, raw));
+      const clauseStart = STARTERS.has(lower) && AFTER_STARTER_MARKER.test(sentence.slice(0, start));
+      if (i > 0 && capital && !clauseStart && !KEEP.has(lower) && !TITLES.has(lower) && !CAPS_OK.has(base)) claims.push(word(lower, raw));
     });
     const flat = sentence.toLowerCase().replace(/[^\p{L}]+/gu, " ");
     for (const p of PHRASES) if (new RegExp(`(?<!\\p{L})${p}(?!\\p{L})`, "u").test(flat)) phrases.push({ need: `p:${p}`, keys: [`p:${p}`], raw: p });

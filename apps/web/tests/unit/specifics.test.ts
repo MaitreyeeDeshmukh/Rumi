@@ -140,6 +140,13 @@ describe("names, capitals and medicines", () => {
     ok("Mom hits me.", "my mom talks for me");
   });
 
+  it("the first word of a level-1 starter is a clause start, but only an ordinary starter word", () => {
+    ok("How long? You can start with: It started ...");
+    ok("What time? You can start with: Can you say ...");
+    expect(tokens("How long? You can start with: Patel ...")).toEqual(["Patel"]);
+    expect(tokens("Who did you see? Try: It was Patel ...")).toEqual(["It", "Patel"]);
+  });
+
   it("only I and Rumi are free", () => {
     ok("I asked Rumi.");
     expect(tokens("Ask Sam.")).toEqual(["Sam"]);

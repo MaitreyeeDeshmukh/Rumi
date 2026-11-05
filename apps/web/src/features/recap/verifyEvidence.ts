@@ -5,6 +5,7 @@
  * The model writes no free-text "unconfirmed" notes; those lines are made here.
  */
 import { lineOverlaps, planStatusFallback, type PlanItemRef } from "@/features/recap/planStatusFallback";
+import type { GuardCode } from "@/features/shared/guards";
 import type { RecapModelOutT } from "@/features/shared/schemas";
 import type { PlanStatusEntry, RecapItem, Speaker, TranscriptLine } from "@/features/shared/types";
 import { COMMON_DRUGS, toSet } from "@/features/shared/lists";
@@ -21,12 +22,20 @@ export interface VerifiedRecap {
   dropped: number;
 }
 
-const MAX_UNCONFIRMED = 30;
-const MAX_UNCONFIRMED_CHARS = 400;
+/** Tighter than the reply schema (30 lines of 400) so the rows also fit the database table (10 lines of 300). */
+const MAX_UNCONFIRMED = 10;
+const MAX_UNCONFIRMED_CHARS = 300;
 const PREFIX = "I could not confirm this: ";
 const UNCLEAR = /\[\s*unclear\s*\]/i;
 const DRUGS = toSet(COMMON_DRUGS);
 const NEGATION = new Set(["not", "never", "avoid", "stop", "dont", "don't", "no", "without", "shouldn't", "mustn't", "cannot", "can't"]);
+
+/** The one line a recap may show when nothing at all could be confirmed (so the escape hatch is not an empty recap). */
+export const NOTHING_CONFIRMED = `${PREFIX}no clear point was found in this visit text.`;
+
+/** Hard `empty`: a recap with no item and no unconfirmed line says nothing at all. */
+export const recapEmptyCodes = (r: { items: readonly unknown[]; unconfirmed: readonly unknown[] }): GuardCode[] =>
+  r.items.length === 0 && r.unconfirmed.length === 0 ? ["empty"] : [];
 
 const fixedLine = (text: string): string => PREFIX + truncateAtWord(text, MAX_UNCONFIRMED_CHARS - PREFIX.length);
 const lower = (s: string): string => normalizeText(s).replace(/\p{Cf}/gu, "").replace(/[’‘]/g, "'").toLowerCase();

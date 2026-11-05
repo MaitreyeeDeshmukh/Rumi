@@ -71,13 +71,13 @@ describe("items need real, matching evidence", () => {
   it("rejected text is clipped so the fixed line fits the reply schema", () => {
     const r = run([item("discussed", "word ".repeat(200), "L99")]);
     expect(r.unconfirmed).toHaveLength(2);
-    expect(r.unconfirmed.every((u) => u.length <= 400 && u.startsWith("I could not confirm this: "))).toBe(true);
+    expect(r.unconfirmed.every((u) => u.length <= 300 && u.startsWith("I could not confirm this: "))).toBe(true);
   });
 
-  it("there are at most 30 unconfirmed lines, however many lines are unclear or rejected", () => {
+  it("there are at most 10 unconfirmed lines (the database table holds 10), however many lines are unclear or rejected", () => {
     const many: TranscriptLine[] = Array.from({ length: 60 }, (_, n) => ({ id: `u${n}`, speaker: "A" as const, text: `part ${n} is [unclear]` }));
     const r = verifyEvidence(many, { items: [], planStatus: [] }, "B");
-    expect(r.unconfirmed).toHaveLength(30);
+    expect(r.unconfirmed).toHaveLength(10);
     expect(r.dropped).toBe(0);
   });
 });
