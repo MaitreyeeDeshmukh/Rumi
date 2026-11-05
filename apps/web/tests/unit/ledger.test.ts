@@ -61,6 +61,11 @@ describe("buildLedger", () => {
     expect(l.items.at(-1)?.label).toBe("L60");
   });
 
+  it("caps a transcript at the 60 lines the schema allows", () => {
+    const l = buildLedger({ lines: Array.from({ length: 70 }, (_, i) => ({ text: `line ${i + 1}` })) });
+    expect(l.items).toHaveLength(60);
+  });
+
   it("normalises fullwidth digits so a dose the user wrote compares equal", () => {
     const l = buildLedger({ mainConcern: "I take ５００ mg" });
     expect(l.items[0].text).toBe("I take 500 mg");

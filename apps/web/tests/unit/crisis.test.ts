@@ -233,6 +233,7 @@ describe("isCrisis: evasion (07 H-P0-1, H-P0-2)", () => {
     ["Greek lookalikes", "I want to kιll myself"],
     ["fullwidth letters", "Ｉ ｗａｎｔ ｔｏ ｋｉｌｌ ｍｙｓｅｌｆ"],
     ["small capitals", "I want to ᴋɪʟʟ ᴍʏꜱᴇʟꜰ"],
+    ["combining mark hidden inside a fake tag", `I want to kill my<${String.fromCodePoint(0x301)}system>self`],
     ["spaced out letters", "I want to k i l l   m y s e l f"],
     ["hyphenated letters", "k-i-l-l m-y-s-e-l-f"],
     ["dotted letters", "k.i.l.l m.y.s.e.l.f"],

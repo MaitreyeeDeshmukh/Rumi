@@ -45,17 +45,16 @@ export function buildLedger(src: LedgerSource): EvidenceLedger {
     items.push({ id: `e${items.length + 1}`, label, text, source });
   };
 
-  // Split on newlines BEFORE collapsing whitespace, so a pasted list keeps one entry per line.
+  // splitSentences cuts at sentence ends and at newlines before any whitespace is collapsed,
+  // so a pasted list keeps one entry per line.
   let userSentences = 0;
   let userPieces = 0;
-  for (const line of (src.rawText ?? "").split(/\r?\n/)) {
-    for (const sentence of splitSentences(line).map(collapse).filter(Boolean)) {
-      userSentences += 1;
-      for (const piece of chunk(sentence, USER_ITEM_CHARS_MAX)) {
-        if (userPieces >= USER_ITEMS_MAX) break;
-        userPieces += 1;
-        add(`U${userPieces}`, piece, "user_words");
-      }
+  for (const sentence of splitSentences(src.rawText ?? "").map(collapse).filter(Boolean)) {
+    userSentences += 1;
+    for (const piece of chunk(sentence, USER_ITEM_CHARS_MAX)) {
+      if (userPieces >= USER_ITEMS_MAX) break;
+      userPieces += 1;
+      add(`U${userPieces}`, piece, "user_words");
     }
   }
 

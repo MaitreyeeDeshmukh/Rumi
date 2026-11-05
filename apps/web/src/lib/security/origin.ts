@@ -13,12 +13,11 @@ export function assertSameOrigin(req: Request): void {
   if (site === null && origin === null) throw new HttpError(403, "forbidden");
   if (site !== null && site !== "same-origin") throw new HttpError(403, "forbidden");
   if (origin === null) return;
-  if (origin === "null") throw new HttpError(403, "forbidden");
   let originHost: string;
   try {
     originHost = new URL(origin).host;
   } catch {
-    // An Origin header that is not a URL cannot come from a browser.
+    // "null" (sandboxed or redirected contexts) and any other value that is not a URL cannot be a same-origin browser fetch.
     throw new HttpError(403, "forbidden");
   }
   if (originHost === "" || originHost !== new URL(req.url).host) throw new HttpError(403, "forbidden");
