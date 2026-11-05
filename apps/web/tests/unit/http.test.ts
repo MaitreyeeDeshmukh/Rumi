@@ -83,3 +83,37 @@ describe("readJson", () => {
     await expect(readJson(post(null), 1000)).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe("07 P3 and H-17 details", () => {
+  it("Retry-After is a whole number between 1 and 3600 even for NaN, Infinity or negative input", () => {
+    for (const [input, expected] of [[Number.NaN, "60"], [Number.POSITIVE_INFINITY, "60"], [-5, "1"], [999_999, "3600"], [0.2, "1"]] as const) {
+      expect(errorResponse(new HttpError(429, "rate_limited", input)).headers.get("Retry-After")).toBe(expected);
+    }
+  });
+
+  it("cancels the request stream as soon as the cap is passed", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          controller.enqueue(new Uint8Array(10_000).fill(0x20));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const req = new Request("https://rumi.test/api/plan", { method: "POST", body: stream, duplex: "half" } as RequestInit & { duplex: "half" });
+    await expect(readJson(req, 25_000)).rejects.toMatchObject({ status: 413 });
+    expect(cancelled).toBe(true);
+  });
+
+  it("drops a __proto__ key from the body, at any depth, so a later merge cannot be abused", async () => {
+    const parsed = (await readJson(post('{"a":1,"__proto__":{"polluted":true},"b":{"__proto__":{"x":1},"c":2}}'), 1000)) as Record<string, unknown>;
+    expect(Object.keys(parsed).sort()).toEqual(["a", "b"]);
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(Object.keys(parsed.b as object)).toEqual(["c"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});

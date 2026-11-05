@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchForm, promptForm, redactPii, scanInjection, stripRegionTokens } from "@/lib/ai/guards/input";
+import { MAX_GUARD_CHARS, matchForm, promptForm, redactPii, scanInjection, squashHitOk, stripRegionTokens } from "@/lib/ai/guards/input";
 
 const HEADER = /<<<|>>>|<\s*\/?\s*(?:user_text|user_memory|system|assistant|facts|style|task|data)(?![\p{L}\p{N}])[^<>]*>/iu;
 
@@ -149,7 +149,7 @@ describe("redactPii", () => {
   });
 
   it("keeps the surrounding words and counts each replacement", () => {
-    expect(redactPii("call 555-123-4567 or sam@mail.com")).toEqual({ text: "call [phone] or [email]", count: 2 });
+    expect(redactPii("call 555-123-4567 or sam@mail.com")).toEqual({ text: "call [phone] or [email]", count: 2, tooLarge: false });
   });
 
   it("leaves ordinary health text alone", () => {
@@ -163,7 +163,7 @@ describe("redactPii", () => {
       "my appointment is on 2026-11-12 at 3pm",
       "take 1,000 mg",
     ];
-    for (const text of keep) expect(redactPii(text)).toEqual({ text, count: 0 });
+    for (const text of keep) expect(redactPii(text)).toEqual({ text, count: 0, tooLarge: false });
   });
 });
 
@@ -192,5 +192,112 @@ describe("scanInjection", () => {
   it("only counts, it never throws or blocks on blunt text", () => {
     expect(() => scanInjection("")).not.toThrow();
     expect(typeof scanInjection("STOP. NO. I said no.")).toBe("number");
+  });
+});
+
+describe("redactPii: more identifiers (07 H-14)", () => {
+  const cases: Array<[string, string, string]> = [
+    ["a name after 'my name is'", "my name is Sam Lee and I get headaches", "my name is [name] and I get headaches"],
+    ["a name after 'I'm'", "I'm Priya and my head hurts", "I'm [name] and my head hurts"],
+    ["a name after 'I am'", "I am Marcus. I have a rash", "I am [name]. I have a rash"],
+    ["a name after 'this is'", "Hello, this is Sam Okafor calling", "Hello, this is [name] calling"],
+    ["a name after 'call me'", "you can call me Alex", "you can call me [name]"],
+    ["a doctor's name", "my doctor is Dr Patel", "my doctor is [name]"],
+    ["a relative's name", "my mom Sue drives me", "my mom [name] drives me"],
+    ["a relative's name with 'is'", "my brother is Daniel", "my brother is [name]"],
+    ["single digits typed one by one", "my number is 5 5 5 1 2 3 4 5 6 7 ok", "my number is [number] ok"],
+    ["an SSN with spaces", "ssn 123 45 6789", "ssn [id number]"],
+    ["a UK national insurance number", "NI number QQ123456C", "NI number [id number]"],
+    ["an insurance id after 'is'", "my insurance id is ABC123456 ok", "my [record number] ok"],
+    ["a ZIP after the word zip", "zip code 85001 please", "[postcode] please"],
+    ["a US state and ZIP", "I live in Phoenix, AZ 85001", "I live in Phoenix, [postcode]"],
+    ["a UK postcode", "postcode SW1A 1AA", "[postcode]"],
+    ["an obfuscated email", "write to sam at gmail dot com", "write to [email]"],
+    ["an email with [at]", "sam[at]gmail.com is mine", "[email] is mine"],
+    ["an IPv4 address", "my ip is 192.168.1.20 today", "my ip is [ip address] today"],
+    ["a German mobile number", "call +49 151 23456789", "call [phone]"],
+  ];
+  it.each(cases)("redacts %s", (_name, input, expected) => {
+    const out = redactPii(input);
+    expect(out.text).toBe(expected);
+    expect(out.count).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not take ordinary words for names", () => {
+    for (const text of ["I'm Tired today", "This is Monday", "I am Not sure", "I'm sorry", "My mom is worried", "I'm Anxious", "this is March", "I am Fine"]) {
+      expect(redactPii(text)).toEqual({ text, count: 0, tooLarge: false });
+    }
+  });
+
+  it("states its limit: a name anywhere else in a sentence is NOT redacted", () => {
+    expect(redactPii("Sam gave me a lift and Priya came too").text).toBe("Sam gave me a lift and Priya came too");
+  });
+
+  it("does not touch decimals, doses, times or version numbers as addresses or IPs", () => {
+    for (const text of ["take 2.5 mg at 10.30 am", "pain 7.5 out of 10", "version 1.2.3", "5 5 mg"]) {
+      expect(redactPii(text).count).toBe(0);
+    }
+  });
+});
+
+describe("size limits keep every guard linear (07 P3)", () => {
+  it("redactPii refuses to scan more than MAX_GUARD_CHARS and returns empty text with tooLarge", () => {
+    const t0 = performance.now();
+    expect(redactPii("1".repeat(MAX_GUARD_CHARS + 1))).toEqual({ text: "", count: 0, tooLarge: true });
+    expect(redactPii("1 ".repeat(40_000))).toEqual({ text: "", count: 0, tooLarge: true });
+    expect(performance.now() - t0).toBeLessThan(100);
+    expect(redactPii("1".repeat(MAX_GUARD_CHARS)).tooLarge).toBe(false);
+  });
+
+  it("scanInjection scans a bounded prefix, reports an oversized input as one extra hit and stays fast", () => {
+    const t0 = performance.now();
+    expect(scanInjection("a ".repeat(40_000))).toBe(1);
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
+});
+
+describe("promptForm is a fixpoint (07 P3)", () => {
+  it("a second pass never changes anything, including combining marks that appear after a delimiter is removed", () => {
+    for (const s of ["m>>>\u0301", "<<<\u0301e", "e<<<\u0301", "a<system>\u0308b", "\u0301>>>\u0301", "ﬁ>>>\u0323", "k<<<\u0301>>>\u0301"]) {
+      expect(promptForm(promptForm(s))).toBe(promptForm(s));
+    }
+  });
+
+  it("holds on random fragment soup that includes combining marks and compatibility characters", () => {
+    const parts = ["<<<", ">>>", "<system>", "m", "e", "\u0301", "\u0308", "ﬁ", "²", "\uFF1C", "\u200b", " ", "\n", "K", "\u212A", "DATA"];
+    let seed = 99;
+    const next = (): number => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed;
+    };
+    for (let i = 0; i < 800; i++) {
+      let s = "";
+      for (let j = 0; j < 3 + (next() % 10); j++) s += parts[next() % parts.length];
+      expect(promptForm(promptForm(s))).toBe(promptForm(s));
+    }
+  });
+});
+
+describe("matchForm: invisible blanks and word edges", () => {
+  it("strips the Braille blank and the Mongolian vowel separator", () => {
+    expect(matchForm(`d${String.fromCodePoint(0x2800)}ie${String.fromCodePoint(0x180e)}`).text).toBe("die");
+  });
+
+  it("squashHitOk wants word edges: one run-together word or two single letters, never part of a longer word", () => {
+    const form = matchForm("i want to upskill myself");
+    const at = form.squashed.indexOf("killmyself");
+    expect(at).toBeGreaterThan(0);
+    expect(squashHitOk(form, at, at + "killmyself".length)).toBe(false);
+    const spaced = matchForm("k i l l  m y s e l f");
+    expect(squashHitOk(spaced, 0, spaced.squashed.length)).toBe(true);
+    const joined = matchForm("iwanttodie");
+    expect(squashHitOk(joined, 1, joined.squashed.length)).toBe(true);
+    const diet = matchForm("iwanttodiet");
+    expect(squashHitOk(diet, 1, 10)).toBe(false);
+  });
+
+  it("does not treat a dot after a single letter as a sentence end", () => {
+    expect(matchForm("m.y. .h.u.s.b.a.n.d").squashed).toBe("myhusband");
+    expect(matchForm("I want to. Die").squashed).toContain("|");
   });
 });

@@ -29,8 +29,11 @@ export function json(body: unknown, status = 200, headers: Record<string, string
   });
 }
 
+/** Whole seconds between 1 and 3600; 60 when the value is missing or not a finite number. */
+const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(3600, Math.max(1, Math.ceil(sec))) : 60);
+
 export function errorResponse(e: HttpError): Response {
-  const headers: Record<string, string> = e.status === 429 ? { "Retry-After": String(Math.max(1, Math.ceil(e.retryAfterSec ?? 60))) } : {};
+  const headers: Record<string, string> = e.status === 429 ? { "Retry-After": String(retryAfter(e.retryAfterSec)) } : {};
   return json({ error: { code: e.code, message: MESSAGE[e.code] } }, e.status, headers);
 }
 
@@ -67,7 +70,8 @@ export async function readJson(req: Request, maxBytes: number): Promise<unknown>
     offset += c.byteLength;
   }
   try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    // A "__proto__" key from the wire is dropped, so later object spreads or merges cannot be tricked.
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes), (key, value: unknown) => (key === "__proto__" ? undefined : value));
   } catch {
     // Invalid UTF-8 or invalid JSON: the caller only needs to know the body was unreadable.
     throw new HttpError(400, "bad_input");

@@ -13,12 +13,17 @@ export function assertSameOrigin(req: Request): void {
   if (site === null && origin === null) throw new HttpError(403, "forbidden");
   if (site !== null && site !== "same-origin") throw new HttpError(403, "forbidden");
   if (origin === null) return;
-  let originHost: string;
+  let parsed: URL;
   try {
-    originHost = new URL(origin).host;
+    parsed = new URL(origin);
   } catch {
     // "null" (sandboxed or redirected contexts) and any other value that is not a URL cannot be a same-origin browser fetch.
     throw new HttpError(403, "forbidden");
   }
-  if (originHost === "" || originHost !== new URL(req.url).host) throw new HttpError(403, "forbidden");
+  // Only web origins. A request that arrived over https must have an https origin; plain http is for local development.
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new HttpError(403, "forbidden");
+  const target = new URL(req.url);
+  const proto = req.headers.get("x-forwarded-proto")?.split(",")[0].trim() ?? target.protocol.slice(0, -1);
+  if (proto === "https" && parsed.protocol !== "https:") throw new HttpError(403, "forbidden");
+  if (parsed.host === "" || parsed.host !== target.host) throw new HttpError(403, "forbidden");
 }

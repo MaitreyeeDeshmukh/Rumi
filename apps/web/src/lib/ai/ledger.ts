@@ -4,6 +4,7 @@
  */
 import type { EvidenceItem, EvidenceLedger, EvidenceSource } from "@/features/shared/task";
 import { LIMITS } from "@/features/shared/constants";
+import { promptForm } from "@/lib/ai/guards/input";
 import { normalizeText, splitSentences } from "@/lib/text/tokens";
 
 export interface LedgerSource {
@@ -49,7 +50,7 @@ export function buildLedger(src: LedgerSource): EvidenceLedger {
   // so a pasted list keeps one entry per line.
   let userSentences = 0;
   let userPieces = 0;
-  for (const sentence of splitSentences(src.rawText ?? "").map(collapse).filter(Boolean)) {
+  for (const sentence of splitSentences(promptForm(src.rawText ?? "")).map(collapse).filter(Boolean)) {
     userSentences += 1;
     for (const piece of chunk(sentence, USER_ITEM_CHARS_MAX)) {
       if (userPieces >= USER_ITEMS_MAX) break;
@@ -58,7 +59,7 @@ export function buildLedger(src: LedgerSource): EvidenceLedger {
     }
   }
 
-  const planText = (s: string, max: number): string => collapse(normalizeText(s)).slice(0, max);
+  const planText = (s: string, max: number): string => collapse(normalizeText(promptForm(s))).slice(0, max);
   const concern = planText(src.mainConcern ?? "", LIMITS.concernMax);
   if (concern) add("C1", concern, "plan");
   (src.symptoms ?? []).slice(0, 12).forEach((s, i) => {

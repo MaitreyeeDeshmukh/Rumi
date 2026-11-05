@@ -42,17 +42,38 @@ describe("assertSameOrigin", () => {
 });
 
 describe("clientIp and hashClientIp", () => {
-  it("prefers x-real-ip, else the first x-forwarded-for entry", () => {
-    expect(clientIp(req({ "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1, 10.0.0.1" }))).toBe("203.0.113.7");
-    expect(clientIp(req({ "x-forwarded-for": "198.51.100.1, 10.0.0.1" }))).toBe("198.51.100.1");
-    expect(clientIp(req({ "x-forwarded-for": " 2001:db8::1 , 10.0.0.1" }))).toBe("2001:db8::1");
-    expect(clientIp(req({}))).toBe("unknown");
+  it("prefers the platform headers, then the LAST x-forwarded-for entry (the one the platform appended)", () => {
+    expect(clientIp(req({ "x-vercel-forwarded-for": "203.0.113.9", "x-real-ip": "203.0.113.7", "x-forwarded-for": "6.6.6.6, 198.51.100.1" }))).toBe("203.0.113.9");
+    expect(clientIp(req({ "x-real-ip": "203.0.113.7", "x-forwarded-for": "6.6.6.6, 198.51.100.1" }))).toBe("203.0.113.7");
+    expect(clientIp(req({ "x-forwarded-for": "6.6.6.6, 7.7.7.7, 198.51.100.1" }))).toBe("198.51.100.1");
+    expect(clientIp(req({ "x-forwarded-for": "198.51.100.1" }))).toBe("198.51.100.1");
   });
 
-  it("ignores junk that is not an address", () => {
-    expect(clientIp(req({ "x-real-ip": "<script>", "x-forwarded-for": "198.51.100.1" }))).toBe("198.51.100.1");
-    expect(clientIp(req({ "x-real-ip": "a".repeat(100) }))).toBe("unknown");
+  it("a client cannot choose its own address by writing the left part of x-forwarded-for", () => {
+    const a = clientIp(req({ "x-forwarded-for": "1.1.1.1, 198.51.100.1" }));
+    const b = clientIp(req({ "x-forwarded-for": "2.2.2.2, 198.51.100.1" }));
+    expect(a).toBe(b);
   });
+
+  it("counts an IPv6 client by its /64 network, in any spelling", () => {
+    const a = clientIp(req({ "x-real-ip": "2001:db8:1:2:aaaa:bbbb:cccc:dddd" }));
+    const b = clientIp(req({ "x-real-ip": "2001:0db8:0001:0002::1" }));
+    const c = clientIp(req({ "x-real-ip": "[2001:db8:1:2:1::]" }));
+    expect(a).toBe("v6:2001:db8:1:2");
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    expect(clientIp(req({ "x-real-ip": "2001:db8:1:3::1" }))).not.toBe(a);
+    expect(clientIp(req({ "x-real-ip": "::ffff:203.0.113.7" }))).toBe("203.0.113.7");
+    expect(clientIp(req({ "x-real-ip": "fe80::1%eth0" }))).toBe("v6:fe80:0:0:0");
+  });
+
+  it("returns null for junk that is not an address", () => {
+    expect(clientIp(req({ "x-real-ip": "<script>", "x-forwarded-for": "198.51.100.1" }))).toBe("198.51.100.1");
+    expect(clientIp(req({ "x-real-ip": "a".repeat(100) }))).toBeNull();
+    expect(clientIp(req({ "x-real-ip": "999.1.1.1" }))).toBeNull();
+    expect(clientIp(req({}))).toBeNull();
+  });
+
 
   it("hashes: stable, 16 hex characters, different per address, never contains the address", () => {
     const a = hashClientIp("203.0.113.7");
@@ -212,5 +233,83 @@ describe("guardRequest", () => {
     expect(guardRequest(good({ "content-length": "64000" }), { limiter: fresh() }).memoryKey).toBeNull();
     expect(catchError(() => guardRequest(good({ "content-length": "10" }), { limiter: fresh(), maxBytes: 5 })).status).toBe(413);
     expect(catchError(() => guardRequest(good({ "content-length": "-1" }), { limiter: fresh() })).status).toBe(400);
+  });
+});
+
+describe("rate limit details (07 H-15, H-17)", () => {
+  const hit = (l: RateLimiter, ip: string, session: string | null = null, unknown = false): boolean => l.check(ip, session, unknown).ok;
+
+  it("a request whose address cannot be read shares one bucket with a stricter limit of 10", () => {
+    const l = createRateLimiter({ now: () => 1 });
+    for (let i = 0; i < 10; i++) expect(hit(l, "unknownhash", null, true)).toBe(true);
+    expect(l.check("unknownhash", null, true)).toMatchObject({ ok: false, scope: "ip" });
+    // a normal address still gets 30
+    for (let i = 0; i < 30; i++) expect(hit(l, "normalhash")).toBe(true);
+    expect(hit(l, "normalhash")).toBe(false);
+  });
+
+  it("the window edge: a hit expires at exactly windowMs and not one millisecond earlier", () => {
+    let t = 1_000;
+    const l = createRateLimiter({ now: () => t, limits: { perIp: 1 } });
+    expect(hit(l, "edge")).toBe(true);
+    t = 1_000 + 59_999;
+    expect(hit(l, "edge")).toBe(false);
+    t = 1_000 + 60_000;
+    expect(hit(l, "edge")).toBe(true);
+  });
+
+  it("refused requests from new addresses do not create entries, so the map cannot be filled by refusals", () => {
+    const l = createRateLimiter({ now: () => 1, limits: { perInstance: 1, maxKeys: 3 } });
+    expect(hit(l, "first")).toBe(true);
+    // the instance window is full: every further request is refused and none may be stored
+    for (let i = 0; i < 50; i++) expect(hit(l, `flood${i}`)).toBe(false);
+    const roomy = createRateLimiter({ now: () => 1, limits: { maxKeys: 3 } });
+    expect(hit(roomy, "keep")).toBe(true);
+    for (let i = 0; i < 50; i++) hit(roomy, "keep");
+    // "keep" is at its limit; refusals on other keys must not push it out
+    const limited = createRateLimiter({ now: () => 1, limits: { perIp: 1, perSession: 1, maxKeys: 2 } });
+    expect(hit(limited, "keep", "s")).toBe(true);
+    for (let i = 0; i < 20; i++) expect(hit(limited, `other${i}`, "s")).toBe(false);
+    expect(hit(limited, "keep", "t")).toBe(false);
+  });
+});
+
+describe("assertSameOrigin: scheme", () => {
+  const post = (u: string, headers: Record<string, string>): Request => new Request(u, { method: "POST", headers, body: "{}" });
+  it("rejects an origin that is not http or https", () => {
+    expect(status(() => assertSameOrigin(post("https://rumi.test/api/plan", { origin: "ftp://rumi.test" })))).toBe(403);
+    expect(status(() => assertSameOrigin(post("https://rumi.test/api/plan", { origin: "chrome-extension://rumi.test" })))).toBe(403);
+  });
+  it("an https request needs an https origin; plain http is accepted only when the request itself is plain http", () => {
+    expect(status(() => assertSameOrigin(post("https://rumi.test/api/plan", { origin: "http://rumi.test" })))).toBe(403);
+    expect(status(() => assertSameOrigin(post("https://rumi.test/api/plan", { origin: "https://rumi.test" })))).toBeUndefined();
+    expect(status(() => assertSameOrigin(post("http://localhost:3000/api/plan", { origin: "http://localhost:3000" })))).toBeUndefined();
+    expect(status(() => assertSameOrigin(post("http://rumi.test/api/plan", { origin: "http://rumi.test", "x-forwarded-proto": "https" })))).toBe(403);
+    expect(status(() => assertSameOrigin(post("http://rumi.test/api/plan", { origin: "https://rumi.test", "x-forwarded-proto": "https" })))).toBeUndefined();
+  });
+});
+
+describe("guardRequest never throws a plain Error (07 H-16)", () => {
+  const good = (): Request => new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.7" }, body: "{}" });
+
+  it("turns an unexpected failure into a fixed HttpError", () => {
+    const boom: RateLimiter = {
+      check: () => {
+        throw new Error("secret detail user text sk-123");
+      },
+    };
+    try {
+      guardRequest(good(), { limiter: boom });
+      throw new Error("expected a throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(HttpError);
+      expect((e as HttpError).status).toBe(503);
+      expect(String((e as HttpError).message)).not.toContain("secret");
+    }
+  });
+
+  it("a request with no readable address is still served (shared stricter bucket)", () => {
+    const r = new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin" }, body: "{}" });
+    expect(guardRequest(r, { limiter: createRateLimiter({ now: () => 1 }) }).ipHash).toMatch(/^[0-9a-f]{16}$/);
   });
 });

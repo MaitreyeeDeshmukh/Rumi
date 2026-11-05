@@ -98,3 +98,25 @@ describe("logEvent", () => {
     expect(() => capture(null)).not.toThrow();
   });
 });
+
+describe("logEvent: narrow shapes", () => {
+  it("an id is a uuid or 12 hex characters, nothing else", () => {
+    for (const ok of [base.id, "0123456789ab"]) expect(JSON.parse(capture({ ...base, id: ok })[0]).id).toBe(ok);
+    for (const bad of ["headache", "my-head-hurts", "abcdef", "0123456789abcdef", "ABCDEF123456", "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4"]) {
+      expect(JSON.parse(capture({ ...base, id: bad })[0]).id).toBe("invalid");
+    }
+  });
+
+  it("a prompt version is a lowercase name, an at sign and up to three digits", () => {
+    for (const ok of ["plan@3", "practice@12", "recap@123"]) expect(JSON.parse(capture({ ...base, promptVersion: ok })[0]).promptVersion).toBe(ok);
+    for (const bad of ["plan_v3", "plan@", "plan@1234", "Plan@3", "my_head@3", "a b@3", "plan@3x"]) {
+      expect(JSON.parse(capture({ ...base, promptVersion: bad })[0]).promptVersion).toBe("invalid");
+    }
+  });
+
+  it("attempts is a small integer from 0 to 3", () => {
+    for (const [input, expected] of [[0, 0], [2, 2], [3, 3], [4, 3], [99_999, 3], [-1, 0], [1.9, 1], [Number.NaN, 0], ["2", 0]] as const) {
+      expect(JSON.parse(capture({ ...base, attempts: input })[0]).attempts).toBe(expected);
+    }
+  });
+});

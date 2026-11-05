@@ -38,8 +38,8 @@ const OUTCOMES: readonly string[] = ["ok", "mock", "crisis", "fallback", "error"
 const TIERS: readonly string[] = ["quality", "fast", "none"];
 const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config"];
 const GUARD_CODES: readonly string[] = ALL_GUARD_CODES;
-const REQUEST_ID = /^[0-9a-f-]{8,40}$/;
-const PROMPT_VERSION = /^[a-z][a-z0-9_]{0,30}@[0-9]{1,3}$/;
+const REQUEST_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12})$/;
+const PROMPT_VERSION = /^[a-z]+@[0-9]{1,3}$/;
 
 const count = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
 const oneOf = (value: unknown, allowed: readonly string[], fallback: string): string =>
@@ -63,7 +63,7 @@ export function logEvent(event: AiEvent): void {
     promptVersion: shaped(e.promptVersion, PROMPT_VERSION),
     outcome: oneOf(e.outcome, OUTCOMES, "error"),
     degraded: e.degraded === true,
-    attempts: count(e.attempts),
+    attempts: Math.min(3, count(e.attempts)),
     tier: oneOf(e.tier, TIERS, "none"),
     redactions: count(e.redactions),
     injectionHits: count(e.injectionHits),
