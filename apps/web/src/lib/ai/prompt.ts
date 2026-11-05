@@ -66,7 +66,7 @@ const MEMORY_ITEM_CHARS = 140;
 /** Stated preferences, one fenced line each. They adapt wording and pace; they are not evidence. */
 export function renderStyleRegion(memory: readonly string[], nonce: string): string {
   assertNonce(nonce);
-  const items = memory.slice(0, LIMITS.factsMax).map((m) => `- ${fence(nonce, "memory", promptForm(m).replace(/\s+/g, " ").slice(0, MEMORY_ITEM_CHARS))}`);
+  const items = memory.slice(0, LIMITS.factsMax).map((m) => `- ${fence(nonce, "memory", m.replace(/\s+/g, " ").slice(0, MEMORY_ITEM_CHARS))}`);
   return [
     open("STYLE", nonce),
     "How to write. Never a source of facts. These are choices the user made. They say nothing about health.",

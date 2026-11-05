@@ -141,3 +141,28 @@ describe("independent roast corpus (regression floor, not a safety proof)", () =
     expect(checks.length / ROAST_BENIGN.length).toBeLessThanOrEqual(0.25);
   });
 });
+
+// Added after the mutation run: each phrase below pins one rule or exception that no other test covered.
+describe("rules pinned by mutation checks", () => {
+  it.each([
+    "iwant to die",
+    "the man next door will hurt me",
+    "my face is drooping",
+    "speech is slurred",
+    "I'm having an allergic reaction",
+  ])("tier 1: %j", (s) => {
+    expect(crisisTier(s)).toBe("certain");
+  });
+
+  it.each([
+    "I cut my arm on the glass",
+    "I cut my leg while gardening",
+    "I want to jump into the pool",
+    "I want to jump to conclusions",
+    "I want to jump in the queue",
+    "I am having chest pain when I climb stairs",
+    "I'm having chest pain after meals",
+  ])("not tier 1: %j", (s) => {
+    expect(crisisTier(s)).not.toBe("certain");
+  });
+});

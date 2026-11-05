@@ -165,3 +165,15 @@ describe("guardRequest with a broken configuration (07 H-16)", () => {
     }
   });
 });
+
+describe("rules pinned by mutation checks", () => {
+  it("a cookie with a fourth part is rejected even when the first three are valid", async () => {
+    const { session } = await load({ SESSION_SECRET: SECRET_A });
+    const first = session.getSession(url(), NOW);
+    const ok = `rumi_sid=${cookieValue(first.setCookie)}`;
+    expect(session.getSession(url(undefined, ok), NOW).setCookie).toBeNull();
+    const extra = session.getSession(url(undefined, `${ok}.extra`), NOW);
+    expect(extra.id).not.toBe(first.id);
+    expect(extra.setCookie).not.toBeNull();
+  });
+});

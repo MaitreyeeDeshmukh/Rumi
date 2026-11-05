@@ -231,3 +231,11 @@ describe("preamble crisis rule", () => {
     expect(p).not.toContain("- Respond ONLY with JSON");
   });
 });
+
+describe("containsCanary: short needles", () => {
+  it("a canary under four letters never matches, even when the text contains it", () => {
+    expect(containsCanary("a b c ab", "ab")).toBe(false);
+    expect(containsCanary("xyz xyz", "xyz")).toBe(false);
+    expect(containsCanary("xyz1 abcd", "abcd")).toBe(true);
+  });
+});

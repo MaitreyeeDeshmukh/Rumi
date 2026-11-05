@@ -206,7 +206,7 @@ describe("guardRequest", () => {
 
   it("refuses a foreign origin with 403 before it touches the limiter", () => {
     let checked = 0;
-    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }) };
+    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
     const err = catchError(() => guardRequest(new Request(URL_, { method: "POST", headers: { origin: "https://evil.test" } }), { limiter: spy }));
     expect(err.status).toBe(403);
     expect(checked).toBe(0);
@@ -297,6 +297,7 @@ describe("guardRequest never throws a plain Error (07 H-16)", () => {
       check: () => {
         throw new Error("secret detail user text sk-123");
       },
+      tracked: () => ({ ips: 0, sessions: 0 }),
     };
     try {
       guardRequest(good(), { limiter: boom });
@@ -311,5 +312,32 @@ describe("guardRequest never throws a plain Error (07 H-16)", () => {
   it("a request with no readable address is still served (shared stricter bucket)", () => {
     const r = new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin" }, body: "{}" });
     expect(guardRequest(r, { limiter: createRateLimiter({ now: () => 1 }) }).ipHash).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe("rules pinned by mutation checks", () => {
+  it("the limiter tracks at most maxKeys addresses and sessions, and refusals add nothing", () => {
+    const l = createRateLimiter({ now: () => 1, limits: { perInstance: 2, maxKeys: 3 } });
+    expect(l.check("a", "s1").ok).toBe(true);
+    expect(l.check("b", "s2").ok).toBe(true);
+    for (let i = 0; i < 100; i++) expect(l.check(`flood${i}`, `fs${i}`).ok).toBe(false);
+    expect(l.tracked()).toEqual({ ips: 2, sessions: 2 });
+    const small = createRateLimiter({ now: () => 1, limits: { maxKeys: 3 } });
+    for (let i = 0; i < 100; i++) small.check(`ip${i}`, `s${i}`);
+    expect(small.tracked()).toEqual({ ips: 3, sessions: 3 });
+  });
+
+  it("guardRequest gives a request with no readable address the stricter shared limit", () => {
+    const l = createRateLimiter({ now: () => 1 });
+    const anon = (): Request => new Request(URL_, { method: "POST", headers: { "sec-fetch-site": "same-origin" }, body: "{}" });
+    for (let i = 0; i < 10; i++) expect(status(() => guardRequest(anon(), { limiter: l }))).toBeUndefined();
+    expect(status(() => guardRequest(anon(), { limiter: l }))).toBe(429);
+  });
+
+  it("an origin with another scheme is refused even when the host matches", () => {
+    const post = (headers: Record<string, string>): Request => new Request("http://localhost:3000/api/plan", { method: "POST", headers, body: "{}" });
+    expect(status(() => assertSameOrigin(post({ origin: "ftp://localhost:3000" })))).toBe(403);
+    expect(status(() => assertSameOrigin(post({ origin: "chrome-extension://localhost:3000" })))).toBe(403);
+    expect(status(() => assertSameOrigin(post({ origin: "http://localhost:3000" })))).toBeUndefined();
   });
 });

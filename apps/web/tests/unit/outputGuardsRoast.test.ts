@@ -110,7 +110,7 @@ describe("07 H-7: doses in every spelling", () => {
   });
 
   it("does not treat ordinary counting or times as doses", () => {
-    for (const s of ["Take your time.", "Take a deep breath.", "Take one step at a time.", "It happens once you stand up.", "Come back in 2 weeks."]) {
+    for (const s of ["Take your time.", "Take a deep breath.", "Take one step at a time.", "It happens once you stand up.", "Come back in 2 weeks.", "I take it twice daily.", "Ask whether I should take it twice a day."]) {
       expect(adviceCodes(s, empty()).filter((c) => c === "advice_dose")).toEqual([]);
     }
   });
@@ -236,5 +236,20 @@ describe("07 H-13: stripUrls removes any domain, not a short list", () => {
     expect(claimsHumanCodes(big)).toEqual(["schema"]);
     expect(adviceCodes("1".repeat(64_000), empty())).toEqual(["schema"]);
     expect(performance.now() - t0).toBeLessThan(200);
+  });
+});
+
+describe("rules pinned by mutation checks", () => {
+  it("a statement shaped like a question is not exempt unless it starts like one", () => {
+    expect(adviceCodes("You have cancer?", empty())).toContain("advice_diagnosis");
+    expect(adviceCodes("Take ibuprofen?", empty())).toContain("advice_treatment");
+  });
+
+  it("words that are also ordinary nouns are not conditions", () => {
+    for (const s of ["You have aids available.", "You have add a question to ask."]) expect(adviceCodes(s, empty())).toEqual([]);
+  });
+
+  it("a doctor prescribing something is treatment advice even when the drug is not named", () => {
+    expect(adviceCodes("Your doctor could prescribe something stronger.", empty())).toContain("advice_treatment");
   });
 });

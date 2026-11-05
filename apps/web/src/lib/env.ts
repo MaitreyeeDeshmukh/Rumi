@@ -109,8 +109,8 @@ export function getLimits(): UsageLimits {
   const user = z.coerce.number().int().positive().safeParse(process.env.AI_DAILY_USER_LIMIT);
   const spend = z.coerce.number().positive().safeParse(process.env.AI_DAILY_GLOBAL_SPEND_CAP_USD);
   return {
-    dailyUserLimit: process.env.AI_DAILY_USER_LIMIT && user.success ? user.data : undefined,
-    dailyGlobalSpendCapUsd: process.env.AI_DAILY_GLOBAL_SPEND_CAP_USD && spend.success ? spend.data : undefined,
+    dailyUserLimit: user.success ? user.data : undefined,
+    dailyGlobalSpendCapUsd: spend.success ? spend.data : undefined,
   };
 }
 

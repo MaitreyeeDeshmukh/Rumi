@@ -28,6 +28,8 @@ export type LimitResult = { ok: true } | { ok: false; retryAfterSec: number; sco
 export interface RateLimiter {
   /** Records the request when it is allowed. A refused request is not recorded. `unknownIp`: the address could not be read. */
   check(ipHash: string, sessionId: string | null, unknownIp?: boolean): LimitResult;
+  /** How many addresses and sessions are tracked right now (for the chaos run and tests). Never more than maxKeys each. */
+  tracked(): { ips: number; sessions: number };
 }
 
 /** IPv6 addresses are counted by their /64 network: a single host owns billions of addresses inside one. */
@@ -118,6 +120,7 @@ export function createRateLimiter(options: { now?: () => number; limits?: Partia
       instance.push(t);
       return { ok: true };
     },
+    tracked: () => ({ ips: ips.size, sessions: sessions.size }),
   };
 }
 

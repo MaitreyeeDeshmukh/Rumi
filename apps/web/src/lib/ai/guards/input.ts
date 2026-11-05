@@ -91,10 +91,7 @@ const CONFUSABLE = new Map<string, string>(CONFUSABLE_PAIRS.map((p) => [p[0], p.
 const MULTI = new Map<string, string>([["ß", "ss"], ["æ", "ae"], ["œ", "oe"], ["þ", "th"]]);
 const LEET = new Map<string, string>([["0", "o"], ["1", "i"], ["3", "e"], ["4", "a"], ["5", "s"], ["7", "t"]]);
 
-const foldChar = (ch: string): string => {
-  const lower = ch.toLowerCase();
-  return CONFUSABLE.get(lower) ?? MULTI.get(lower) ?? ch;
-};
+const foldChar = (ch: string): string => CONFUSABLE.get(ch) ?? MULTI.get(ch) ?? ch;
 
 /** Cyrillic, Greek and small-capital lookalikes become the Latin letter they imitate. Input should already be lowercase. */
 export function foldConfusables(s: string): string {
@@ -171,8 +168,7 @@ export function squashHitOk(form: MatchForm, start: number, end: number): boolea
   if (end < wordOf.length && wordOf[end] === wordOf[end - 1]) return false;
   const oneWord = wordOf[start] === wordOf[end - 1];
   if (start > 0 && wordOf[start - 1] === wordOf[start]) {
-    // inside one run-together word only a pronoun may come first: "iwanttodie", not "upskillmyself"
-    if (!oneWord) return false;
+    // inside a word only a pronoun may come first: "iwanttodie" and "iwant to die", not "upskillmyself"
     let first = start;
     while (first > 0 && wordOf[first - 1] === wordOf[start]) first -= 1;
     return ["i", "im", "ill", "id", "ive"].includes(squashedPrefix(form, first, start));

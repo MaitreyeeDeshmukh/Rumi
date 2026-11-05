@@ -301,3 +301,10 @@ describe("matchForm: invisible blanks and word edges", () => {
     expect(matchForm("I want to. Die").squashed).toContain("|");
   });
 });
+
+describe("redactPii: bare UK postcode", () => {
+  it("is redacted without a keyword", () => {
+    expect(redactPii("I live near SW1A 1AA now").text).toBe("I live near [postcode] now");
+    expect(redactPii("my GP is at M1 1AE").text).toBe("my GP is at [postcode]");
+  });
+});

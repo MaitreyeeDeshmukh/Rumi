@@ -41,8 +41,6 @@ interface Hit {
 interface Rule {
   re: RegExp;
   squashed?: RegExp;
-  /** The pattern has more than one word. A single-word rule ("suicid") is already judged on the spaced text. */
-  multiWord: boolean;
   negatable: boolean;
   veto?: (hit: Hit) => boolean;
 }
@@ -64,7 +62,7 @@ const SEP = String.raw`\s+${BREAK}(?:${FILLER}\s+${BREAK}){0,2}`;
 function rule(src: string, o: RuleOptions = {}): Rule {
   const re = new RegExp(String.raw`\b(?:${src.replace(/ /g, SEP)})\b`, "g");
   const squashSrc = typeof o.squash === "string" ? o.squash : o.squash === false ? undefined : src.replace(/ /g, "").split("\\w*").join("").split("\\w+").join("[a-z]+");
-  return { re, squashed: squashSrc ? new RegExp(squashSrc, "g") : undefined, multiWord: src.includes(" "), negatable: o.negatable ?? false, veto: o.veto };
+  return { re, squashed: squashSrc ? new RegExp(squashSrc, "g") : undefined, negatable: o.negatable ?? false, veto: o.veto };
 }
 
 const INTENT_WORDS =
@@ -141,8 +139,6 @@ const NEGATION = /(?:^|\s)(?:no|not|dont|doesnt|didnt|havent|hasnt|never|without
 
 const PEOPLE =
   "(?:he|she|they|someone|somebody|my (?:boyfriend|girlfriend|partner|husband|wife|ex|dad|mom|mum|mother|father|brother|sister|uncle|aunt|stepdad|stepmom|stepfather|stepmother|roommate|caregiver|carer|boss|teacher|coach|son|daughter|parent|parents|grandfather|grandmother|grandpa|grandma|cousin|neighbor|landlord))";
-const PEOPLE_CLOSE =
-  "(?:he|she|they|someone|somebody|my (?:boyfriend|girlfriend|partner|husband|wife|ex|dad|mom|mum|mother|father|brother|sister|uncle|aunt|stepdad|stepmom|stepfather|stepmother|roommate|caregiver|carer|son|daughter|parent|parents|grandfather|grandmother|grandpa|grandma|cousin))";
 const AUX = "(?:(?:is|are|keeps|keep|has been|have been|was|started|just|always|sometimes|often|also|will|would|gonna|going to|wants to|threatened to|threatens to) )*";
 const PRE_VERB = "(?:(?:shouts|yells|screams|swears)(?: at me)? and )?";
 const SELF = "(?:myself|my self|himself|herself|themselves|themself)";
@@ -212,7 +208,6 @@ const RULES: readonly Rule[] = [
   rule(`${PEOPLE} ${AUX}${PRE_VERB}(?:hit|hits|hitting|beat|beats|beating|abuse|abuses|abusing|abused|threaten|threatened|threatens|threatening|choke|choked|chokes|choking|strangle|strangled|strangles|strangling|rape|raped|rapes|raping|assault|assaulted|assaults|assaulting|slap|slapped|slaps|slapping|punch|punched|punches|punching|kick|kicked|kicks|kicking|shove|shoved|shoves|push|pushed|pushes|grab|grabbed|grabs|molest\\w*|stalk\\w*|harass\\w*|attack\\w*|hurt|hurts|hurting) me`),
   rule(`${PEOPLE} (?:locks|locked|lock|keeps|kept) me (?:in|inside|locked)`),
   rule(`${PEOPLE} (?:wont|will not|doesnt|dont|refuses to|wouldnt|not) (?:let|allow) me (?:eat|sleep|leave|go out|see|call|have food)|${PEOPLE} (?:starves|starving|starved) me`),
-  rule(`${PEOPLE_CLOSE} ${AUX}kill me`, { veto: killMeVeto }),
   rule("(?:will|going to|gonna|would|threatens to|threatened to) (?:hurt|hit|beat|harm|rape|choke) me"),
   rule("(?:touch|touches|touched|touching|molested|fondled) me (?:where|in a|inappropriately|sexually|in places)"),
   rule("(?:being|been|im|i am|ive been|i was|i have been) (?:physically |sexually |emotionally )?(?:abused|beaten|raped|assaulted|molested|stalked|trafficked|threatened|choked|strangled)"),
@@ -265,7 +260,7 @@ const TIER2: readonly RegExp[] = [
   /\b(?:end (?:it|my|this|everything|the pain)|ending (?:it|my|this)|tired of (?:living|life|everything|being|it all)|done with (?:life|living|everything|it all)|sick of (?:living|life)|want out|make it stop|stop the pain|better off|miss me|everyone would|do it (?:tonight|tomorrow|today))\b/,
   /\b(?:severe chest pain|chest (?:hurts|is tight|feels tight)|chest pain (?:and|with)|trouble breathing|short(?:ness)? of breath|(?:is|am|im|are) bleeding|bleeding (?:a lot|heavily|badly|everywhere)|bled|seizure|faint\w*|unconscious|passed out|allergic reaction|lips? (?:are|is) swell)/,
   /\b(?:abus\w*|beats? me|hits? me|hurts? me|threat\w*|locks? me|touch\w* me|stalk\w*|forced to|not safe|unsafe|scared to go home|afraid to go home|(?:dont|do not) feel safe)\b/,
-  /\b(?:quiero morir|me quiero|suicid|matar|desaparecer|no quiero vivir|dolor de pecho|no puedo respirar|me pega)/,
+  /\b(?:quiero morir|me quiero|matar|desaparecer|no quiero vivir|dolor de pecho|no puedo respirar|me pega)/,
 ];
 
 const BLANKS = /[\u2800\u180e]/;
@@ -318,8 +313,6 @@ function squashedHit(r: Rule, form: MatchForm): boolean {
       continue;
     }
     const end = m.index + m[0].length;
-    // one ordinary word that matched a one-word rule was already judged (negation, topic) on the spaced text
-    if (!r.multiWord && form.wordOf[m.index] === form.wordOf[end - 1]) continue;
     if (squashHitOk(form, m.index, end)) return true;
   }
   return false;
