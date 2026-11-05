@@ -156,7 +156,7 @@ const RULES: readonly Rule[] = [
   rule("(?:hit|bang|banged|banging|slam|slammed|slamming|bash|bashed|scratch|scratched|burn|burned|bite|bit) my (?:head|arms?|hands?|legs?|skin|wrists?|thighs?)(?: \\w+){0,5}? (?:on purpose|deliberately)"),
   rule("kill me", { veto: killMeVeto }),
   rule("(?:want(?:ed|s)? to|wnat to|wanna|wana|going to|gonna|about to|ready to|plan(?:ning)? to|decided to|need to|tried to|trying to|have to|hoping to|thinking (?:about|of)|thought about|hope to|wish to|rather) (?:just |finally |really |actually |simply )?(?:die|dying|be dead|not be alive|not exist|not be here|stop existing|disappear|dissapear|disapear|stop living|not wake up|never wake up|go to sleep and not wake up|go to sleep and never wake up)", { veto: dieIdiomVeto }),
-  rule("(?:want|wanna|wnat) to dye", { veto: dyeVeto }),
+  rule("(?:(?:want|wnat) to|wanna) dye", { veto: dyeVeto }),
   rule("(?:id|i would|i had) rather (?:be dead|die|not be alive|not be here)"),
   rule("(?:feel|feels|feeling) like (?:dying|dead|killing myself|ending it|ending my life)"),
   rule("so (?:i|that i) (?:can|could|will) (?:die|be dead)"),

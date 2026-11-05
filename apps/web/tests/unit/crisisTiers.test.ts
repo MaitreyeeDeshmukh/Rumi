@@ -166,3 +166,12 @@ describe("rules pinned by mutation checks", () => {
     expect(crisisTier(s)).not.toBe("certain");
   });
 });
+
+describe("want to dye (a typo for die, or hair colour)", () => {
+  it("a bare 'want to dye' is tier 1, 'want to dye my hair' is not", () => {
+    expect(crisisTier("i want to dye")).toBe("certain");
+    expect(crisisTier("I wanna dye.")).toBe("certain");
+    expect(crisisTier("I want to dye my hair")).not.toBe("certain");
+    expect(crisisTier("I want to dye my hair blue")).toBe("none");
+  });
+});
