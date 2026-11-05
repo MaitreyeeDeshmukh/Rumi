@@ -10,9 +10,11 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:qa": "vitest run --config vitest.qa.config.mts",
     "test:e2e": "playwright test",
     "eval": "node tests/evals/cli.mjs",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

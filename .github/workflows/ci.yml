@@ -7,28 +7,37 @@ on:
   schedule:
     - cron: "0 6 * * 1"
 
+# Least privilege: every job only reads the repository. Nothing here writes to it, to packages or to deployments.
 permissions:
   contents: read
 
+# A new push to a pull request cancels the older run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every action is pinned to an exact tag (tests/qa/ci.test.ts fails on a floating one such as @v4); dependabot bumps them.
 jobs:
   repo-hygiene:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
       - name: No stray Markdown files
         run: bash scripts/check-no-stray-md.sh
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   prototype:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version-file: .nvmrc
       - name: Install, typecheck, build
@@ -42,13 +51,14 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: prototype
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4.4.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -75,3 +85,264 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm test:e2e
+
+  # ---- Production safety net (lane G). Each job below fails the pull request on its own. ----
+
+  # Local Supabase on the runner: SQL tests (RLS, consent, retention), schema lint and advisors.
+  sql-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Find the database folder
+        id: db
+        run: |
+          if [ -f supabase/config.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "supabase/config.toml is missing on main: the database lane must be merged before release" >&2
+            exit 1
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No supabase folder on this branch, so the database checks did not run."
+          fi
+      - uses: supabase/setup-cli@v1.6.0
+        if: steps.db.outputs.present == 'true'
+        with:
+          version: latest
+      - name: Start local Supabase (database, API and auth only)
+        if: steps.db.outputs.present == 'true'
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,mailpit,realtime,storage-api,supavisor,postgres-meta
+      - name: SQL tests
+        if: steps.db.outputs.present == 'true'
+        run: |
+          shopt -s nullglob
+          files=(supabase/tests/*.sql)
+          [ "${#files[@]}" -gt 0 ] || { echo "no supabase/tests/*.sql files found" >&2; exit 1; }
+          for f in "${files[@]}"; do
+            echo "== $f"
+            psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -X -q -f "$f"
+          done
+      - name: Schema lint
+        if: steps.db.outputs.present == 'true'
+        run: supabase db lint --local --fail-on error
+      - name: Advisors (security and performance)
+        if: steps.db.outputs.present == 'true'
+        run: supabase db advisors --local --fail-on error
+      - name: Stop local Supabase
+        if: always() && steps.db.outputs.present == 'true'
+        run: supabase stop --no-backup
+
+  # The interfaces other code relies on: shared contract, browser bundle imports, client-safe modules.
+  unit-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Contract tests
+        working-directory: apps/web
+        run: pnpm exec vitest run tests/unit/contract.test.ts tests/unit/clientBundle.test.ts tests/unit/clientSafe.test.ts
+
+  # Failure injection against fakes, and tests of the release tools themselves (smoke, bundle scan, rollback drill, this file).
+  # On main, a chaos block that is waiting for an unmerged lane FAILS instead of being skipped.
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUMI_REQUIRE_LANES: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Chaos and release-tool tests
+        working-directory: apps/web
+        run: pnpm test:qa
+
+  # The anonymous flow in a real browser with the AI mocked and Supabase auth and REST answered by the test itself.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: prototype
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://rumi-ci.supabase.test
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_value
+      MOCK_AI: "1"
+      RUMI_E2E_AUTH: "1"
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Build prototype for the preview page
+        working-directory: prototype
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: A throwaway session secret (production mode needs one even with MOCK_AI)
+        run: |
+          secret="$(openssl rand -base64 32)"
+          echo "::add-mask::$secret"
+          echo "SESSION_SECRET=$secret" >> "$GITHUB_ENV"
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+      - name: Anonymous flow, offline, degraded auth (phone and desktop, axe)
+        working-directory: apps/web
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test tests/e2e/auth-flow.spec.ts
+      - name: Keep the report when a test fails
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: playwright-auth-flow
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          retention-days: 7
+
+  # Nothing server-only may be inside files the browser downloads.
+  bundle-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: prototype
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://rumi-ci.supabase.test
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_value
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Build prototype for the preview page
+        working-directory: prototype
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+      - name: Scan .next/static and public for server-only strings and keys
+        working-directory: apps/web
+        run: pnpm check:bundle
+      - name: The scanner really fails on a planted key (control)
+        run: |
+          mkdir -p "$RUNNER_TEMP/planted/.next/static"
+          echo 'var k="gsk_aaaaaaaaaaaaaaaaaaaaaaaa";' > "$RUNNER_TEMP/planted/.next/static/x.js"
+          code=0
+          (cd "$RUNNER_TEMP/planted" && node "$GITHUB_WORKSPACE/apps/web/scripts/check-bundle.mjs") || code=$?
+          [ "$code" = "1" ] || { echo "scanner exit code was $code, expected 1" >&2; exit 1; }
+
+  # Known vulnerabilities in dependencies, high and above.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Audit
+        working-directory: apps/web
+        run: pnpm audit --audit-level=high
+
+  # Secret scan over the whole history. (The hygiene job scans too; this one has no other work to hide behind.)
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # k6 smoke: 200 virtual users against /api/* with the AI mocked. p95 under 500 ms, under 1 percent unexpected answers,
+  # and every rate-limit answer is a 429 with Retry-After (never a 500).
+  load-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: prototype
+    env:
+      MOCK_AI: "1"
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Build prototype for the preview page
+        working-directory: prototype
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: A throwaway session secret (production mode needs one even with MOCK_AI)
+        run: |
+          secret="$(openssl rand -base64 32)"
+          echo "::add-mask::$secret"
+          echo "SESSION_SECRET=$secret" >> "$GITHUB_ENV"
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+      - name: Start the app
+        working-directory: apps/web
+        run: |
+          nohup pnpm exec next start -p 3000 > "$RUNNER_TEMP/next.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3000/ > /dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "the app did not start" >&2
+          exit 1
+      - uses: grafana/setup-k6-action@v1.1.0
+      - name: k6 smoke
+        run: k6 run -e BASE_URL=http://127.0.0.1:3000 apps/web/tests/load/smoke.js
