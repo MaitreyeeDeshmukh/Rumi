@@ -330,7 +330,9 @@ describe("hostile stored data", () => {
     const facts = Array.from({ length: 300_000 }, () => ({ kind: "support_pref", key: "p1" }));
     const t0 = performance.now();
     const s = parseState({ version: 1, sessions, persona: { facts } });
-    expect(performance.now() - t0).toBeLessThan(3000);
+    // Generous on purpose: 45 test files run in parallel workers and a 3 s limit failed under that load
+    // (it takes well under 1 s alone). The point of the test is "does not hang or blow up", not a benchmark.
+    expect(performance.now() - t0).toBeLessThan(15000);
     expect(s.persona.facts.length).toBeLessThanOrEqual(20);
   });
 

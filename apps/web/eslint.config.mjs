@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Throwaway proof tests written by reviewers; gitignored and never part of the product.
+    "tests/roast/**",
   ]),
 ]);
 
