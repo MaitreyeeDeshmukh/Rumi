@@ -68,7 +68,6 @@ export function forgetNamespace(ns: string, deps: ForgetDeps): Promise<ForgetRes
     let empties = 0;
     let backoff = intervalMs;
     for (;;) {
-      if (budget() <= 0) return 'failed';
       try {
         const ids = (await client.listAll(ns, budget)).map((d) => d.id);
         backoff = intervalMs;

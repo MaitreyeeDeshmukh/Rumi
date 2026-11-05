@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCallApi, type ApiPath } from "@/lib/api/client";
 import { PracticeReply } from "@/features/shared/schemas";
+import { z } from "zod";
 
 const CODE = "ABCDE-FGHJK-LMNPQ-RSTUV";
 const REPLY = { clinicianSay: "What brings you in today?", coveredItemIds: [], isLastTurn: false };
@@ -240,6 +241,24 @@ describe("callApi: reply size and timers", () => {
   it("a declared content-length above the cap is refused before reading", async () => {
     const r = await setup({ fetchFn: async () => new Response(JSON.stringify(REPLY), { headers: { "content-length": "5000000" } }) }).go();
     expect(r).toMatchObject({ ok: false, error: { code: "ai_invalid" } });
+  });
+
+  it("an oversized reply is refused even when the reply schema would accept anything", async () => {
+    const huge = (async () => new Response("x".repeat(2_000_000))) as typeof fetch;
+    const call = createCallApi({ fetchFn: huge, isCrisis, isOnline: () => true });
+    expect(await call("/api/plan", {}, z.unknown())).toMatchObject({ ok: false, error: { code: "ai_invalid" } });
+  });
+
+  it("a response without a readable stream is capped too", async () => {
+    const noStream = (size: number) => async () => {
+      const res = new Response(JSON.stringify({ ...REPLY, pad: "x".repeat(size) }));
+      Object.defineProperty(res, "body", { value: null });
+      return res;
+    };
+    const big = createCallApi({ fetchFn: noStream(2_000_000), isCrisis, isOnline: () => true });
+    expect(await big("/api/practice", {}, PracticeReply)).toMatchObject({ ok: false, error: { code: "ai_invalid" } });
+    const small = createCallApi({ fetchFn: noStream(10), isCrisis, isOnline: () => true });
+    expect(await small("/api/practice", {}, PracticeReply)).toMatchObject({ ok: true });
   });
 
   it("an oversized error body still maps to the status code", async () => {

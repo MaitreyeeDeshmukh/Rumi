@@ -169,8 +169,10 @@ describe("syncFacts: two instances", () => {
     }) as typeof fetch;
     const sync = createRemoteSync(createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" }), createNamespaceQueue());
     await expect(sync.syncFacts(NS, [p("p1")])).resolves.toMatchObject({ saved: 1 });
+    let postedAgain = false;
     sm.fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.method === "PATCH" && posted) return new Response("boom", { status: 500 });
+      if (init?.method === "POST" && String(input).endsWith("/document")) postedAgain = true;
+      if (init?.method === "PATCH" && postedAgain) return new Response("boom", { status: 500 });
       return real(input, init);
     }) as typeof fetch;
     const failing = createRemoteSync(createSmClient({ fetchFn: sm.fetchFn, apiKey: "k" }), createNamespaceQueue());

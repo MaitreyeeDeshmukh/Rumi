@@ -343,6 +343,20 @@ describe("stateStore: other tabs write bad or newer data", () => {
     expect(store.getSnapshot().state.settings.name).toBe("Mine");
   });
 
+  it("when the newer data is removed in another tab, this tab leaves read-only mode and shows the empty state", () => {
+    const { storage, events, store } = started();
+    store.update((d) => void (d.settings.name = "Mine"));
+    storage.data.set(KEY, JSON.stringify({ version: 2 }));
+    events.fire({ key: KEY });
+    expect(store.getSnapshot().readOnly).toBe(true);
+    storage.data.delete(KEY);
+    events.fire({ key: null });
+    expect(store.getSnapshot().readOnly).toBe(false);
+    expect(store.getSnapshot().state).toEqual(defaultState());
+    store.update((d) => void (d.settings.name = "Fresh"));
+    expect(JSON.parse(storage.data.get(KEY) as string).settings.name).toBe("Fresh");
+  });
+
   it("a newer app version in another tab makes this tab read-only: its data is never overwritten", () => {
     const { storage, events, store } = started();
     store.update((d) => void (d.settings.name = "Mine"));

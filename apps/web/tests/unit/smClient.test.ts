@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SmError, createSmClient } from "@/features/memory/smClient";
 import { fakeSupermemory } from "./helpers/fakeSupermemory";
 
@@ -250,6 +250,20 @@ describe("smClient errors", () => {
     expect(err).toBeInstanceOf(SmError);
     expect((err as Error).message).toMatch(/timeout/i);
     expect(Date.now() - started).toBeLessThan(400);
+  });
+
+  it("the timeout timer is cleared after a good call and after a failed one", async () => {
+    vi.useFakeTimers();
+    try {
+      const { sm, client } = make();
+      await client.add(NS, { id: "a", content: "c", metadata: meta });
+      expect(vi.getTimerCount()).toBe(0);
+      sm.failStatus = 500;
+      await client.listAll(NS).catch(() => undefined);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("refuses to be built without a key", () => {

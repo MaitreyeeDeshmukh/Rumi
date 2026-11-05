@@ -149,6 +149,7 @@ describe("forgetNamespace: indexing lag", () => {
     const tk = clock();
     expect(await run(NS, real(sm), tk, { lagMs: 25_000, sinceSyncMs: 0 })).toBe("failed");
     expect(sm.calls).toHaveLength(0);
+    expect(tk.c.sleeps).toEqual([]); // it does not even wait
   });
 
   it("a wait that leaves too little time to verify is failed, not ok", async () => {
@@ -183,6 +184,20 @@ describe("forgetNamespace: failure and the time budget", () => {
     expect(startedAt.length).toBeGreaterThan(0);
     for (const t of startedAt) expect(t).toBeLessThan(20_000);
     expect(startedAt.length).toBeLessThanOrEqual(3);
+  });
+
+  it("a delete is not sent when the listing used up the whole budget", async () => {
+    const sm = fakeSupermemory();
+    sm.docs(NS).set("a", { content: "c", metadata: {} });
+    const tk = clock();
+    const startedAt: number[] = [];
+    sm.onRequest = () => {
+      startedAt.push(tk.c.t);
+      if (startedAt.length === 1) tk.c.t += 16_000; // the first list takes 16 s
+    };
+    expect(await run(NS, real(sm), tk)).toBe("failed");
+    expect(sm.calls.map((c) => c.method)).toEqual(["POST"]);
+    for (const t of startedAt) expect(t).toBeLessThan(20_000);
   });
 
   it("a request is cut off by the time that is left, not by the full 8 s", async () => {
