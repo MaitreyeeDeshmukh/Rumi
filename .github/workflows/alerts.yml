@@ -1,0 +1,61 @@
+name: alerts
+
+# Every 15 minutes: read the metric views and /api/ready, then open, update or close a GitHub issue per alert.
+# Rules live in apps/web/src/lib/telemetry/alerts.ts. Setup and meaning of each alert: README.md, section Operations.
+# Repository secrets: ALERTS_SUPABASE_URL, ALERTS_SUPABASE_KEY, ALERTS_APP_URL. Repository variable (optional): AI_DAILY_GLOBAL_SPEND_CAP_USD.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: alerts
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Evaluate alert rules
+        env:
+          SUPABASE_URL: ${{ secrets.ALERTS_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.ALERTS_SUPABASE_KEY }}
+          APP_URL: ${{ secrets.ALERTS_APP_URL }}
+          AI_DAILY_GLOBAL_SPEND_CAP_USD: ${{ vars.AI_DAILY_GLOBAL_SPEND_CAP_USD }}
+        run: node --experimental-strip-types apps/web/scripts/alerts-check.mjs
+      - name: Open, update or close issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh label create alert --color B60205 --description "Automated production alert" 2>/dev/null || true
+          open=$(gh issue list --label alert --state open --limit 100 --json number,title)
+          # Open or update one issue per active alert.
+          jq -c '.[]' alerts.json | while read -r a; do
+            key=$(jq -r .key <<<"$a")
+            title="[alert] $key"
+            body=$(jq -r '"\(.title)\n\n\(.detail)\n\nSee README.md, section Operations, for the runbook."' <<<"$a")
+            num=$(jq -r --arg t "$title" '[.[] | select(.title == $t)][0].number // empty' <<<"$open")
+            if [ -n "$num" ]; then
+              gh issue edit "$num" --body "$body"
+            else
+              gh issue create --title "$title" --label alert --body "$body"
+            fi
+          done
+          # Close issues whose alert is no longer active.
+          active=$(jq -r '.[] | "[alert] " + .key' alerts.json)
+          jq -r '.[] | select(.title | startswith("[alert] ")) | "\(.number)\t\(.title)"' <<<"$open" | while IFS=$'\t' read -r num title; do
+            if ! grep -qxF "$title" <<<"$active"; then
+              gh issue close "$num" --comment "Cleared: the condition is no longer true."
+            fi
+          done
