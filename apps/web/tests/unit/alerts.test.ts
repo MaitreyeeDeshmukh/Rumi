@@ -218,13 +218,13 @@ describe("alerts-check.mjs", () => {
       return calls.length === 1 ? { status: 503, body: { ok: false } } : { status: 200, body: { ok: true } };
     });
     const out = outFile();
-    await runAsync({ SUPABASE_URL: flaky.url, SUPABASE_SECRET_KEY: "k", APP_URL: flaky.url }, out);
+    await runAsync({ SUPABASE_URL: flaky.url, SUPABASE_SECRET_KEY: "k", APP_URL: flaky.url, READY_RETRY_MS: "10" }, out);
     expect(read(out).alerts).toEqual([]);
     expect(calls).toHaveLength(2); // the failed probe was retried
 
     const down = await mock((url) => (url.startsWith("/rest/v1/") ? { status: 200, body: { ...snapshot, ai_30m: { calls: 100, error_calls: 0, degraded_calls: 0 }, usage_today: { global_cost_usd: 1 }, app_events_30m: {} } } : { status: 503, body: { ok: false, failed: ["database", "<x>"] } }));
     const out2 = outFile();
-    await runAsync({ SUPABASE_URL: down.url, SUPABASE_SECRET_KEY: "k", APP_URL: down.url, READY_TOKEN: "t" }, out2);
+    await runAsync({ SUPABASE_URL: down.url, SUPABASE_SECRET_KEY: "k", APP_URL: down.url, READY_TOKEN: "t", READY_RETRY_MS: "10" }, out2);
     const r = read(out2);
     expect(r.alerts.map((a) => a.key)).toEqual(["not_ready"]);
     expect(r.alerts[0].detail).toContain("database");
