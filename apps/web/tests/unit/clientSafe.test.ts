@@ -4,15 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * crisis.ts and input.ts run in the browser (layer 1 of the crisis check). Everything they import must parse in Safari
+ * crisis.ts and input.ts run in the browser (layer 1 of the crisis check); literalLint.ts runs there too (the support card checks a custom item, I-078). Everything they import must parse in Safari
  * 16 and older and must not pull server code into the client bundle.
  */
 const SRC = fileURLToPath(new URL("../../src/", import.meta.url));
-const ENTRIES = ["lib/crisis.ts", "lib/ai/guards/input.ts"];
-
-// src/lib/text/tokens.ts still has lookbehind in splitSentences and is imported by the grounding checks, not by the
-// two entries above. It is fixed by the orchestrator before merge (issue I-050), so it is not scanned for syntax.
-const SYNTAX_EXEMPT = new Set(["lib/text/tokens.ts"]);
+const ENTRIES = ["lib/crisis.ts", "lib/ai/guards/input.ts", "lib/literalLint.ts"];
 
 const IMPORT_RE = /(?:import|export)[^"';]*?from\s+["']([^"']+)["']|import\s+["']([^"']+)["']/g;
 
@@ -42,7 +38,7 @@ function reachable(): Map<string, string> {
 // type-only imports vanish at build time, so they cannot drag server code in
 const withoutTypeImports = (text: string): string => text.replace(/import\s+type[^;]*;/g, "").replace(/export\s+type[^;]*;/g, "");
 
-describe("modules the browser loads (crisis.ts, input.ts and what they import)", () => {
+describe("modules the browser loads (crisis.ts, input.ts, literalLint.ts and what they import)", () => {
   const files = reachable();
 
   it("finds the entries and what they import", () => {
@@ -52,14 +48,12 @@ describe("modules the browser loads (crisis.ts, input.ts and what they import)",
 
   it("contains no regex lookbehind or named group (a SyntaxError for the whole bundle in Safari before 16.4)", () => {
     for (const [file, text] of files) {
-      if (SYNTAX_EXEMPT.has(file)) continue;
       expect({ file, hit: text.includes("(?<") }).toEqual({ file, hit: false });
     }
   });
 
   it("uses no recent built-ins or operators (at, replaceAll, hasOwn, structuredClone, ??=, ||=, &&=)", () => {
     for (const [file, text] of files) {
-      if (SYNTAX_EXEMPT.has(file)) continue;
       const found = [/\.at\(/, /\.replaceAll\(/, /Object\.hasOwn\(/, /structuredClone\(/, /\?\?=/, /\|\|=/, /&&=/].filter((re) => re.test(text)).map(String);
       expect({ file, found }).toEqual({ file, found: [] });
     }
