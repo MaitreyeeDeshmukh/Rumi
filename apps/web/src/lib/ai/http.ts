@@ -53,33 +53,27 @@ export async function readJson(req: Request, maxBytes: number, timeoutMs = 10_00
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const stalled = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reader.cancel().catch(() => undefined); // best effort: the request is refused either way
-      reject(new HttpError(400, "bad_input"));
-    }, timeoutMs);
-  });
-  stalled.catch(() => undefined); // the race below handles it; this stops a late rejection from being reported as unhandled
-  for (;;) {
-    let step: ReadableStreamReadResult<Uint8Array>;
-    try {
-      step = await Promise.race([reader.read(), stalled]);
-    } catch (e) {
-      clearTimeout(timer);
-      throw e;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    reader.cancel().catch(() => undefined); // best effort: the request is refused either way
+  }, timeoutMs);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      // Cancelling ends the pending read with "done", so a body cut off by the timeout must not pass as complete.
+      if (timedOut) throw new HttpError(400, "bad_input");
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new HttpError(413, "too_large");
+      }
+      chunks.push(value);
     }
-    const { done, value } = step;
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      clearTimeout(timer);
-      await reader.cancel();
-      throw new HttpError(413, "too_large");
-    }
-    chunks.push(value);
+  } finally {
+    clearTimeout(timer);
   }
-  clearTimeout(timer);
 
   const bytes = new Uint8Array(total);
   let offset = 0;
