@@ -1,5 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Nunito_Sans } from "next/font/google";
+import Script from "next/script";
+import { AppNav } from "@/components/AppNav";
+import { CrisisProvider } from "@/components/CrisisProvider";
+import { RumiProvider } from "@/components/deps";
+import { ThemeSync } from "@/components/ThemeSync";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SITE } from "@/lib/site";
@@ -24,18 +29,30 @@ export const viewport: Viewport = {
   ],
 };
 
+/** Runs before paint so the saved theme, motion and text size apply with no flash. Reads only local settings. */
+const THEME_SCRIPT = `try{var s=(JSON.parse(localStorage.getItem('rumi.v1')||'{}').settings)||{};var h=document.documentElement;h.dataset.appTheme=s.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'low':'soft');h.dataset.reducedMotion=String(!!s.reducedMotion||matchMedia('(prefers-reduced-motion: reduce)').matches);h.style.setProperty('--scale',s.textScale||1)}catch(e){}`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
+    <html lang="en" className={`${display.variable} ${body.variable}`} suppressHydrationWarning>
       <body>
-        <a className="skip-link" href="#main">
-          Skip to main content
-        </a>
-        <SiteHeader />
-        <main id="main" tabIndex={-1}>
-          {children}
-        </main>
-        <SiteFooter />
+        <Script id="rumi-theme" strategy="beforeInteractive">
+          {THEME_SCRIPT}
+        </Script>
+        <RumiProvider>
+          <CrisisProvider>
+            <ThemeSync />
+            <a className="skip-link" href="#main">
+              Skip to main content
+            </a>
+            <SiteHeader />
+            <main id="main" tabIndex={-1}>
+              {children}
+            </main>
+            <AppNav />
+            <SiteFooter />
+          </CrisisProvider>
+        </RumiProvider>
       </body>
     </html>
   );
