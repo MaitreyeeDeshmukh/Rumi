@@ -128,7 +128,17 @@ const dyeVeto = (h: Hit): boolean => h.after !== "";
 
 /** Idioms after "I want to die": "laughing", "of embarrassment", "on that hill". */
 const dieIdiomVeto = (h: Hit): boolean =>
-  /^(?:laughing|of (?:embarrassment|laughter|boredom|shame)|on (?:that|this|a|the) hill|from (?:embarrassment|laughter)|to (?:see|know|find)|if i (?:miss|forget|have))\b/.test(h.after);
+  /^(?:laughing|of (?:embarrassment|laughter|boredom|shame)|on (?:that|this|a|the) hill|from (?:embarrassment|laughter)|to (?:see|know|find)|if i (?:miss|forget|have)|in (?:the|this|that) (?:dentist\w*|chair|waiting room|queue|line))\b/.test(h.after);
+
+/** "My son stopped breathing exercises": a class or a habit, not an emergency. */
+const breathingPracticeVeto = (h: Hit): boolean => /^(?:exercises?|practice|class(?:es)?|lessons?|techniques?|training|meditation|apps?|sessions?|drills?)\b/.test(h.after);
+
+/** "I was shot with a vaccine": an injection at a clinic, not a shooting. */
+const vaccineShotVeto = (h: Hit): boolean => /^with (?:a |an |the |my )?(?:\w+ )?(?:vaccine|vaccination|jab|injection|needle|syringe|booster)/.test(h.after);
+
+/** "The lethal dose warning on the label": reading a label is not asking how to die. */
+const labelVeto = (h: Hit): boolean =>
+  /^(?:warnings?|labels?|information|info|limits?|chart|table|guidelines?|notice|sign)\b|\b(?:on|in) the (?:label|box|bottle|packag\w+|leaflet|insert)\b/.test(firstWords(h.after, 8));
 
 /** "I don't feel safe driving at night" is about an activity; "I don't feel safe at home" is not. */
 const safeActivityVeto = (h: Hit): boolean =>
@@ -204,7 +214,7 @@ const RULES: readonly Rule[] = [
   rule("(?:drank|drink|drinking|swallowed|swallow|swallowing|ate|inhaled|injected) (?:some )?(?:bleach|poison|antifreeze|rat poison|drain cleaner|lye|pesticide|weed ?killer|cleaning fluid)"),
   rule("(?:wrote|writing|write|left|leaving|leave) (?:a |my |the )?(?:goodbye|suicide|good bye|final) (?:note|letter|message)|this is my last (?:message|note|goodbye|post)|saying goodbye to (?:everyone|everybody|all of you)"),
   rule("(?:rope|noose|pills|gun|razor|blade|knife) (?:is |are )?ready|(?:have|got|bought|buy|buying) (?:a |the |my |some )?(?:rope|noose|gun|razor|blade)s? (?:to|so i can|for) (?:shoot|hang|kill|end|cut|die)"),
-  rule("how many (?:\\w+ ){0,2}?(?:to|will|would|does it take to) (?:die|overdose|kill me|be fatal|be lethal)|lethal dose|painless (?:way|to) (?:die|hang|kill|end)|(?:best|easiest|painless|quickest|fastest) (?:way|method)s? to (?:die|kill myself|commit suicide|end it|end my life)|how to (?:commit suicide|hang myself|kill myself|end my life)"),
+  rule("how many (?:\\w+ ){0,2}?(?:to|will|would|does it take to) (?:die|overdose|kill me|be fatal|be lethal)|lethal dose|painless (?:way|to) (?:die|hang|kill|end)|(?:best|easiest|painless|quickest|fastest) (?:way|method)s? to (?:die|kill myself|commit suicide|end it|end my life)|how to (?:commit suicide|hang myself|kill myself|end my life)", { veto: labelVeto }),
   rule("(?:hope|wish) i (?:dont|never|wont) wake up|go to sleep and never wake up|dont want to wake up (?:tomorrow|again|ever)"),
 
   // ---- danger from another person, English
@@ -272,7 +282,7 @@ const RULES: readonly Rule[] = [
   rule("blood (?:everywhere|wont stop|will not stop|is pouring|keeps coming|gushing|is gushing)|(?:the )?bleeding (?:wont|will not|doesnt|does not) (?:stop|slow)", { negatable: true, squash: false }),
   rule(
     "(?:my |our )?(?:child|baby|son|daughter|kid|toddler|infant|dad|mom|mum|father|mother|husband|wife|friend|brother|sister|grandma|grandpa|grandmother|grandfather|he|she|they) (?:has |have |just |is |are )?(?:stopped|isnt|is not|not|stops|wont|cant|cannot|will not) (?:breathing|breathe|responding|waking up|wake up|moving)|(?:unresponsive|not responding|wont wake up|not waking up|isnt responding|is not responding|collapsed|is unconscious|are unconscious)",
-    { squash: false },
+    { squash: false, veto: breathingPracticeVeto },
   ),
   rule("(?:swallowed|ate|drank|ingested|inhaled) (?:a |an |some |the )?(?:battery|batteries|magnets?|bleach|poison|detergent|cleaning (?:fluid|product))", { squash: false }),
   rule("(?:took|taken|take|swallowed|had) too much (?:of my )?(?:medicine|medication|meds|insulin|painkillers|paracetamol|tylenol|aspirin|sleeping pills)", { squash: false }),
@@ -297,7 +307,7 @@ const RULES: readonly Rule[] = [
   rule("(?:is|are|went|goes|became|feels) limp|(?:is|are) (?:not|no longer) (?:moving|breathing|responding|waking up)|isnt (?:moving|breathing|responding|waking up)", { squash: false }),
   rule("blood in (?:my|his|her|the) vomit", { squash: false, negatable: true }),
   rule("(?:my )?chest (?:is |feels )?(?:crushing|tight|squeezing|burning)(?: and| with) (?:my )?(?:left |right )?(?:arm|jaw|shoulder|hand)s?", { squash: false, negatable: true }),
-  rule("(?:i|ive|i have|i was|im|i got|i am) (?:been |got )?(?:stabbed|shot|run over|poisoned)|(?:someone|somebody|he|she|they) (?:stabbed|shot|ran over|poisoned) me", { squash: false, negatable: true }),
+  rule("(?:i|ive|i have|i was|im|i got|i am) (?:been |got )?(?:stabbed|shot|run over|poisoned)|(?:someone|somebody|he|she|they) (?:stabbed|shot|ran over|poisoned) me", { squash: false, negatable: true, veto: vaccineShotVeto }),
   rule("(?:i )?(?:got|been|was|have been) (?:hit|run over|struck) by (?:a |an )(?:car|truck|bus|bike|train|motorcycle)", { squash: false, veto: (h) => /^(?:last|when|years?|months?|weeks?|ago|once|as a|in )/.test(h.after) }),
 
   rule("(?:plan|plans) (?:is |are )?to (?:overdose|die|end it|kill myself|end my life|take (?:all )?my pills)", { squash: false }),
