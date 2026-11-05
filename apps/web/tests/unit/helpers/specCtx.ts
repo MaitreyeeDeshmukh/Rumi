@@ -9,7 +9,8 @@ export function ctxFor<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req,
   return { r, ledger: spec.buildLedger(r), fence: (label, text) => fence(NONCE, label, text), memory, companionName };
 }
 
-export const promptFor = <Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req, memory: string[] = []) => spec.build(ctxFor(spec, r, memory));
+/** What the spec itself builds. The harness wraps it (rules, STYLE, FACTS, TASK); routesE2E.test.ts checks the composed prompt. */
+export const promptFor = <Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req) => spec.build(ctxFor(spec, r));
 
 export function check<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, r: Req, out: Out): { hard: GuardCode[]; soft: GuardCode[] } {
   const codes = spec.validate(r, out, spec.buildLedger(r));

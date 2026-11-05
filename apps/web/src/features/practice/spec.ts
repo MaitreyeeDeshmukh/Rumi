@@ -7,7 +7,6 @@ import { confirmCovered } from "@/features/practice/confirmCovered";
 import { practiceFallback } from "@/features/practice/fallback";
 import { enabledItems, idsForLabels, unknownLabelCodes } from "@/features/practice/labels";
 import { practiceMock } from "@/features/practice/mock";
-import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import {
   PracticeModelOut,
@@ -18,7 +17,6 @@ import {
   type PracticeRequestT,
 } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
-import { claimsHumanCodes, clinicianFindingCodes } from "@/lib/ai/guards/output";
 import { buildLedger } from "@/lib/ai/ledger";
 import { lintCodes } from "@/lib/literalLint";
 import { CLOSING_LINE, DR_LEE_PERSONA } from "../../../prompts/persona";
@@ -40,18 +38,16 @@ export const practiceSpec: TaskSpec<PracticeRequestT, PracticeModelOutT, Practic
     return text === undefined ? {} : { latestMe: text };
   },
   buildLedger: (r) => buildLedger({ mainConcern: r.plan.mainConcern, symptoms: r.plan.symptomsInMyWords, planItems: enabledItems(r.plan) }),
-  build: (ctx) =>
-    composePrompt(ctx, {
-      persona: DR_LEE_PERSONA,
-      task: practiceTask(ctx.r.focus),
-      // Role words come from an enum; the text of every turn is fenced, so a typed "clinician:" is only text.
-      data: ctx.r.turns.map((t, n) => `T${n + 1} ${t.role}: ${ctx.fence(`T${n + 1}`, t.text)}`),
-    }),
-  validate: (r, o, ledger) => {
+  // The conversation comes first and the task last. Role words come from an enum; the text of every turn is fenced,
+  // so a typed "clinician:" is only text. The harness adds the rules, STYLE and FACTS (the plan items q1..).
+  build: (ctx) => ({
+    system: DR_LEE_PERSONA,
+    user: [...ctx.r.turns.map((t, n) => `T${n + 1} ${t.role}: ${ctx.fence(`T${n + 1}`, t.text)}`), practiceTask(ctx.r.focus)].join("\n"),
+  }),
+  // clinician_finding, claims_human and advice are run by the harness for every practice answer.
+  validate: (r, o) => {
     const codes: GuardCode[] = [
       ...unknownLabelCodes(r.plan, o.coveredItemIds),
-      ...clinicianFindingCodes(o.clinicianSay, ledger),
-      ...claimsHumanCodes(o.clinicianSay),
       ...(/[\p{L}\p{N}]/u.test(o.clinicianSay) ? [] : (["empty"] as const)),
       ...lintCodes([o.clinicianSay]),
       ...((o.clinicianSay.match(/\?/g) ?? []).length > 1 ? (["multi_question"] as const) : []),

@@ -6,7 +6,6 @@
 import { level1Codes } from "@/features/sayit/level1";
 import { sayitFallback } from "@/features/sayit/fallback";
 import { sayitMock } from "@/features/sayit/mock";
-import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import { SayItModelOut, SayItReply, SayItRequest, type SayItModelOutT, type SayItReplyT, type SayItRequestT } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
@@ -34,7 +33,7 @@ export const sayitSpec: TaskSpec<SayItRequestT, SayItModelOutT, SayItReplyT> = {
       scenario !== undefined && Object.hasOwn(SCENARIO_CONTEXT, scenario)
         ? `CONTEXT: ${SCENARIO_CONTEXT[scenario]}`
         : `CONTEXT: The clinician asked: ${ctx.fence("clinicianQuestion", clinicianQuestion ?? "")}`;
-    return composePrompt(ctx, { persona: RUMI_PERSONA, task: sayitTask(ctx.r.level), data: [context] });
+    return { system: RUMI_PERSONA, user: `${context}\n${sayitTask(ctx.r.level)}` };
   },
   validate: (r, o, ledger) => {
     const codes: GuardCode[] = [

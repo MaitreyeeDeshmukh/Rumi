@@ -8,7 +8,6 @@ import { recapFallback } from "@/features/recap/fallback";
 import { recapMock } from "@/features/recap/mock";
 import type { PlanItemRef } from "@/features/recap/planStatusFallback";
 import { NOTHING_CONFIRMED, recapEmptyCodes, verifyEvidence } from "@/features/recap/verifyEvidence";
-import { composePrompt } from "@/features/shared/composePrompt";
 import { RecapModelOut, RecapReply, RecapRequest, type RecapModelOutT, type RecapReplyT, type RecapRequestT } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
 import { buildLedger } from "@/lib/ai/ledger";
@@ -31,13 +30,11 @@ export const recapSpec: TaskSpec<RecapRequestT, RecapModelOutT, RecapReplyT> = {
   // The recap input is a fixed sample visit, never text the user typed in this request.
   crisisFields: () => ({}),
   buildLedger: (r) => buildLedger({ planItems: planRefs(r), lines: r.lines }),
-  build: (ctx) =>
-    composePrompt(ctx, {
-      persona: RUMI_PERSONA,
-      task: recapTask(ctx.r.mySpeaker),
-      // Speaker letters are enum values checked by the request schema.
-      data: [`SPEAKERS: ${ctx.r.lines.map((l, n) => `L${n + 1}=${l.speaker}`).join(", ")}`],
-    }),
+  // Speaker letters are enum values checked by the request schema. The harness adds the rules, STYLE and FACTS (L1.., q1..).
+  build: (ctx) => ({
+    system: RUMI_PERSONA,
+    user: `SPEAKERS: ${ctx.r.lines.map((l, n) => `L${n + 1}=${l.speaker}`).join(", ")}\n${recapTask(ctx.r.mySpeaker)}`,
+  }),
   validate: (r, o) => {
     const lines = lineLabels(r);
     const plan = planLabels(r);

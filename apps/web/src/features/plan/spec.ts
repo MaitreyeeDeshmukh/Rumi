@@ -6,7 +6,6 @@
 import { planFallback, planIdFor } from "@/features/plan/fallback";
 import { planMock } from "@/features/plan/mock";
 import { keepSupportedSymptoms, mainConcernCodes, planItemCodes } from "@/features/plan/keepSupportedSymptoms";
-import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import { PlanModelOut, PlanReply, PlanRequest, type PlanModelOutT, type PlanReplyT, type PlanRequestT } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
@@ -29,7 +28,8 @@ export const planSpec: TaskSpec<PlanRequestT, PlanModelOutT, PlanReplyT> = {
   // Only what the user typed in this request.
   crisisFields: (r) => ({ rawText: r.rawText }),
   buildLedger: (r) => buildLedger({ rawText: r.rawText }),
-  build: (ctx) => composePrompt(ctx, { persona: RUMI_PERSONA, task: PLAN_TASK }),
+  // The harness adds the rules, STYLE and FACTS (the user's sentences) around this; the plan task needs no other data.
+  build: () => ({ system: RUMI_PERSONA, user: PLAN_TASK }),
   validate: (r, o, ledger) => {
     const texts = [o.mainConcern, ...o.symptomsInMyWords, ...o.items.map((i) => i.text)];
     const codes: GuardCode[] = [
