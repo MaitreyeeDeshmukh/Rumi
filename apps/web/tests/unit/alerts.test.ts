@@ -80,7 +80,8 @@ describe("evaluateAlerts: database maintenance (ops_alert_snapshot from migratio
   it("raises maintenance_stale for a job older than 36 hours, one that never ran, one that is missing, and one that failed", () => {
     expect(db({ maintenance: { ...freshJobs(), prune: ranAt(37) } })).toEqual(["maintenance_stale"]);
     expect(db({ maintenance: { ...freshJobs(), prune: { status: null, at: null } } })).toEqual(["maintenance_stale"]);
-    const { health: _gone, ...fewer } = freshJobs();
+    const fewer: Record<string, { status: string; at: string }> = freshJobs();
+    delete fewer.health;
     expect(db({ maintenance: fewer })).toEqual(["maintenance_stale"]);
     expect(db({ maintenance: { ...freshJobs(), retention: ranAt(1, "failed") } })).toEqual(["maintenance_stale"]);
     expect(db({ maintenance: {} })).toEqual(["maintenance_stale"]);
@@ -291,7 +292,8 @@ describe("alerts-check.mjs", () => {
   });
 
   it("an old snapshot without the new fields leaves those three rules undecided instead of passing them", async () => {
-    const { last_maintenance: _a, default_partition_rows: _b, anon_purge_enabled: _c, anonymous_user_backlog: _d, ...old } = snapshot;
+    const old: Record<string, unknown> = { ...snapshot };
+    for (const k of ["last_maintenance", "default_partition_rows", "anon_purge_enabled", "anonymous_user_backlog"]) delete old[k];
     const m = await mock((url) => (url.startsWith("/rest/v1/") ? { status: 200, body: { ...old, ai_30m: { calls: 100, error_calls: 0, degraded_calls: 0 }, usage_today: { global_cost_usd: 1 }, app_events_30m: {} } } : { status: 200, body: { ok: true } }));
     const out = outFile();
     await runAsync({ SUPABASE_URL: m.url, SUPABASE_SECRET_KEY: "k", APP_URL: m.url }, out);
