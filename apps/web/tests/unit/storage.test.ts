@@ -33,6 +33,7 @@ describe("loadState: whole-file failures give a clean default", () => {
     expect(loadState(fakeStorage())).toEqual(defaultState());
     expect(loadState(fakeStorage({ [KEY]: "{not json" }))).toEqual(defaultState());
     expect(load({ version: 2 })).toEqual(defaultState());
+    expect(load(base({ version: 2, plan: plan(), sessions: [session("s1")] }))).toEqual(defaultState());
     for (const raw of ["null", "[]", "42", '"x"', "true"]) expect(loadState(fakeStorage({ [KEY]: raw }))).toEqual(defaultState());
   });
 
@@ -142,6 +143,21 @@ describe("loadState: sessions", () => {
     expect(({} as Record<string, unknown>).concern).toBeUndefined();
   });
 
+  it("a polluted Object.prototype cannot leak into help levels or facts", () => {
+    Object.defineProperty(Object.prototype, "concern", { value: 3, configurable: true });
+    Object.defineProperty(Object.prototype, "kind", { value: "support_pref", configurable: true });
+    Object.defineProperty(Object.prototype, "key", { value: "p1", configurable: true });
+    try {
+      const s = load(base({ sessions: [session("s1", { helpLevelUsed: {} })], persona: { facts: [{}] } }));
+      expect(s.sessions[0].helpLevelUsed).toEqual({});
+      expect(s.persona.facts).toEqual([]);
+    } finally {
+      Reflect.deleteProperty(Object.prototype, "concern");
+      Reflect.deleteProperty(Object.prototype, "kind");
+      Reflect.deleteProperty(Object.prototype, "key");
+    }
+  });
+
   it("an unknown focus, including prototype names, becomes whole", () => {
     for (const focus of ["constructor", "__proto__", "toString", 7, null, "nonsense"]) {
       expect(load(base({ sessions: [session("s1", { focus })] })).sessions[0].focus).toBe("whole");
@@ -237,6 +253,12 @@ describe("saveState / resetState", () => {
   it("surfaces a full disk as quota, a blocked store as blocked, no store as unavailable", () => {
     const store = fakeStorage();
     store.failWrites = new DOMException("full", "QuotaExceededError");
+    expect(saveState(defaultState(), store)).toEqual({ ok: false, reason: "quota" });
+    store.failWrites = Object.assign(new Error("named"), { name: "QuotaExceededError" });
+    expect(saveState(defaultState(), store)).toEqual({ ok: false, reason: "quota" });
+    store.failWrites = Object.assign(new Error("firefox"), { name: "NS_ERROR_DOM_QUOTA_REACHED" });
+    expect(saveState(defaultState(), store)).toEqual({ ok: false, reason: "quota" });
+    store.failWrites = Object.assign(new Error("legacy"), { code: 22 });
     expect(saveState(defaultState(), store)).toEqual({ ok: false, reason: "quota" });
     store.failWrites = new Error("SecurityError");
     expect(saveState(defaultState(), store)).toEqual({ ok: false, reason: "blocked" });

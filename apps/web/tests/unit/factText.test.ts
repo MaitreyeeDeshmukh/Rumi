@@ -59,6 +59,7 @@ describe("factText", () => {
     expect(factText("support_pref", "p9")).toBeNull();
     expect(factText("support_pref", "p1", 1)).toBeNull();
     expect(factText("pacing", "p2")).toBeNull();
+    expect(factText("pacing", "extra_time", 1)).toBeNull();
     expect(factText("help_level", "question")).toBeNull();
     expect(factText("help_level", "question", 4)).toBeNull();
     expect(factText("help_level", "question", 1.5)).toBeNull();

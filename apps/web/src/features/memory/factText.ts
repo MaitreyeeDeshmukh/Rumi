@@ -5,7 +5,8 @@
  */
 import { presetText } from '@/features/support/presets';
 
-const PACING_PRESET: ReadonlyMap<string, string> = new Map([
+/** Pacing key to the preset whose sentence it uses. */
+export const PACING_PRESET: ReadonlyMap<string, string> = new Map([
   ['one_question', 'p2'],
   ['extra_time', 'p5'],
 ]);
