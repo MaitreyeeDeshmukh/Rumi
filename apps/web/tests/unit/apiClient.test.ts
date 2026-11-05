@@ -44,7 +44,7 @@ describe("callApi: crisis before the network", () => {
         throw new Error("boom");
       },
     });
-    expect(await go()).toMatchObject({ ok: true });
+    expect(await go({ turns: [{ role: "me", text: "hello" }] })).toMatchObject({ ok: true });
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
