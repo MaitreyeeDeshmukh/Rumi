@@ -48,6 +48,12 @@ describe("R2-1 a dose belongs to the medicine named by position", () => {
     expect(ok([line("Take 5 mg of Zorbex and 10 mg of Quillan.")], item("medications", "Zorbex: 10 mg."))).toBe(false);
   });
 
+  it("a medicine named before another one in a list owns only its own dose", () => {
+    const z = [line("Take Zorbex and Quillan 10 mg.")];
+    expect(ok(z, item("medications", "Zorbex: 10 mg."))).toBe(false);
+    expect(ok(z, item("medications", "Quillan: 10 mg."))).toBe(true);
+  });
+
   it("dosesByDrug: the rules one by one", () => {
     expect([...dosesByDrug("Take 400 mg ibuprofen.")]).toEqual(["ibuprofen|a:400|mg"]);
     expect([...dosesByDrug("Take warfarin and ibuprofen 5 mg.")]).toEqual(["ibuprofen|a:5|mg"]);
@@ -59,6 +65,13 @@ describe("R2-1 a dose belongs to the medicine named by position", () => {
 
   it("an amount that no rule can bind supports nothing, so the item that needs it is demoted", () => {
     expect(ok([line("Take warfarin 5 mg and 10 mg.")], item("medications", "Warfarin: 10 mg."))).toBe(false);
+  });
+});
+
+describe("an item needs words of its own", () => {
+  it("reporting words and negators alone say nothing", () => {
+    expect(one("Take ibuprofen daily.", "The clinician said.")).toBe(false);
+    expect(one("Take ibuprofen daily.", "Do not.")).toBe(false);
   });
 });
 
@@ -245,12 +258,20 @@ describe("P3 extras", () => {
     expect(stem("class")).toBe("class");
   });
 
-  it.each(["Doctors said I should rest.", "Nurses told me to wait.", "I want to ask about family history.", "Can I bring a friend?", "I am an ex-smoker.", "Ask your family doctor."])(
+  it.each(["Doctors said I should rest.", "Nurses told me to wait.", "I want to ask about family history.", "Can I bring a friend?", "Ask about ex-smokers.", "Ask your family doctor."])(
     "not an invented person: %s",
     (t) => expect(toks(t)).toEqual([]),
   );
 
   it.each(["My friend hits me.", "Mom hits me.", "My ex follows me.", "Patel told me to rest."])("still an invented person: %s", (t) => {
     expect(toks(t).length).toBeGreaterThan(0);
+  });
+});
+
+describe("R2-1 more binding edges", () => {
+  it("a time amount never creates a medicine candidate, a dose verb never does either", () => {
+    expect([...dosesByDrug("Check later 4 weeks.")]).toEqual([]);
+    expect([...dosesByDrug("Take 5 mg.")]).toEqual([]);
+    expect([...dosesByDrug("Dose 5 mg.")]).toEqual([]);
   });
 });

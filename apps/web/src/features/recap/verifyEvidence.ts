@@ -4,6 +4,17 @@
  * amounts bound to the right medicine, medicine names, diagnoses, and the same yes/no meaning).
  * Rejection is a demotion to a fixed-template line, never a retry.
  * The model writes no free-text "unconfirmed" notes; those lines are made here.
+ *
+ * KNOWN LIMITS (lexical check, final round of the features lane; each is the safe direction unless noted):
+ * - A pronoun's noun must be in a cited line: "The clinician will print the instructions" for "I will print them" is
+ *   demoted unless the line that said "instructions" is cited too.
+ * - Paraphrases outside the small synonym list in stems.ts and the safe-word list here are demoted.
+ * - Negation is counted per sentence (even = positive). Two opposite slips in one sentence cancel out ("Do take it, do
+ *   not stop" for "Do not take it, stop").  NOT the safe direction, rare.
+ * - An item may drop a modal word ("You must rest" -> "Rest."), and may turn "can" into a plain instruction.
+ * - Only the meaning words in NEGATORS, OPPOSITES and the modality lists are checked; a flip made with another word
+ *   ("allow" for "forbid") is caught only when the item's own words are not in the line (coverage), not by meaning.
+ * - A dose written after a pronoun or "the blue one" is bound to no medicine, so an item that needs it is demoted.
  */
 import { lineOverlaps, planStatusFallback, type PlanItemRef } from "@/features/recap/planStatusFallback";
 import { CONDITIONS } from "@/features/shared/lists";
@@ -82,13 +93,11 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 }
 
 /**
- * Phrases whose double negation is plain advice: "do not forget to bring" means "bring", "do not skip" means "take".
+ * "Do not skip your pills" is plain advice to take them: the two negators cancel, but the verb would otherwise have to be
+ * said by the item. ("Do not forget to X" needs no rule: not + forget cancel in the negator count.)
  * Applied to the item and to the lines alike, before counting negators.
  */
-const meaning = (s: string): string =>
-  lower(s)
-    .replace(/\b(?:do not|don't|dont|never)\s+(?:forget|hesitate)\s+to\b/g, " ")
-    .replace(/\b(?:do not|don't|dont|never)\s+(?:skip|miss)\b/g, "take");
+const meaning = (s: string): string => lower(s).replace(/\b(?:do not|don't|dont|never)\s+(?:skip|miss)\b/g, "take");
 const NEGATOR_PHRASES = /\b(hold off|stay away from|give up)\b/g;
 const negationCount = (sentence: string): number => words(sentence).filter((w) => NEGATORS.has(w)).length + (sentence.match(NEGATOR_PHRASES) ?? []).length;
 const OPPOSITES: readonly (readonly [string, string])[] = [
