@@ -52,6 +52,7 @@ describe("logEvent", () => {
       outTokens: 190,
       ms: 4123,
       errorCode: "ai_unavailable",
+      providerKind: "none",
     });
   });
 
@@ -88,7 +89,7 @@ describe("logEvent", () => {
     expect(parsed.attempts).toBe(0);
     expect(parsed.inTokens).toBe(0);
     expect(Object.keys(parsed).sort()).toEqual(
-      ["type", "id", "task", "promptVersion", "outcome", "degraded", "attempts", "tier", "redactions", "injectionHits", "thin", "guardHits", "memoryItems", "inTokens", "outTokens", "ms", "errorCode"].sort(),
+      ["type", "id", "task", "promptVersion", "outcome", "degraded", "attempts", "tier", "redactions", "injectionHits", "thin", "guardHits", "memoryItems", "inTokens", "outTokens", "ms", "errorCode", "providerKind"].sort(),
     );
   });
 
@@ -118,5 +119,25 @@ describe("logEvent: narrow shapes", () => {
     for (const [input, expected] of [[0, 0], [2, 2], [3, 3], [4, 3], [99_999, 3], [-1, 0], [1.9, 1], [Number.NaN, 0], ["2", 0]] as const) {
       expect(JSON.parse(capture({ ...base, attempts: input })[0]).attempts).toBe(expected);
     }
+  });
+});
+
+describe("logEvent: stage", () => {
+  it("is written only when set, and only from the fixed list", () => {
+    expect(JSON.parse(capture({ ...base, stage: "prompt" })[0]).stage).toBe("prompt");
+    expect(JSON.parse(capture({ ...base, stage: "my head hurts" })[0]).stage).toBe("unknown");
+    expect(JSON.parse(capture(base)[0])).not.toHaveProperty("stage");
+  });
+});
+
+describe("logEvent: providerKind and the mock_prod stage", () => {
+  it("providerKind is one of the fixed kinds, none when missing, and never free text", () => {
+    for (const k of ["timeout", "http", "config", "empty", "aborted", "none"]) expect(JSON.parse(capture({ ...base, providerKind: k })[0]).providerKind).toBe(k);
+    expect(JSON.parse(capture(base)[0]).providerKind).toBe("none");
+    expect(JSON.parse(capture({ ...base, providerKind: "rate limited by Groq: my head hurts" })[0]).providerKind).toBe("none");
+  });
+
+  it("mock_prod is an allowed stage", () => {
+    expect(JSON.parse(capture({ ...base, stage: "mock_prod" })[0]).stage).toBe("mock_prod");
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { vi, describe, expect, it } from "vitest";
 import { HttpError, errorResponse, json, readJson } from "@/lib/ai/http";
 
 const post = (body: BodyInit | null, headers: Record<string, string> = {}): Request =>
@@ -115,5 +115,90 @@ describe("07 P3 and H-17 details", () => {
     expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
     expect(Object.keys(parsed.b as object)).toEqual(["c"]);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe("readJson: body read timeout", () => {
+  it("a body that stalls is cancelled after the timeout and answers 400 bad_input", async () => {
+    vi.useFakeTimers();
+    try {
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"a":'));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      const req = new Request("https://rumi.test/api/x", { method: "POST", body, duplex: "half" } as RequestInit);
+      const pending = readJson(req, 1000, 10_000);
+      const result = pending.then(
+        () => "resolved",
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(cancelled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toMatchObject({ status: 400, code: "bad_input" });
+      expect(cancelled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a body that is complete JSON but never ends is still refused at the timeout (not passed on as finished)", async () => {
+    vi.useFakeTimers();
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"a":1}'));
+        },
+      });
+      const req = new Request("https://rumi.test/api/x", { method: "POST", body, duplex: "half" } as RequestInit);
+      const result = readJson(req, 1000, 5_000).then(
+        (v: unknown) => ({ resolved: v }),
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await result).toMatchObject({ status: 400, code: "bad_input" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the timer is cleared when the body finishes or fails, so no timer is left running", async () => {
+    vi.useFakeTimers();
+    try {
+      await readJson(post(JSON.stringify({ a: 1 })), 1000);
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(readJson(post("{nope"), 1000)).rejects.toMatchObject({ status: 400 });
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(readJson(post(JSON.stringify({ t: "x".repeat(200) })), 50)).rejects.toMatchObject({ status: 413 });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the default limit is 10 s and a normal body is unaffected", async () => {
+    vi.useFakeTimers();
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"a":'));
+        },
+      });
+      const req = new Request("https://rumi.test/api/x", { method: "POST", body, duplex: "half" } as RequestInit);
+      const result = readJson(req, 1000).then(
+        () => "resolved",
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(await result).toMatchObject({ status: 400 });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await readJson(post(JSON.stringify({ a: 1 })), 1000)).toEqual({ a: 1 });
   });
 });

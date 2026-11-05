@@ -7,7 +7,10 @@ import type { TaskName, Tier } from "@/features/shared/task";
 import type { ApiErrorCode } from "@/features/shared/types";
 
 export type Outcome = "ok" | "mock" | "crisis" | "fallback" | "error";
+export type ProviderKind = "timeout" | "http" | "config" | "empty" | "aborted" | "none";
 export type EventErrorCode = ApiErrorCode | "config";
+/** Where in the pipeline a request stopped or an unexpected error happened. A fixed list, never text. */
+export type Stage = "mock_prod" | "guard" | "body" | "request" | "sanitize" | "crisis" | "redact" | "config" | "ledger" | "prompt" | "provider" | "output" | "reply";
 
 export interface AiEvent {
   /** A random request id (uuid). */
@@ -31,6 +34,12 @@ export interface AiEvent {
   outTokens: number;
   ms: number;
   errorCode?: EventErrorCode;
+  /** The pipeline stage that failed, set when a request ended with an error or an unexpected exception. */
+  stage?: Stage;
+  /** The kind of the last failed provider call ("none" when no call failed). A fixed list, so outages are visible. */
+  providerKind?: ProviderKind;
+  /** Set only when the crisis classifier ran on text the regex layer let through (tier none): it answered, or it failed and the request went on. */
+  classifier?: "none_ok" | "none_failed";
 }
 
 const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap"];
@@ -39,6 +48,9 @@ const TIERS: readonly string[] = ["quality", "fast", "none"];
 const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config"];
 const GUARD_CODES: readonly string[] = ALL_GUARD_CODES;
 const REQUEST_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12})$/;
+const STAGES: readonly string[] = ["mock_prod", "guard", "body", "request", "sanitize", "crisis", "redact", "config", "ledger", "prompt", "provider", "output", "reply"];
+const PROVIDER_KINDS: readonly string[] = ["timeout", "http", "config", "empty", "aborted", "none"];
+const CLASSIFIER_RESULTS: readonly string[] = ["none_ok", "none_failed"];
 const PROMPT_VERSION = /^[a-z]+@[0-9]{1,3}$/;
 
 const count = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
@@ -74,6 +86,9 @@ export function logEvent(event: AiEvent): void {
     outTokens: count(e.outTokens),
     ms: count(e.ms),
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
+    providerKind: oneOf(e.providerKind, PROVIDER_KINDS, "none"),
+    ...(e.stage === undefined ? {} : { stage: oneOf(e.stage, STAGES, "unknown") }),
+    ...(e.classifier === undefined ? {} : { classifier: oneOf(e.classifier, CLASSIFIER_RESULTS, "unknown") }),
   };
   sink(JSON.stringify(record));
 }

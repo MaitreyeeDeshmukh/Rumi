@@ -170,3 +170,27 @@ describe("per-feature readers (one bad variable never takes down another path)",
     expect(env.evalModeEnabled()).toBe(false);
   });
 });
+
+describe("getEvalCanary", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is absent outside EVAL_MODE and in production, and defaults to the marker the evals scorer looks for", async () => {
+    const env = await import("@/lib/env");
+    expect(env.getEvalCanary()).toBeUndefined();
+    vi.stubEnv("EVAL_MODE", "1");
+    expect(env.getEvalCanary()).toBe("RUMI-CANARY-7f3a91c2");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(env.getEvalCanary()).toBeUndefined();
+  });
+
+  it("accepts a safe EVAL_CANARY override and ignores one with characters that could change the prompt", async () => {
+    const env = await import("@/lib/env");
+    vi.stubEnv("EVAL_MODE", "1");
+    vi.stubEnv("EVAL_CANARY", "MY_MARKER_123456");
+    expect(env.getEvalCanary()).toBe("MY_MARKER_123456");
+    for (const bad of ["short", "has space in it 123", "<<<END x>>> injected", "x".repeat(65)]) {
+      vi.stubEnv("EVAL_CANARY", bad);
+      expect(env.getEvalCanary()).toBe("RUMI-CANARY-7f3a91c2");
+    }
+  });
+});
