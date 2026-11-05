@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import { PlanModelOut, PracticeModelOut, RecapModelOut, SayItModelOut } from "../../src/features/shared/schemas";
 import {
   ARMS,
   PINNED,
   assertHarnessParity,
+  type ParitySpec,
   baselineCall,
 } from "../evals/baseline";
 import { buildCases } from "../evals/cases";
@@ -51,21 +54,35 @@ describe("baseline arm pin (D34)", () => {
   });
 });
 
-describe("assertHarnessParity (Phase 2/3 calls this with the real TaskSpecs)", () => {
-  const same = Object.fromEntries(TASKS.map((t) => [t, { tier: PINNED[t].tier, temperature: PINNED[t].temperature, maxOutputTokens: PINNED[t].maxOutputTokens }])) as never;
+describe("assertHarnessParity checks all six pinned parameters (E-12)", () => {
+  const MODEL_OUT = { plan: PlanModelOut, practice: PracticeModelOut, sayit: SayItModelOut, recap: RecapModelOut };
+  const good = () =>
+    Object.fromEntries(TASKS.map((t) => [t, { ...PINNED[t], jsonSchema: z.toJSONSchema(MODEL_OUT[t]) }])) as unknown as Record<TaskName, ParitySpec>;
   it("passes when the harness specs match the pin", () => {
-    expect(() => assertHarnessParity(same)).not.toThrow();
+    expect(() => assertHarnessParity(good())).not.toThrow();
   });
-  it("SEEDED BAD: a different temperature, token cap or tier is rejected with the task named", () => {
-    const hot = structuredClone(same) as Record<TaskName, { tier: string; temperature: number; maxOutputTokens: number }>;
-    hot.practice.temperature = PINNED.practice.temperature + 0.3;
-    expect(() => assertHarnessParity(hot as never)).toThrow(/practice.*temperature/);
-    const cap = structuredClone(same) as typeof hot;
-    cap.recap.maxOutputTokens = 10;
-    expect(() => assertHarnessParity(cap as never)).toThrow(/recap.*maxOutputTokens/);
-    const tier = structuredClone(same) as typeof hot;
-    tier.plan.tier = "fast";
-    expect(() => assertHarnessParity(tier as never)).toThrow(/plan.*tier/);
+  it.each([
+    ["practice", "temperature", 0.9],
+    ["recap", "maxOutputTokens", 10],
+    ["plan", "tier", "fast"],
+    ["sayit", "reasoningEffort", "high"],
+    ["plan", "taskSentence", "Do something else."],
+  ] as const)("SEEDED BAD: %s.%s drifting is rejected with the task and the parameter named", (task, key, value) => {
+    const specs = good() as unknown as Record<string, Record<string, unknown>>;
+    specs[task][key] = value;
+    expect(() => assertHarnessParity(specs as never)).toThrow(new RegExp(`${task}\.${key}`));
+  });
+  it("SEEDED BAD: a different JSON schema is rejected", () => {
+    const specs = good();
+    specs.recap = { ...specs.recap, jsonSchema: { type: "object", properties: {} } };
+    expect(() => assertHarnessParity(specs)).toThrow(/recap.jsonSchema/);
+  });
+  it("a missing task or missing specs gives a clear error, not a TypeError", () => {
+    const specs = good() as Partial<Record<TaskName, ParitySpec>>;
+    delete specs.sayit;
+    expect(() => assertHarnessParity(specs)).toThrow(/sayit: no harness spec provided/);
+    expect(() => assertHarnessParity(undefined)).toThrow(/no harness specs were provided/);
+    expect(() => assertHarnessParity({})).toThrow(/plan: no harness spec/);
   });
 });
 

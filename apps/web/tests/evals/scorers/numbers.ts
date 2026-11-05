@@ -19,7 +19,9 @@ const WORDS: Record<string, number> = {
 };
 
 const UNIT_CANON: Record<string, string> = {
-  mg: 'mg', mcg: 'mcg', 'µg': 'mcg', ug: 'mcg', g: 'g', kg: 'kg', ml: 'ml', l: 'l', iu: 'iu', unit: 'unit', units: 'unit',
+  mg: 'mg', mgs: 'mg', milligram: 'mg', milligrams: 'mg', mcg: 'mcg', microgram: 'mcg', micrograms: 'mcg', gram: 'g', grams: 'g', gramme: 'g', grammes: 'g',
+  kilogram: 'kg', kilograms: 'kg', millilitre: 'ml', millilitres: 'ml', milliliter: 'ml', milliliters: 'ml', litre: 'l', litres: 'l', liter: 'l', liters: 'l',
+  ounce: 'oz', ounces: 'oz', pint: 'pint', pints: 'pint', lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb', 'µg': 'mcg', ug: 'mcg', g: 'g', kg: 'kg', ml: 'ml', l: 'l', iu: 'iu', unit: 'unit', units: 'unit',
   tablet: 'pill', tablets: 'pill', tab: 'pill', tabs: 'pill', pill: 'pill', pills: 'pill',
   capsule: 'capsule', capsules: 'capsule', cap: 'capsule', caps: 'capsule',
   drop: 'drop', drops: 'drop', puff: 'puff', puffs: 'puff', spray: 'spray', sprays: 'spray',
@@ -51,6 +53,11 @@ function fold(text: string): string {
     .toLowerCase();
 }
 
+// $41k, $2 million: money is a quantity of its own unit, so "$41k" can never be grounded by a bare 41.
+const MONEY_RE = /\$\s?(\d+(?:[.,]\d+)?)\s?(k|thousand|m|million)?\b/g;
+// 41k with no dollar sign: a thousand-multiplier, not a unit.
+const K_RE = /(?<![a-z0-9_])(\d+(?:\.\d+)?)k\b/g;
+const MULTIPLIER: Record<string, number> = { k: 1000, thousand: 1000, m: 1_000_000, million: 1_000_000 };
 const DIGITS_RE = new RegExp(`(?<![a-z0-9_])(\\d+(?:[.,]\\d+)?)\\s?(${UNIT_ALT})?(?![a-z0-9])`, 'g');
 const WORDS_RE = new RegExp(`\\b(${Object.keys(WORDS).join('|')})\\b(?:\\s+(${UNIT_ALT})\\b)?`, 'g');
 const REL_RE = /\b(yesterday|last (?:night|week|month|year)|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|june|july|august|september|october|november|december)\b/g;
@@ -59,8 +66,17 @@ const HALF_UNIT_RE = /^(?:an? )?(hour|day|week|month|year)\b/;
 const unitOf = (raw: string | undefined): string => (raw === undefined ? '' : (UNIT_CANON[raw] ?? ''));
 
 export function extractQuantities(input: string): Quantity[] {
-  const text = fold(input).replace(/\b1 to 10\b/g, ' ');
+  let text = fold(input).replace(/\b1 to 10\b/g, ' ');
   const found: { at: number; q: Quantity }[] = [];
+  // Money and k-suffixed numbers are read first and blanked out, so their digits are not also read as bare numbers.
+  text = text.replace(MONEY_RE, (m: string, num: string, mult: string | undefined, at: number) => {
+    found.push({ at, q: { value: Number(num.replace(',', '.')) * (mult ? MULTIPLIER[mult] : 1), unit: 'usd', raw: m.trim() } });
+    return ' '.repeat(m.length);
+  });
+  text = text.replace(K_RE, (m: string, num: string, at: number) => {
+    found.push({ at, q: { value: Number(num) * 1000, unit: '', raw: m } });
+    return ' '.repeat(m.length);
+  });
   for (const m of text.matchAll(DIGITS_RE)) {
     found.push({ at: m.index, q: { value: Number(m[1].replace(',', '.')), unit: unitOf(m[2]), raw: m[0].trim() } });
   }

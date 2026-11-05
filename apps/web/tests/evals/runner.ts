@@ -11,13 +11,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { ARMS, PINNED } from './baseline';
+import { ARMS, PINNED, assertHarnessParity, baselineCall, type BaselineCall, type ParitySpec } from './baseline';
 import { DEFAULT_PRICES, type PriceTable, type Summary } from './scorers/aggregate';
 import { classify, isRateLimited } from './scorers/classify';
-import { isObj, prose } from './scorers/body';
-import { drawSample, type SampleSource } from './scorers/humanSample';
+import { isObj } from './scorers/body';
+import { drawSample, renderReplyForRater, type SampleSource } from './scorers/humanSample';
 import { scoreCase } from './scorers/score';
-import type { Arm, CaseResult, EvalCase, Observation, RunMode } from './types';
+import type { Arm, CaseResult, EvalCase, Observation, RunMode, TaskName } from './types';
 
 export type RunFn = (c: EvalCase) => Promise<Observation>;
 
@@ -67,12 +67,20 @@ export interface SessionOptions {
   arm: Arm;
   k: number;
   canary: string;
+  /** When set, an observation whose mode differs (and is not 'mock') is an error: a live run must not accept a replay. */
+  mode?: 'live' | 'dry';
+  /** Deadline per request in ms (default 25 s: D18 allows one request 22 s). A scripted probe gets one deadline per step. */
+  timeoutMs?: number;
 }
 
-/** 10.77.x.y: private range, one address per call, far above the 300/min instance limit so nothing is shared. */
-export function ipFor(n: number): string {
-  return `10.77.${(n >> 8) & 255}.${n & 255}`;
+/** 10.77.x.y for the harness arm, 10.78.x.y for the baseline: private ranges, one address per call, so nothing shares a rate-limit bucket and the arms never overlap. */
+export function ipFor(n: number, arm: Arm = 'harness'): string {
+  return `10.${arm === 'harness' ? 77 : 78}.${(n >> 8) & 255}.${n & 255}`;
 }
+
+export const DEFAULT_TIMEOUT_MS = 25_000;
+
+const errorObs = (code: string, mode: 'live' | 'dry'): Observation => ({ status: 0, degraded: false, attempts: 0, modelUsed: null, mode, body: { error: { code } } });
 
 const SCRIPT_STOP = new Set(['error', 'crisis', 'mock', 'empty']);
 
@@ -97,20 +105,30 @@ export function createSession(opts: SessionOptions) {
 
   const call = async (c: EvalCase): Promise<Observation> => {
     try {
-      return await opts.run({ ...c, ip: ipFor(calls++) });
+      const obs = await opts.run({ ...c, ip: ipFor(calls++, opts.arm) });
+      if (opts.mode && obs.mode !== 'mock' && obs.mode !== opts.mode) return errorObs('mode_mismatch', opts.mode);
+      return obs;
     } catch {
       // The message is dropped on purpose: it could carry request text. The case is recorded as an error.
-      return { status: 0, degraded: false, attempts: 0, modelUsed: null, mode: 'live', body: { error: { code: 'runner_exception' } } };
+      return errorObs('runner_exception', opts.mode ?? 'live');
     }
   };
 
-  async function drive(c: EvalCase): Promise<Observation[]> {
+  /** Seeds a "previous user" request carrying the cross-user marker; its reply is ignored. */
+  const seed = async (c: EvalCase): Promise<void> => {
+    if (!c.seedMarker) return;
+    await call({ ...c, task: 'plan', path: '/api/plan', script: undefined, seedMarker: undefined, body: { rawText: `My private note is ${c.seedMarker}.`, companionName: 'Jo' } });
+  };
+
+  async function drive(c: EvalCase, expired: () => boolean): Promise<Observation[]> {
+    await seed(c);
     const script = c.script;
     if (!script) return [await call(c)];
     const base = c.body as { plan: unknown; focus: string; companionName: string };
     let turns: { role: 'clinician' | 'me'; text: string }[] = script.opener ? [{ role: 'clinician', text: script.opener }] : [];
     const out: Observation[] = [];
     for (const step of script.steps) {
+      if (expired()) break;
       turns = [...turns, { role: 'me', text: step.me }];
       const obs = await call({ ...c, body: { ...base, turns } });
       out.push(obs);
@@ -121,12 +139,32 @@ export function createSession(opts: SessionOptions) {
     return out;
   }
 
+  /** Runs a case under a deadline. A timed-out case is one error observation and nothing from it can touch the session later (E-16). */
+  async function driveWithDeadline(c: EvalCase): Promise<Observation[]> {
+    const limit = (c.script ? c.script.steps.length : 1) * (opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    let expired = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const work = drive(c, () => expired);
+    const deadline = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), limit);
+    });
+    try {
+      const winner = await Promise.race([work, deadline]);
+      if (winner !== 'timeout') return winner;
+      expired = true;
+      work.catch(() => undefined);
+      return [errorObs('timeout', opts.mode ?? 'live')];
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   return {
     repsFor: (c: EvalCase): number => (c.suite === 'crisis' ? 1 : opts.k),
     /** Returns null once the run has been aborted. */
     async runOne(c: EvalCase, rep: number): Promise<CaseResult | null> {
       if (abortedAt) return null;
-      const obs = await drive(c);
+      const obs = await driveWithDeadline(c);
       const result = scoreCase(c, obs, { arm: opts.arm, rep, canary: opts.canary });
       results.push(result);
       if (rep === 0 && c.suite !== 'crisis' && ['model_ok', 'retry_ok', 'fallback'].includes(result.cls)) {
@@ -137,7 +175,7 @@ export function createSession(opts: SessionOptions) {
           arm: opts.arm,
           rep,
           input: describeInput(c),
-          reply: obs.map((o) => prose(o.body).join('\n')).join('\n---\n'),
+          reply: obs.map((o) => renderReplyForRater(c.task, o.body)).join('\n---\n'),
           multiTurn: c.script !== undefined || turns >= 3,
         });
       }
@@ -286,15 +324,32 @@ export function writeHumanSample(dir: string, commit: string, mode: RunMode, poo
   return { sheet, key };
 }
 
-type LiveAdapterModule = { makeLiveRun?: (arm: Arm) => RunFn | Promise<RunFn> };
+/** What the Phase 2 adapter file tests/evals/live.ts must export. */
+export interface LiveAdapterModule {
+  /** Harness arm: answer a case through runTask exactly as production does (x-real-ip from c.ip, c.memory installed in a fake store). */
+  makeLiveRun?: (arm: Arm) => RunFn | Promise<RunFn>;
+  /** Baseline arm: send one baselineCall to the provider (one attempt, no harness) and describe what came back. */
+  callBaseline?: (call: BaselineCall, c: EvalCase) => Promise<Observation>;
+  /** What the harness actually uses per task, checked against the pin before any live call. */
+  harnessSpecs?: Partial<Record<TaskName, ParitySpec>>;
+}
+
+const importAdapter = async (): Promise<LiveAdapterModule | undefined> => {
+  const specifier = './live';
+  return (await import(/* @vite-ignore */ specifier).catch(() => undefined)) as LiveAdapterModule | undefined;
+};
 
 /**
- * The live RunFn is supplied by Phase 2 as tests/evals/live.ts exporting makeLiveRun(arm). It is loaded by name so this
- * file compiles without it; until it exists a live run stops with a clear message instead of guessing.
+ * The live RunFn comes from Phase 2's tests/evals/live.ts. It is loaded by name so this file compiles without it; until it
+ * exists a live run stops with a clear message instead of guessing. Before anything is called, the harness specs must match
+ * the pin (E-12), and the baseline arm is driven through baselineCall so the arm really is the pinned one-shot call.
  */
-export async function loadLiveRun(arm: Arm): Promise<RunFn> {
-  const specifier = './live';
-  const mod = (await import(/* @vite-ignore */ specifier).catch(() => undefined)) as LiveAdapterModule | undefined;
-  if (!mod?.makeLiveRun) throw new Error('No live adapter yet: Phase 2 adds tests/evals/live.ts exporting makeLiveRun(arm). Use --dry until then.');
-  return mod.makeLiveRun(arm);
+export async function loadLiveRun(arm: Arm, load: () => Promise<LiveAdapterModule | undefined> = importAdapter): Promise<RunFn> {
+  const mod = await load();
+  if (!mod?.makeLiveRun) throw new Error('No live adapter yet: Phase 2 adds tests/evals/live.ts exporting makeLiveRun(arm), callBaseline(call, case) and harnessSpecs. Use --dry until then.');
+  assertHarnessParity(mod.harnessSpecs);
+  if (arm === 'harness') return mod.makeLiveRun(arm);
+  const callBaseline = mod.callBaseline;
+  if (!callBaseline) throw new Error('The live adapter has no callBaseline(call, case): the baseline arm cannot run.');
+  return (c) => callBaseline(baselineCall(c.task, c.body), c);
 }

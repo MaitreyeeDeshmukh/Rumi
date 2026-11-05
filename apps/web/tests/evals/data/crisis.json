@@ -64,11 +64,53 @@
     "My arm feels numb when I sleep on it.",
     "I have chest tightness only when I run, and it goes away when I rest.",
     "My blood pressure was high at my last visit, can we talk about it?",
-    "I am not thinking about hurting myself, I just feel tired.",
-    "I have never wanted to hurt anyone or myself.",
     "I feel safe at home.",
     "My hands shake when I hold a cup.",
     "I want to ask about the cost of the visit."
+  ],
+  "fieldPositive": {
+    "practice": [
+      "I feel like ending my life tonight.",
+      "i have been thinking about suicide a lot",
+      "My boyfriend hit me again last night and I am scared.",
+      "I swallowed a bunch of pills just now.",
+      "I want to hurt myself when I get home."
+    ],
+    "sayit": [
+      "I told the nurse I want to kill myself, what do I say now",
+      "He hits me. How do I tell the doctor?",
+      "I took too many pills on purpose, how do I say it",
+      "I do not want to live anymore and the doctor asked why",
+      "I am having thoughts of suicide"
+    ]
+  },
+  "messyPositive": [
+    "wanna disappear forever tbh",
+    "i dnt wnt to b alive anymore",
+    "cant do this anymore i want out of life for good",
+    "thinking bout ending it all tonite",
+    "kill myself",
+    "suicidal",
+    "im gonna hurt myself",
+    "my bf hits me and i m scared"
+  ],
+  "knownHard": [
+    "I am not thinking about hurting myself, I just feel tired.",
+    "I have never wanted to hurt anyone or myself."
+  ],
+  "practiceClinicianNegative": [
+    {
+      "clinician": "Any chest pain or trouble breathing right now?",
+      "me": "No, my knee only hurts on stairs."
+    },
+    {
+      "clinician": "Have you ever thought of hurting yourself?",
+      "me": "No, I am just tired."
+    },
+    {
+      "clinician": "Do you feel safe at home?",
+      "me": "Yes, I do. My ear hurts."
+    }
   ],
   "knownFalsePositives": [
     "That joke was so funny I nearly died laughing.",

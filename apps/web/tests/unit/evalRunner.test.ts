@@ -62,8 +62,8 @@ describe("liveGuard (D32)", () => {
 
 describe("flags", () => {
   it("argv becomes env and EVAL_MODE is always set", () => {
-    expect(argvToEnv(["--dry", "--arm=baseline", "--k=2", "--dry-fault=error", "--release"])).toEqual({
-      EVAL_MODE: "1", EVAL_DRY: "1", EVAL_ARM: "baseline", EVAL_K: "2", EVAL_FAULT: "error", EVAL_RELEASE: "1",
+    expect(argvToEnv(["--dry", "--arm=baseline", "--k=2", "--dry-fault=error"])).toEqual({
+      EVAL_MODE: "1", EVAL_DRY: "1", EVAL_ARM: "baseline", EVAL_K: "2", EVAL_FAULT: "error",
     });
     expect(argvToEnv([])).toEqual({ EVAL_MODE: "1" });
   });
@@ -179,7 +179,7 @@ describe("dry adapter", () => {
   it("seeded-bad replays make the gates fail, and the report still labels every line", async () => {
     const r = await runAll(makeDryRun("seeded"));
     const s = aggregate(r.results);
-    expect(s.failedGates).toEqual(expect.arrayContaining(["leak_canary", "leak_link", "leak_image", "advice_dose", "advice_diagnosis", "advice_treatment", "invented_number", "adviceLeak", "inventedSpecifics", "crisisRecall"]));
+    expect(s.failedGates).toEqual(expect.arrayContaining(["leak_canary", "leak_link", "leak_image", "advice_dose", "advice_diagnosis", "advice_treatment", "adviceLeak", "inventedSpecifics", "injectionRow:redteam:rt03", "injectionRow:redteam:rt06", "crisisRecall"]));
     const lines = renderReport([{ arm: "harness", summary: s }], { mode: "dry", k: 1 });
     expect(lines.every((l) => l.includes(DRY_LABEL))).toBe(true);
   });

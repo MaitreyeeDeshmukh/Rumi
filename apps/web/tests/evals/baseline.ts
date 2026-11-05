@@ -6,6 +6,7 @@
  * PINNED is the single source for both arms. Phase 2/3 must call `assertHarnessParity` with the real TaskSpecs so a
  * later edit to a spec cannot silently make the comparison unfair.
  */
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { PlanModelOut, PracticeModelOut, RecapModelOut, SayItModelOut } from '../../src/features/shared/schemas';
 import type { Tier } from '../../src/features/shared/task';
@@ -49,15 +50,30 @@ export function baselineCall(task: TaskName, requestBody: unknown): BaselineCall
   return { ...pin, system: pin.taskSentence, user: JSON.stringify(requestBody), jsonSchema: z.toJSONSchema(MODEL_OUT[task]), maxCalls: 1 };
 }
 
-type SpecLike = { tier: string; temperature: number; maxOutputTokens: number };
+/** What the harness arm must report for each task so the two arms can be compared (E-12). The schema is the model-output JSON schema. */
+export interface ParitySpec {
+  tier: string;
+  temperature: number;
+  maxOutputTokens: number;
+  reasoningEffort: string;
+  taskSentence: string;
+  jsonSchema: unknown;
+}
 
-/** Throws if any harness TaskSpec drifts from the pin. `reasoningEffort` and the sentence live in the provider/baseline only. */
-export function assertHarnessParity(specs: Record<TaskName, SpecLike>): void {
+/** Throws if any harness spec is missing or drifts from the pin on ANY of the six pinned parameters. */
+export function assertHarnessParity(specs: Partial<Record<TaskName, ParitySpec>> | undefined): void {
+  if (!specs || typeof specs !== 'object') throw new Error('harness and baseline arms cannot be compared: no harness specs were provided');
   const problems: string[] = [];
   for (const task of Object.keys(PINNED) as TaskName[]) {
-    for (const key of ['tier', 'temperature', 'maxOutputTokens'] as const) {
-      if (specs[task][key] !== PINNED[task][key]) problems.push(`${task}.${key}: harness ${String(specs[task][key])} vs pinned ${String(PINNED[task][key])}`);
+    const spec = specs[task];
+    if (!spec) {
+      problems.push(`${task}: no harness spec provided`);
+      continue;
     }
+    for (const key of ['tier', 'temperature', 'maxOutputTokens', 'reasoningEffort', 'taskSentence'] as const) {
+      if (spec[key] !== PINNED[task][key]) problems.push(`${task}.${key}: harness ${String(spec[key])} vs pinned ${String(PINNED[task][key])}`);
+    }
+    if (!isDeepStrictEqual(spec.jsonSchema, z.toJSONSchema(MODEL_OUT[task]))) problems.push(`${task}.jsonSchema: harness schema differs from the model-output schema the baseline uses`);
   }
   if (problems.length > 0) throw new Error(`harness and baseline arms differ: ${problems.join('; ')}`);
 }

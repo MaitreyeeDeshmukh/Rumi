@@ -42,7 +42,25 @@ export const HoldSchema: z.ZodType<Hold> = z.discriminatedUnion('type', [
   z.object({ type: z.literal('no_item_cites'), lineIds: z.array(z.string().min(1)).min(1) }),
   z.object({ type: z.literal('section_count'), section: z.string().min(1), min: z.number().int().optional(), max: z.number().int().optional() }),
   z.object({ type: z.literal('every_item_cites_input_line') }),
-  z.object({ type: z.literal('no_text_matches'), pattern: z.string().min(1) }),
+  z.object({
+    type: z.literal('no_text_matches'),
+    pattern: z.string().min(1).refine(
+      (p) => {
+        try {
+          new RegExp(p, 'i');
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'pattern is not a valid regular expression' },
+    ),
+  }),
+  z.object({ type: z.literal('english_only') }),
+  z.object({ type: z.literal('max_items'), path: z.string().min(1), max: z.number().int().min(0) }),
+  z.object({ type: z.literal('drug_not_recommended'), drug: z.string().min(2) }),
+  z.object({ type: z.literal('items_supported_by_cited_lines') }),
+  z.object({ type: z.literal('canary_was_in_prompt') }),
   z.object({ type: z.literal('human_check'), note: z.string().min(1) }),
 ]);
 
@@ -56,7 +74,7 @@ export const PlanDataSchema = z
 
 const ProbeStepSchema = z.object({ me: z.string().min(1).max(600), holds });
 export const PracticeDataSchema = z.object({
-  cases: z.array(z.object({ id: Id, focus: FocusSchema, plan: VisitPlanSchema, turns: z.array(TurnSchema).max(20) })),
+  cases: z.array(z.object({ id: Id, focus: FocusSchema, plan: VisitPlanSchema, turns: z.array(TurnSchema).max(20), holds })),
   probes: z.array(
     z.object({
       id: Id,
@@ -104,6 +122,10 @@ export const CrisisDataSchema = z.object({
   heldOutPositive: listOfText,
   negative: listOfText,
   knownFalsePositives: listOfText,
+  fieldPositive: z.object({ practice: listOfText, sayit: listOfText }),
+  messyPositive: z.array(z.string().min(3).max(300)),
+  knownHard: listOfText,
+  practiceClinicianNegative: z.array(z.object({ clinician: z.string().min(3).max(300), me: z.string().min(3).max(300) })),
 });
 
 const TASKS = ['plan', 'practice', 'sayit', 'recap'] as const;
@@ -118,6 +140,10 @@ const RedteamRow = z.object({
   forbidden: z.array(z.string().min(1)).min(1),
   mustHold: holds.min(1),
   memory: z.array(z.string().min(1).max(200)).optional(),
+  /** Which arms the row is meaningful for. Default both; the canary and memory rows are harness-only. */
+  arms: z.array(z.enum(['harness', 'baseline'])).min(1).optional(),
+  /** Cross-user marker: must also be in `forbidden`. */
+  marker: z.string().min(6).optional(),
   note: z.string().min(1),
 });
 export const RedteamDataSchema = z
@@ -126,6 +152,12 @@ export const RedteamDataSchema = z
     d.rows.forEach((row, i) => {
       if (getPath(d.bases[row.task], row.field) === undefined) {
         ctx.addIssue({ code: 'custom', path: ['rows', i, 'field'], message: `field ${row.field} not found in ${row.task} base` });
+      }
+      if (row.marker && !row.forbidden.includes(row.marker)) {
+        ctx.addIssue({ code: 'custom', path: ['rows', i, 'marker'], message: 'the cross-user marker must be listed in forbidden' });
+      }
+      if (row.mustHold.some((h) => h.type === 'canary_was_in_prompt') && row.arms?.join() !== 'harness') {
+        ctx.addIssue({ code: 'custom', path: ['rows', i, 'arms'], message: 'a canary row is only meaningful for the harness arm' });
       }
       if (row.mustHold.every((h) => h.type === 'human_check')) {
         ctx.addIssue({ code: 'custom', path: ['rows', i, 'mustHold'], message: 'needs at least one hold that code can score' });
@@ -162,6 +194,10 @@ export const MIN_COUNTS = {
   crisisPositive: 15,
   crisisHeldOut: 15,
   crisisNegative: 25,
+  crisisFieldEach: 5,
+  crisisMessy: 8,
+  crisisKnownHard: 2,
+  practiceClinicianNegative: 3,
   redteam: 20,
   scenarios: 12,
 } as const;

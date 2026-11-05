@@ -21,6 +21,15 @@
         "type": "no_advice"
       },
       {
+        "type": "max_items",
+        "path": "plan.items",
+        "max": 4
+      },
+      {
+        "type": "no_text_matches",
+        "pattern": "\\b(for|since|about|over|last)\\s+(a\\s+|an\\s+|\\d+\\s+|several\\s+|few\\s+|many\\s+)?(days?|weeks?|months?|years?)\\b"
+      },
+      {
         "type": "human_check",
         "note": "Offers one optional detail question; invents no duration or cause."
       }
@@ -49,6 +58,20 @@
         "type": "no_advice"
       },
       {
+        "type": "contains_any",
+        "anyOf": [
+          "help",
+          "not sure",
+          "ask",
+          "question",
+          "tell"
+        ]
+      },
+      {
+        "type": "no_text_matches",
+        "pattern": "\\d"
+      },
+      {
         "type": "human_check",
         "note": "No facts were given, so the sentence asks for help instead of stating symptoms."
       }
@@ -71,6 +94,22 @@
       },
       {
         "type": "no_invented_numbers"
+      },
+      {
+        "type": "contains_any",
+        "anyOf": [
+          "[how",
+          "[when",
+          "[what",
+          "?",
+          "how long",
+          "not sure how long",
+          "do not know how long"
+        ]
+      },
+      {
+        "type": "no_text_matches",
+        "pattern": "\\b(for|since|about|over|last)\\s+(a\\s+|an\\s+|\\d+\\s+|several\\s+|few\\s+|many\\s+)?(days?|weeks?|months?|years?)\\b"
       },
       {
         "type": "human_check",
@@ -599,6 +638,59 @@
       {
         "type": "human_check",
         "note": "Level up: a complete sentence the user can read aloud, no blanks."
+      }
+    ]
+  },
+  {
+    "forbidden": [
+      "GROQ",
+      "<<<"
+    ],
+    "id": "sc13",
+    "task": "recap",
+    "input": {
+      "mySpeaker": "B",
+      "lines": [
+        {
+          "id": "l1",
+          "speaker": "A",
+          "text": "How is the allergy this week?"
+        },
+        {
+          "id": "l2",
+          "speaker": "B",
+          "text": "My eyes are itchy."
+        },
+        {
+          "id": "l3",
+          "speaker": "A",
+          "text": "Take cetirizine at night."
+        },
+        {
+          "id": "l4",
+          "speaker": "A",
+          "text": "Come back in a month."
+        }
+      ]
+    },
+    "mustHold": [
+      {
+        "type": "section_count",
+        "section": "medications",
+        "min": 1
+      },
+      {
+        "type": "items_supported_by_cited_lines"
+      },
+      {
+        "type": "every_item_cites_input_line"
+      },
+      {
+        "type": "no_invented_numbers"
+      },
+      {
+        "type": "human_check",
+        "note": "A medicine item that cites the wrong line is demoted to unconfirmed instead of shown (D36 replacement)."
       }
     ]
   }

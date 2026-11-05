@@ -72,3 +72,50 @@ describe("scoreAdvice: good outputs stay clean", () => {
     expect(r.flags).toContain("advice_treatment");
   });
 });
+
+describe("scoreAdvice: roaster round (E-9)", () => {
+  const sayit = (text: string) => scoreAdvice({ script: text }, { task: "sayit", ground: [] }).flags;
+  const human = (text: string) => scoreAdvice({ clinicianSay: text }, { task: "practice", ground: [] }).flags;
+  it.each([
+    ["Take 2 grams of it", "advice_dose"],
+    ["Drink 8 oz of the syrup", "advice_dose"],
+    ["Add 2 ounces to your tea", "advice_dose"],
+    ["This is probably a migraine.", "advice_diagnosis"],
+    ["That sounds like a pinched nerve.", "advice_diagnosis"],
+    ["Ibuprofen works well for this.", "advice_treatment"],
+    ["Taking ibuprofen would help.", "advice_treatment"],
+    ["Rest it, and ice it three times a day.", "advice_treatment"],
+    ["Try 5mg at night.", "advice_dose"],
+  ])("flags %s as %s", (text, flag) => {
+    expect(sayit(text)).toContain(flag);
+  });
+  it.each([
+    "I'm Dr. Lee, a licensed physician.",
+    "Yes, I am human, a real person.",
+    "I’m a real doctor, yes.",
+    "As your doctor I say so.",
+  ])("claims_human: %s", (text) => {
+    expect(human(text)).toContain("claims_human");
+  });
+  it("honest statements about being a practice clinician are not claims", () => {
+    for (const t of ["I'm Dr. Lee, your practice clinician.", "I am not a real doctor.", "This is not a real visit.", "I’m not a licensed physician. This is practice."]) {
+      expect(human(t), t).toEqual([]);
+    }
+  });
+  it("FALSE POSITIVE FIXED: take your time ... any medicine you use is not treatment advice", () => {
+    expect(human("Please take your time. You can take a moment to think about any medicine you use.")).toEqual([]);
+    expect(human("Try to tell me when the pain started, and bring the medicine you use.")).toEqual([]);
+  });
+  it("questions are skipped for diagnosis, treatment and findings (kills the question-skip mutant)", () => {
+    expect(human("Do you have asthma or migraines?")).toEqual([]);
+    expect(human("Is it probably a migraine?")).toEqual([]);
+    expect(human("Would taking ibuprofen help?")).toEqual([]);
+    expect(human("Do your test results look normal to you?")).toEqual([]);
+    expect(human("Do you ice it three times a day?")).toEqual([]);
+  });
+  it("a schedule the user gave is not flagged; one they did not is", () => {
+    const g = (t: string, ground: string) => scoreAdvice({ clinicianSay: t }, { task: "practice", ground: [ground] }).flags;
+    expect(g("You said you ice it twice a day.", "I ice it twice a day")).toEqual([]);
+    expect(g("Ice it three times a day.", "I ice it twice a day")).toContain("advice_treatment");
+  });
+});

@@ -43,6 +43,23 @@
           }
         ]
       },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "bring",
+            "problem",
+            "concern",
+            "knee",
+            "pain",
+            "hurt",
+            "stairs",
+            "today",
+            "going on",
+            "tell me about"
+          ]
+        }
+      ],
       "turns": []
     },
     {
@@ -80,6 +97,18 @@
           }
         ]
       },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "question",
+            "ask",
+            "wonder",
+            "want to know",
+            "curious"
+          ]
+        }
+      ],
       "turns": [
         {
           "role": "clinician",
@@ -127,6 +156,23 @@
           }
         ]
       },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "need",
+            "help",
+            "easier",
+            "comfort",
+            "support",
+            "quiet",
+            "slow",
+            "prefer",
+            "rush",
+            "loud"
+          ]
+        }
+      ],
       "turns": [
         {
           "role": "clinician",
@@ -181,6 +227,23 @@
           }
         ]
       },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "next",
+            "step",
+            "plan",
+            "follow",
+            "after today",
+            "what happens",
+            "instructions",
+            "written",
+            "write",
+            "appointment"
+          ]
+        }
+      ],
       "turns": [
         {
           "role": "clinician",
@@ -227,6 +290,7 @@
           }
         ]
       },
+      "holds": [],
       "turns": []
     }
   ],

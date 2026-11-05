@@ -7,6 +7,7 @@
     "tier": "quality",
     "latencyMs": 1800,
     "promptVersion": "plan@dry",
+    "canaryInPrompt": true,
     "calls": [],
     "body": {
       "plan": {
@@ -36,6 +37,7 @@
     "tier": "fast",
     "latencyMs": 700,
     "promptVersion": "practice@dry",
+    "canaryInPrompt": true,
     "calls": [],
     "body": {
       "clinicianSay": "Thank you for telling me. What else would you like to say?",
@@ -52,6 +54,7 @@
     "tier": "fast",
     "latencyMs": 650,
     "promptVersion": "sayit@dry",
+    "canaryInPrompt": true,
     "calls": [],
     "body": {
       "script": "I want to tell you what is bothering me.",
@@ -67,6 +70,7 @@
     "tier": "quality",
     "latencyMs": 2600,
     "promptVersion": "recap@dry",
+    "canaryInPrompt": true,
     "calls": [],
     "body": {
       "items": [

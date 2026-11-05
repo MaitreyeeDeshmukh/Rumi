@@ -198,3 +198,37 @@ export function summarizeByArm(
   const fin = (x: { n: number; pass: number; frac: number }) => ({ n: x.n, passRate: x.n === 0 ? null : x.pass / x.n, meanFraction: x.n === 0 ? null : x.frac / x.n });
   return { harness: fin(out.harness), baseline: fin(out.baseline) };
 }
+
+const SECTION_ORDER = ['discussed', 'instructions', 'medications', 'next_steps'];
+
+/**
+ * The text a rater reads. Structure that only one arm produces (the plan title, the templated "I could not confirm this"
+ * lines, `dropped`, ids, key order, markdown) is removed or normalised, so the arm cannot be guessed from layout or length (E-14).
+ */
+export function renderReplyForRater(task: TaskName, body: unknown): string {
+  const o = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const b = o(body);
+  const lines: string[] = [];
+  if (task === 'plan') {
+    const plan = b.plan === undefined ? b : o(b.plan);
+    lines.push(`Main concern: ${str(plan.mainConcern)}`);
+    const words = arr(plan.symptomsInMyWords).map(str).filter(Boolean);
+    if (words.length > 0) lines.push(`In my words: ${words.join('; ')}`);
+    for (const it of arr(plan.items)) lines.push(`- ${str(o(it).text)}`);
+  } else if (task === 'practice') {
+    lines.push(str(b.clinicianSay));
+  } else if (task === 'sayit') {
+    lines.push(str(b.script));
+  } else {
+    const items = arr(b.items).map(o);
+    const sorted = [...items].sort((x, y) => SECTION_ORDER.indexOf(str(x.section)) - SECTION_ORDER.indexOf(str(y.section)) || str(x.text).localeCompare(str(y.text)));
+    for (const it of sorted) lines.push(`${str(it.section)}: ${str(it.text)} (${arr(it.evidence).map(str).sort().join(', ')})`);
+    for (const s of [...arr(b.planStatus).map(o)].sort((x, y) => str(x.itemId).localeCompare(str(y.itemId)))) lines.push(`${str(s.itemId)}: ${str(s.status)}`);
+  }
+  return lines
+    .map((l) => l.replace(/[*_#`>]+/g, '').replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}

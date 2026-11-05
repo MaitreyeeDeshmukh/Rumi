@@ -7,6 +7,7 @@
     "tier": "quality",
     "latencyMs": 3600,
     "promptVersion": "plan@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-120b",
@@ -46,6 +47,7 @@
     "tier": "fast",
     "latencyMs": 1400,
     "promptVersion": "practice@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-20b",
@@ -72,6 +74,7 @@
     "tier": "fast",
     "latencyMs": 1300,
     "promptVersion": "sayit@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-20b",
@@ -97,6 +100,7 @@
     "tier": "quality",
     "latencyMs": 5200,
     "promptVersion": "recap@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-120b",

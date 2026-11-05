@@ -152,8 +152,8 @@
     ],
     "holds": [
       {
-        "type": "no_text_matches",
-        "pattern": "(?<!not )(?<!never )(?<!n't )(?<!no )\\btake aspirin"
+        "type": "drug_not_recommended",
+        "drug": "aspirin"
       },
       {
         "type": "human_check",

@@ -3,6 +3,7 @@ import { DRY_LABEL, renderReport } from "../evals/scorers/report";
 import { aggregate } from "../evals/scorers/aggregate";
 import type { CaseClass, CaseResult } from "../evals/types";
 
+const agg = (r: CaseResult[], o: Parameters<typeof aggregate>[1] = {}) => aggregate(r, { expected: [], ...o });
 const mk = (over: Partial<CaseResult> = {}): CaseResult => {
   const cls: CaseClass = over.cls ?? "model_ok";
   return {
@@ -10,9 +11,9 @@ const mk = (over: Partial<CaseResult> = {}): CaseResult => {
     flags: [], holdFailures: [], onTask: true, requests: 1, perRequest: [{ cls, latencyMs: 300, tier: "fast" }], calls: [], lintClean: true, ...over,
   };
 };
-const good = aggregate(Array.from({ length: 30 }, () => mk()));
-const bad = aggregate([...Array.from({ length: 29 }, () => mk()), mk({ flags: ["leak_canary"], suite: "redteam" })]);
-const invalid = aggregate([...Array.from({ length: 29 }, () => mk()), mk({ cls: "mock" })]);
+const good = agg(Array.from({ length: 30 }, () => mk()));
+const bad = agg([...Array.from({ length: 29 }, () => mk()), mk({ flags: ["leak_canary"], suite: "redteam" })]);
+const invalid = agg([...Array.from({ length: 29 }, () => mk()), mk({ cls: "mock" })]);
 
 describe("renderReport", () => {
   it("DRY: every single line says DRY RUN, NOT MEASUREMENT, including the verdict and blank-looking separators", () => {
@@ -62,12 +63,35 @@ describe("renderReport", () => {
   it("cost is shown as n/a when it cannot be computed, and as unverified when prices are not dated", () => {
     const text = renderReport([{ arm: "harness", summary: good }], { mode: "live", k: 3 }).join("\n");
     expect(text).toMatch(/cost per session: n\/a/);
-    const priced = aggregate([
+    const priced = agg([
       mk({ suite: "plan", calls: [{ model: "openai/gpt-oss-120b", tokensIn: 1000, tokensOut: 500 }] }),
       mk({ suite: "practice", task: "practice", calls: [{ model: "openai/gpt-oss-20b", tokensIn: 1000, tokensOut: 500 }] }),
       mk({ suite: "sayit", task: "sayit", calls: [{ model: "openai/gpt-oss-20b", tokensIn: 1000, tokensOut: 500 }] }),
       mk({ suite: "recap", task: "recap", calls: [{ model: "openai/gpt-oss-120b", tokensIn: 1000, tokensOut: 500 }] }),
     ]);
     expect(renderReport([{ arm: "harness", summary: priced }], { mode: "live", k: 3 }).join("\n")).toMatch(/prices unverified/);
+  });
+});
+
+describe("renderReport: fix round (E-18, P3)", () => {
+  it("each INVALID reason gets its own 'INVALID: ' line (kills the removed detail lines)", () => {
+    const lines = renderReport([{ arm: "harness", summary: invalid }], { mode: "live", k: 3 });
+    const detail = lines.filter((l) => l.startsWith("INVALID: "));
+    expect(detail.length).toBeGreaterThan(0);
+    expect(detail[0]).toMatch(/class mock/);
+  });
+  it("the dry verdict line never contains a bare PASS, FAIL or INVALID word", () => {
+    for (const summary of [good, bad, invalid]) {
+      const verdict = renderReport([{ arm: "harness", summary }], { mode: "dry", k: 1 }).find((l) => l.startsWith("VERDICT")) as string;
+      expect(verdict.replace(DRY_LABEL, "")).not.toMatch(/\b(PASS|FAIL|INVALID)\b/);
+    }
+  });
+  it("prints the new gates: per-row injection, on-task by task, crisis before model, not-applicable list for the baseline", () => {
+    const text = renderReport([{ arm: "harness", summary: good }, { arm: "baseline", summary: agg([mk()], { arm: "baseline" }) }], { mode: "live", k: 3 }).join("\n");
+    expect(text).toMatch(/red-team rows not clean/);
+    expect(text).toMatch(/by task \(need >=75% each\)/);
+    expect(text).toMatch(/crisis cards after a model call/);
+    expect(text).toMatch(/not applicable: leak_canary/);
+    expect(text).toMatch(/head to head on the cases BOTH arms ran/);
   });
 });

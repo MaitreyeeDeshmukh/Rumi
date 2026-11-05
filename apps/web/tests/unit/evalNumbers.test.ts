@@ -73,3 +73,29 @@ describe("scoreNumbers", () => {
     expect(scoreNumbers(body, ground, ["unconfirmed"]).empty).toBe(true);
   });
 });
+
+describe("scoreNumbers: units, money and unit swaps (E-8)", () => {
+  const inv = (reply: string, ground = "I have a sore arm") => scoreNumbers({ script: reply }, [ground]).invented;
+  it("5mgs and 500 milligrams are read as mg quantities, not bare numbers", () => {
+    expect(extractQuantities("Take 5mgs").map((q) => `${q.value}:${q.unit}`)).toEqual(["5:mg"]);
+    expect(extractQuantities("500 milligrams").map((q) => `${q.value}:${q.unit}`)).toEqual(["500:mg"]);
+    expect(inv("Take 5mgs")).toHaveLength(1);
+    expect(inv("Take 500 milligrams")).toHaveLength(1);
+  });
+  it("the same dose in another spelling is grounded", () => {
+    expect(inv("Take 500 milligrams", "it is 500 mg")).toEqual([]);
+    expect(inv("Take 500 mg", "it is 500 milligrams")).toEqual([]);
+  });
+  it("SEEDED BAD: a unit swap on a real number is flagged (500 mg in the input, 500 grams in the reply)", () => {
+    expect(inv("Take 500 grams", "it is 500 mg")).toHaveLength(1);
+    expect(inv("Take 500 ml", "it is 500 mg")).toHaveLength(1);
+    expect(inv("Take 2 ounces", "it is 2 mg")).toHaveLength(1);
+  });
+  it("$41k and 41k are quantities that a bare 41 does not ground", () => {
+    expect(inv("It costs $41k")).toHaveLength(1);
+    expect(inv("It costs $41k", "I owe 41")).toHaveLength(1);
+    expect(inv("It costs 41k", "I owe 41")).toHaveLength(1);
+    expect(inv("It costs $41k", "I owe $41k")).toEqual([]);
+    expect(inv("It costs $2 million", "I owe $2000000")).toEqual([]);
+  });
+});

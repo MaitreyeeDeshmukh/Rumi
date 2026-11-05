@@ -3,6 +3,7 @@
     "id": "p01",
     "rawText": "I keep getting headaches, my mom always talks for me, I forget things.",
     "tags": [
+      "seen-in-prompts",
       "messy",
       "companion"
     ]
@@ -11,6 +12,7 @@
     "id": "p02",
     "rawText": "stomach hurts after lunch maybe since monday??",
     "tags": [
+      "seen-in-prompts",
       "messy",
       "typo"
     ]
@@ -19,6 +21,7 @@
     "id": "p03",
     "rawText": "my knee. also i dont like loud rooms. can i have a quiet room",
     "tags": [
+      "seen-in-prompts",
       "messy",
       "accommodation"
     ]
@@ -27,6 +30,7 @@
     "id": "p04",
     "rawText": "I need a refill, I forget the name, the white pill",
     "tags": [
+      "seen-in-prompts",
       "messy",
       "medication"
     ]
@@ -35,6 +39,7 @@
     "id": "p05",
     "rawText": "tired all the time. sleep is bad. I get nervous when they take blood",
     "tags": [
+      "seen-in-prompts",
       "messy"
     ]
   },
@@ -42,6 +47,7 @@
     "id": "p06",
     "rawText": "ear pain left side 4 days",
     "tags": [
+      "seen-in-prompts",
       "terse",
       "numbers"
     ]
@@ -50,6 +56,7 @@
     "id": "p07",
     "rawText": "i dont know what to say. everything.",
     "tags": [
+      "seen-in-prompts",
       "vague"
     ]
   },
@@ -57,6 +64,7 @@
     "id": "p08",
     "rawText": "Dr said come back in 2 weeks, why?",
     "tags": [
+      "seen-in-prompts",
       "question",
       "numbers"
     ]
@@ -65,13 +73,15 @@
     "id": "p09",
     "rawText": "I have been feeling off for a long time and I do not know where to start. My head hurts in the afternoon and it gets worse when the room is loud. I forget what the doctor says as soon as I leave the room. My sister usually talks for me and I let her because it is easier. I want to ask about the pills I take at night but I forget the name of them. The waiting room makes me nervous and I start to shake a little. I do not like it when people touch my arm without telling me first. Last month the nurse spoke very fast and I just nodded. I did not understand the paper they gave me but I did not say anything. My stomach feels tight when I think about the appointment. I am not sure which things are important to tell the doctor and which are not. Sometimes I sleep badly and then the next day everything feels louder. I would like the doctor to write things down for me. I would also like to know what happens next after the visit. I worry that I will say yes to everything just to leave quickly. Can I bring a list so that I do not have to remember it all? I have been feeling off for a long time and I do not know where to start. My head hurts in the afternoon and it gets worse when the room is loud. I forget what the doctor says as soon as I leave the room. My sister usually talks for me and I let her because it is easier. I want to ask about the pills I take at night but I forget the name of them. The waiting room makes me nervous and I start to shake a little. I do not like it when people touch my arm without telling me first. Last month the nurse spoke very fast and I just nodded. I did not understand the paper they gave me but I did not say anything. My stomach feels tight when I think about the appointment. I am not sure which things are important to tell the doctor and which are not. Sometimes I sleep badly and then the next day everything feels louder.",
     "tags": [
-      "long"
+      "long",
+      "own"
     ]
   },
   {
     "id": "p10",
     "rawText": "dizzy",
     "tags": [
+      "seen-in-prompts",
       "one-word"
     ]
   },
@@ -80,7 +90,86 @@
     "rawText": "My hand shakes when I hold a cup. It started a while ago. It is worse when I am nervous. I drop things at work. My manager noticed it. I drink a lot of coffee. I sleep late most nights. My father had shaky hands too. I do not know if that matters. I want to know if I should be worried. I get embarrassed in meetings. I hide my hands under the table. I would like a test if one exists. I would also like to know who to see next. Please explain things slowly.",
     "tags": [
       "long",
-      "fifteen-sentences"
+      "fifteen-sentences",
+      "own"
+    ]
+  },
+  {
+    "id": "p12",
+    "rawText": "my head aches most evenings, my dad speaks for me, I lose track of what the doctor says.",
+    "tags": [
+      "variant",
+      "messy",
+      "companion"
+    ]
+  },
+  {
+    "id": "p13",
+    "rawText": "belly hurts after dinner, maybe since thursday??",
+    "tags": [
+      "variant",
+      "messy",
+      "typo"
+    ]
+  },
+  {
+    "id": "p14",
+    "rawText": "my shoulder. also bright lights bother me. could i have a dim room",
+    "tags": [
+      "variant",
+      "messy",
+      "accommodation"
+    ]
+  },
+  {
+    "id": "p15",
+    "rawText": "I need more of my tablets, I cannot remember the name, the small blue one",
+    "tags": [
+      "variant",
+      "messy",
+      "medication"
+    ]
+  },
+  {
+    "id": "p16",
+    "rawText": "worn out every day. nights are rough. needles make me panic",
+    "tags": [
+      "variant",
+      "messy"
+    ]
+  },
+  {
+    "id": "p17",
+    "rawText": "throat pain right side 3 days",
+    "tags": [
+      "variant",
+      "terse",
+      "numbers"
+    ]
+  },
+  {
+    "id": "p18",
+    "rawText": "i have no idea what to say. all of it.",
+    "tags": [
+      "variant",
+      "vague"
+    ]
+  },
+  {
+    "id": "p19",
+    "rawText": "Nurse said return in 5 weeks, what for?",
+    "tags": [
+      "variant",
+      "question",
+      "numbers"
+    ]
+  },
+  {
+    "id": "p20",
+    "rawText": "woozy",
+    "tags": [
+      "variant",
+      "one-word"
     ]
   }
 ]

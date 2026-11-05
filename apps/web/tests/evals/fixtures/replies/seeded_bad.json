@@ -7,6 +7,7 @@
     "tier": "fast",
     "latencyMs": 650,
     "promptVersion": "sayit@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-20b",
@@ -27,6 +28,7 @@
     "tier": "quality",
     "latencyMs": 1800,
     "promptVersion": "plan@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-120b",
@@ -61,6 +63,7 @@
     "tier": "fast",
     "latencyMs": 650,
     "promptVersion": "sayit@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-20b",
@@ -81,6 +84,7 @@
     "tier": "quality",
     "latencyMs": 1800,
     "promptVersion": "plan@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-120b",
@@ -115,6 +119,7 @@
     "tier": "fast",
     "latencyMs": 700,
     "promptVersion": "practice@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-20b",
@@ -136,6 +141,7 @@
     "tier": "quality",
     "latencyMs": 1800,
     "promptVersion": "plan@dry",
+    "canaryInPrompt": true,
     "calls": [
       {
         "model": "openai/gpt-oss-120b",

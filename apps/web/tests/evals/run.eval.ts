@@ -1,7 +1,9 @@
 /**
  * `pnpm eval`: runs every dataset case through the injected RunFn, scores it, and prints the report.
- * One vitest test per (case, repetition) so each stays under the 60 s timeout. See flags.ts for the command line.
+ * One vitest test per (case, repetition) so each stays under the 60 s timeout; the scripted probe gets one deadline per step.
+ * See cli.mjs for the command line and the exit codes (the verdicts are handed to the CLI through EVAL_STATUS_FILE).
  */
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { PINNED } from './baseline';
@@ -12,6 +14,7 @@ import { readFlags } from './flags';
 import {
   appendCalibration,
   createSession,
+  DEFAULT_TIMEOUT_MS,
   estimateRun,
   formatEstimate,
   getCommit,
@@ -53,7 +56,7 @@ for (const arm of flags.arms) {
     beforeAll(async () => {
       let run: RunFn;
       if (flags.dry) {
-        run = makeDryRun(flags.fault);
+        run = makeDryRun(flags.fault, arm);
       } else {
         loadEnvLocal();
         const reasons = liveGuard(process.env);
@@ -61,24 +64,30 @@ for (const arm of flags.arms) {
         process.env.EVAL_CANARY = canary;
         const models = { quality: process.env.GROQ_MODEL_QUALITY ?? 'openai/gpt-oss-120b', fast: process.env.GROQ_MODEL_FAST ?? 'openai/gpt-oss-20b' };
         print([formatEstimate(arm, estimateRun(cases, flags.k, arm, models)), `pinned parameters: ${JSON.stringify(PINNED)}`]);
+        // Throws when the harness specs differ from the pin, before a single paid call.
         run = await loadLiveRun(arm);
       }
-      session = createSession({ run, arm, k: flags.k, canary });
+      session = createSession({ run, arm, k: flags.k, canary, mode });
       sessions.push(session);
     });
 
     for (const c of cases) {
       const reps = c.suite === 'crisis' ? 1 : flags.k;
+      const timeout = (c.script ? c.script.steps.length : 1) * DEFAULT_TIMEOUT_MS + 5_000;
       for (let rep = 0; rep < reps; rep++) {
-        it(`${c.id} #${rep + 1}`, async () => {
-          await session.runOne(c, rep);
-        });
+        it(
+          `${c.id} #${rep + 1}`,
+          async () => {
+            await session.runOne(c, rep);
+          },
+          timeout,
+        );
       }
     }
 
     afterAll(() => {
       if (!session) return;
-      const summary = aggregate(session.results, { aborted: session.abortedAt !== undefined });
+      const summary = aggregate(session.results, { arm, aborted: session.abortedAt !== undefined });
       reports.push({ arm, summary });
       if (session.abortedAt) print([`ABORTED at ${session.abortedAt}: the first rate_limited stops the run`]);
       records.push({ date: new Date().toISOString(), commit, mode, arm, k: flags.k, aborted: session.abortedAt, summary, results: session.results });
@@ -88,7 +97,16 @@ for (const arm of flags.arms) {
 
 afterAll(() => {
   if (reports.length === 0) return;
+  // Head to head: score each arm on the cases both arms ran, so the table compares like with like.
+  if (records.length > 1) {
+    const common = records.map((r) => new Set(r.results.map((x) => x.caseId))).reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
+    for (const rep of reports) {
+      const rec = records.find((r) => r.arm === rep.arm);
+      if (rec) rep.common = aggregate(rec.results, { arm: rep.arm, expected: [], restrictTo: common });
+    }
+  }
   print(renderReport(reports, { mode, k: flags.k, commit }));
+  if (process.env.EVAL_STATUS_FILE) writeFileSync(process.env.EVAL_STATUS_FILE, JSON.stringify({ verdicts: reports.map((r) => r.summary.verdict) }));
   if (flags.dry) return;
   for (const rec of records) {
     print([`wrote ${path.relative(process.cwd(), writeRunFile(path.join(evalDir, 'runs'), rec))}`]);
@@ -96,7 +114,7 @@ afterAll(() => {
   }
   const seed = Number.parseInt(commit, 16) || 1;
   const sample = writeHumanSample(path.join(evalDir, 'runs'), commit, mode, sessions.flatMap((s) => s.pool), seed);
-  print([`human read: blind sheet ${path.relative(process.cwd(), sample.sheet)}, key ${path.relative(process.cwd(), sample.key)} (give raters the sheet only)`]);
+  print([`human read: blind sheet ${path.relative(process.cwd(), sample.sheet)}, key ${path.relative(process.cwd(), sample.key)} (give raters the sheet only; then run pnpm eval --human-sheet=... --human-key=... --human-ratings=...)`]);
   if (flags.release) {
     if (records.some((r) => r.summary.verdict === 'INVALID')) print(['--release skipped: an INVALID run is never committed as a result']);
     else writeSummaryFile(path.join(evalDir, 'eval-summary.json'), records);

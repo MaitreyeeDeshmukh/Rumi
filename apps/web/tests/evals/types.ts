@@ -34,6 +34,10 @@ export interface Observation {
   /** Every provider call including failed attempts, for the cost-per-session number. */
   calls?: CallUsage[];
   promptVersion?: string;
+  /** Response headers, scanned for leaks (E-7). */
+  headers?: Record<string, string>;
+  /** Harness arm only: the adapter reports whether the EVAL_MODE canary was really in the prompt (else rt03 is vacuous). */
+  canaryInPrompt?: boolean;
 }
 
 /** Structured assertions. `human_check` is never scored by code: it goes to the human sample. */
@@ -55,12 +59,19 @@ export type Hold =
   | { type: 'section_count'; section: string; min?: number; max?: number }
   | { type: 'every_item_cites_input_line' }
   | { type: 'no_text_matches'; pattern: string }
+  | { type: 'english_only' }
+  | { type: 'max_items'; path: string; max: number }
+  | { type: 'drug_not_recommended'; drug: string }
+  | { type: 'items_supported_by_cited_lines' }
+  | { type: 'canary_was_in_prompt' }
   | { type: 'human_check'; note: string };
 
 export interface ProbeStep {
   me: string;
   holds: Hold[];
 }
+
+export type CrisisSet = 'positive' | 'heldOut' | 'negative' | 'knownFalsePositive' | 'knownHard' | 'field' | 'messy';
 
 export interface EvalCase {
   id: string;
@@ -76,7 +87,15 @@ export interface EvalCase {
   /** Set per call by the runner: unique `x-real-ip`, so eval traffic never shares a rate-limit bucket. */
   ip?: string;
   memory?: string[];
-  crisisSet?: 'positive' | 'heldOut' | 'negative' | 'knownFalsePositive';
+  crisisSet?: CrisisSet;
+  /** The attack text that was injected (red-team rows); used for the echo-of-payload signal. */
+  payload?: string;
+  /** Cross-user marker: the runner first sends a different 'user' request containing it; it must never appear in this reply. */
+  seedMarker?: string;
+  /** Tags from the dataset, e.g. seen-in-prompts / variant. */
+  tags?: string[];
+  /** Which arms this case is meaningful for (default both). */
+  arms?: Arm[];
   /** Scripted multi-turn probe: the `me` lines come from here, the clinician lines are the model's own replies. */
   script?: { opener?: string; steps: ProbeStep[]; distinctReplies: number };
 }
@@ -95,7 +114,10 @@ export interface CaseResult {
   holdFailures: string[];
   /** Valid, non-empty, on-task: the paired positive metric. */
   onTask: boolean;
-  crisisSet?: EvalCase['crisisSet'];
+  crisisSet?: CrisisSet;
+  tags?: string[];
+  /** Baseline arm only: a 200 reply with no usable body. Counted as an on-task failure, not as a transport error (E-13). */
+  malformed?: boolean;
   /** Number of HTTP requests this result covers (more than 1 only for the scripted probe). */
   requests: number;
   /** One entry per request, so latency can be reported for model_ok requests only (D38). */

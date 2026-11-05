@@ -4,6 +4,7 @@ import {
   agreement,
   assertNoSelfScoring,
   drawSample,
+  renderReplyForRater,
   itemScore,
   summarizeByArm,
   validateRatings,
@@ -123,5 +124,57 @@ describe("agreement and builder separation", () => {
     expect(s.harness.n + s.baseline.n).toBe(20);
     expect(s.harness.passRate).toBe(0.5);
     expect(s.harness.meanFraction).toBeLessThan(1);
+  });
+});
+
+describe("E-14: the arm cannot be read off the sheet", () => {
+  const items = [
+    { section: "instructions", text: "Keep a diary for two weeks.", evidence: ["l9"] },
+    { section: "discussed", text: "Headaches most afternoons.", evidence: ["l2"] },
+  ];
+  const harnessRecap = { items, unconfirmed: ["I could not confirm this: The screen is [unclear] for him."], planStatus: [{ itemId: "q2", status: "asked_by_me", evidence: ["l7"] }, { itemId: "q1", status: "asked_by_other", evidence: ["l2"] }], dropped: 1 };
+  const baselineRecap = { items: [...items].reverse(), planStatus: [{ itemId: "q1", status: "asked_by_other", evidence: ["l2"] }, { itemId: "q2", status: "asked_by_me", evidence: ["l7"] }] };
+
+  it("SEEDED BAD: harness-only structure (title, templated 'I could not confirm' lines, dropped, key and item order) is gone from what a rater reads", () => {
+    expect(renderReplyForRater("recap", harnessRecap)).toBe(renderReplyForRater("recap", baselineRecap));
+    const planH = { plan: { id: "plan-1", title: "Visit plan", createdAt: "x", mainConcern: "Ear pain.", symptomsInMyWords: ["ear pain"], items: [{ id: "q1", text: "Ear pain.", kind: "concern", source: "user", enabled: true }] } };
+    const planB = { mainConcern: "Ear pain.", symptomsInMyWords: ["ear pain"], items: [{ text: "Ear pain.", kind: "concern", source: "user" }], crisis: false };
+    expect(renderReplyForRater("plan", planH)).toBe(renderReplyForRater("plan", planB));
+    expect(renderReplyForRater("plan", planH)).not.toMatch(/Visit plan|plan-1/);
+    expect(renderReplyForRater("practice", { clinicianSay: "**Which** ear?", coveredItemIds: [], isLastTurn: false })).toBe("Which ear?");
+    expect(renderReplyForRater("sayit", { script: "  I want  to ask.  ", blanks: [], crisis: false })).toBe("I want to ask.");
+  });
+  it("a length/format classifier cannot beat chance: identical content in the two arm formats renders to identical text", () => {
+    const rows: { arm: "harness" | "baseline"; len: number; lines: number }[] = [];
+    for (let i = 0; i < 20; i++) {
+      const text = `Headache number ${i} in the afternoon.`;
+      const h = { items: [{ section: "discussed", text, evidence: ["l2"] }], unconfirmed: i % 2 ? ["I could not confirm this: x"] : [], planStatus: [], dropped: i % 3 };
+      const b = { items: [{ section: "discussed", text, evidence: ["l2"] }], planStatus: [] };
+      const rh = renderReplyForRater("recap", h);
+      const rb = renderReplyForRater("recap", b);
+      rows.push({ arm: "harness", len: rh.length, lines: rh.split("\n").length }, { arm: "baseline", len: rb.length, lines: rb.split("\n").length });
+    }
+    // Best single-threshold classifier on length or line count.
+    const accuracy = (key: "len" | "lines") => {
+      let best = 0;
+      for (const t of rows.map((r) => r[key])) {
+        const correct = rows.filter((r) => (r[key] > t ? "harness" : "baseline") === r.arm).length;
+        best = Math.max(best, correct / rows.length, 1 - correct / rows.length);
+      }
+      return best;
+    };
+    expect(accuracy("len")).toBeLessThanOrEqual(0.55);
+    expect(accuracy("lines")).toBeLessThanOrEqual(0.55);
+  });
+  it("kills the missing final shuffle: items of one task are not contiguous in the sheet, for several seeds", () => {
+    const pool = (["plan", "practice", "sayit", "recap"] as const).flatMap((task) =>
+      Array.from({ length: 8 }, (_, i) => (["harness", "baseline"] as const).map((arm) => ({ caseId: `${task}:${i}`, task, arm, rep: 0, input: "in", reply: `reply ${arm} ${task} ${i}`, multiTurn: false }))).flat(),
+    );
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { sheet } = drawSample(pool, seed);
+      let changes = 0;
+      for (let i = 1; i < sheet.length; i++) if (sheet[i].task !== sheet[i - 1].task) changes++;
+      expect(changes, `seed ${seed}`).toBeGreaterThan(8);
+    }
   });
 });

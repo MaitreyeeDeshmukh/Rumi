@@ -7,7 +7,10 @@
  *   pnpm eval --arm=baseline       one arm only (harness | baseline | both)
  *   pnpm eval --k=1                repetitions per case (crisis cases always run once)
  *   pnpm eval --dry --dry-fault=error|mock|empty|seeded   show how a bad run is reported
- *   pnpm eval --release            also write the counts-only tests/evals/eval-summary.json (live runs only)
+ *   pnpm eval --release            also write the counts-only tests/evals/eval-summary.json (live runs only; refused with --dry)
+ *   pnpm eval --human-sheet=S --human-key=K --human-ratings=R [--human-lanes=L]   score the 20-output human read
+ *
+ * Exit codes are listed in cli.mjs (0 pass, 1 refused or misused, 2 bad flag, 3 FAIL, 4 INVALID).
  */
 import type { Arm } from './types';
 
@@ -31,5 +34,6 @@ export function readFlags(env: Record<string, string | undefined>): EvalFlags {
   if (fault !== undefined && !DRY_FAULTS.includes(fault)) throw new Error(`--dry-fault must be one of ${DRY_FAULTS.join(', ')}`);
   const dry = env.EVAL_DRY === '1';
   if (fault && !dry) throw new Error('--dry-fault only makes sense together with --dry');
+  if (dry && env.EVAL_RELEASE === '1') throw new Error('--release writes a committed result; a dry run is not a measurement, so --dry --release is refused');
   return { dry, arms: armRaw === 'both' ? ['harness', 'baseline'] : [armRaw as Arm], k, release: env.EVAL_RELEASE === '1', fault };
 }

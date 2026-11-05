@@ -4,12 +4,12 @@
  */
 import type { EvalData } from './data/schema';
 import { allStrings, isObj } from './scorers/body';
-import type { Arm, EvalCase, Hold, TaskName } from './types';
+import type { Arm, CrisisSet, EvalCase, Hold, TaskName } from './types';
 
 const COMPANION = 'Jo';
 
 const DEFAULT_HOLDS: Hold[] = [{ type: 'valid_reply' }, { type: 'not_crisis' }, { type: 'no_advice' }, { type: 'no_invented_numbers' }, { type: 'no_links' }];
-const RECAP_HOLDS: Hold[] = [{ type: 'valid_reply' }, { type: 'no_advice' }, { type: 'no_invented_numbers' }, { type: 'no_links' }, { type: 'every_item_cites_input_line' }];
+const RECAP_HOLDS: Hold[] = [{ type: 'valid_reply' }, { type: 'no_advice' }, { type: 'no_invented_numbers' }, { type: 'no_links' }, { type: 'every_item_cites_input_line' }, { type: 'items_supported_by_cited_lines' }];
 
 const pathFor = (task: TaskName): string => `/api/${task}`;
 
@@ -39,39 +39,47 @@ export function lineIdsOf(body: unknown): string[] | undefined {
   return body.lines.filter(isObj).map((l) => String(l.id));
 }
 
-/** The crisis suite sends its text through the plan route's typed field (`rawText`). */
+const OPENER = { role: 'clinician', text: 'Hello. What would you like to talk about?' } as const;
+
+/**
+ * The crisis suite. Plan texts go through `rawText`; the other typed crisis fields of task.ts (`crisisFields`) are the latest
+ * "me" turn in practice and `clinicianQuestion` in say-it. A clinician turn that mentions a crisis word must NOT trigger (D2).
+ */
 function crisisCases(data: EvalData): EvalCase[] {
-  const sets = [
-    ['positive', data.crisis.positive],
-    ['heldOut', data.crisis.heldOutPositive],
-    ['negative', data.crisis.negative],
-    ['knownFalsePositive', data.crisis.knownFalsePositives],
-  ] as const;
-  return sets.flatMap(([set, texts]) =>
-    texts.map((text, i): EvalCase => ({
-      id: `crisis:${set}:${String(i + 1).padStart(2, '0')}`,
-      suite: 'crisis',
-      task: 'plan',
-      path: pathFor('plan'),
-      body: { rawText: text, companionName: COMPANION },
-      ground: [text],
-      forbidden: [],
-      holds: set === 'negative' ? [{ type: 'valid_reply' }] : [],
-      crisisSet: set,
-    })),
-  );
+  const mk = (id: string, task: 'plan' | 'practice' | 'sayit', body: unknown, text: string, set: CrisisSet): EvalCase => ({
+    id: `crisis:${id}`, suite: 'crisis', task, path: pathFor(task), body, ground: [text], forbidden: [],
+    holds: set === 'negative' ? [{ type: 'valid_reply' }] : [], crisisSet: set,
+  });
+  const n = (i: number) => String(i + 1).padStart(2, '0');
+  const plan = (id: string, texts: readonly string[], set: CrisisSet) =>
+    texts.map((t, i) => mk(`${id}:${n(i)}`, 'plan', { rawText: t, companionName: COMPANION }, t, set));
+  const practicePlan = data.redteam.bases.practice.plan;
+  return [
+    ...plan('positive', data.crisis.positive, 'positive'),
+    ...plan('heldOut', data.crisis.heldOutPositive, 'heldOut'),
+    ...plan('negative', data.crisis.negative, 'negative'),
+    ...plan('knownFalsePositive', data.crisis.knownFalsePositives, 'knownFalsePositive'),
+    ...plan('knownHard', data.crisis.knownHard, 'knownHard'),
+    ...plan('messy', data.crisis.messyPositive, 'messy'),
+    ...data.crisis.fieldPositive.practice.map((t, i) =>
+      mk(`field-practice:${n(i)}`, 'practice', { plan: practicePlan, turns: [OPENER, { role: 'me', text: t }], focus: 'whole', companionName: COMPANION }, t, 'field')),
+    ...data.crisis.fieldPositive.sayit.map((t, i) =>
+      mk(`field-sayit:${n(i)}`, 'sayit', { level: 2, clinicianQuestion: t, companionName: COMPANION }, t, 'field')),
+    ...data.crisis.practiceClinicianNegative.map((x, i) =>
+      mk(`negative-turn:${n(i)}`, 'practice', { plan: practicePlan, turns: [{ role: 'clinician', text: x.clinician }, { role: 'me', text: x.me }], focus: 'whole', companionName: COMPANION }, `${x.clinician} ${x.me}`, 'negative')),
+  ];
 }
 
 export function buildCases(data: EvalData, arm: Arm): EvalCase[] {
   const cases: EvalCase[] = [];
 
   for (const p of data.plan) {
-    cases.push({ id: `plan:${p.id}`, suite: 'plan', task: 'plan', path: pathFor('plan'), body: { rawText: p.rawText, companionName: COMPANION }, ground: [p.rawText], forbidden: [], holds: DEFAULT_HOLDS });
+    cases.push({ id: `plan:${p.id}`, suite: 'plan', task: 'plan', path: pathFor('plan'), body: { rawText: p.rawText, companionName: COMPANION }, ground: [p.rawText], forbidden: [], holds: DEFAULT_HOLDS, tags: p.tags });
   }
 
   for (const c of data.practice.cases) {
     const body = { plan: c.plan, turns: c.turns, focus: c.focus, companionName: COMPANION };
-    cases.push({ id: `practice:${c.id}`, suite: 'practice', task: 'practice', path: pathFor('practice'), body, ground: [...planTexts(c.plan), ...c.turns.map((t) => t.text)], forbidden: [], holds: DEFAULT_HOLDS });
+    cases.push({ id: `practice:${c.id}`, suite: 'practice', task: 'practice', path: pathFor('practice'), body, ground: [...planTexts(c.plan), ...c.turns.map((t) => t.text)], forbidden: [], holds: [...DEFAULT_HOLDS, ...c.holds] });
   }
   for (const p of data.practice.probes) {
     cases.push({
@@ -104,7 +112,7 @@ export function buildCases(data: EvalData, arm: Arm): EvalCase[] {
     // Numbers and doses are judged against the clean base: text that arrived inside the payload is never "grounded".
     const ground = allStrings(setPath(base, row.field, ''));
     const body = setPath(base, row.field, row.payload);
-    cases.push({ id: `redteam:${row.id}`, suite: 'redteam', task: row.task, path: pathFor(row.task), body, ground, forbidden: row.forbidden, holds: row.mustHold, memory: row.memory });
+    cases.push({ id: `redteam:${row.id}`, suite: 'redteam', task: row.task, path: pathFor(row.task), body, ground, forbidden: row.forbidden, holds: row.mustHold, memory: row.memory, payload: row.payload, seedMarker: row.marker, arms: row.arms });
   }
 
   for (const s of data.scenarios) {
@@ -113,6 +121,6 @@ export function buildCases(data: EvalData, arm: Arm): EvalCase[] {
 
   // Crisis detection is a harness feature, so the plain-model baseline arm is not asked to do it (reported as "not applicable").
   if (arm === 'harness') cases.push(...crisisCases(data));
-  return cases;
+  return cases.filter((c) => !c.arms || c.arms.includes(arm));
 }
 
