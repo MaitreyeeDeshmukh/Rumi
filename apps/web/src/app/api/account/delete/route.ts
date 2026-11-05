@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { OWNER_TABLES } from "@/lib/auth/ownerTables";
 import { AppError, toResponse } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
@@ -7,10 +8,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 
 const ROUTE = "/api/account/delete";
 
-/** Supabase's admin API answers 404 `user_not_found` when the user is already gone; a repeat call still verifies and succeeds. */
-const alreadyGone = (e: { status?: number; code?: string }): boolean => e.status === 404 || e.code === "user_not_found";
-
-/** Expire every Supabase session cookie the browser sent, so the deleted identity is not presented again. */
+/** Expire every Supabase session cookie the browser sent, so a deleted or dead identity is not presented again. */
 function expiredSessionCookies(req: Request): string[] {
   const names = (req.headers.get("cookie") ?? "")
     .split(";")
@@ -19,28 +17,40 @@ function expiredSessionCookies(req: Request): string[] {
   return names.map((n) => `${n}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
 }
 
+/** The owner tables that still hold rows for this user, or whose count could not be read. Empty means erased. */
+async function tablesNotErased(admin: SupabaseClient, userId: string): Promise<string[]> {
+  const counts = await Promise.all(
+    OWNER_TABLES.map(async (table) => {
+      const { count, error } = await admin.from(table).select("owner_id", { count: "exact", head: true }).eq("owner_id", userId);
+      return { table, left: error !== null || count !== 0 };
+    }),
+  );
+  return counts.filter((c) => c.left).map((c) => c.table);
+}
+
 /**
  * Deletes the signed-in person's account. Same-origin and signed in only. The auth user is removed with the admin API
- * (every owner row follows by ON DELETE CASCADE), then every owner table is counted again: anything left, or any
- * count that fails, is an error, never a success. The id comes from the verified token and nothing else.
+ * (every owner row follows by ON DELETE CASCADE), then every owner table is counted again; a count that fails or
+ * shows rows is tried once more, and anything still left is an error, never a success. The id comes from the verified
+ * token and nothing else.
+ * The session cookies are expired as soon as the user is gone, on the success answer and on any later error answer,
+ * and also when the caller was not signed in (their cookie is dead). A repeat call after success is a 401 by design:
+ * a deleted user cannot pass requireUser.
  */
 export async function POST(req: Request): Promise<Response> {
   const requestId = requestIdOf(req);
   const log = createLogger({ requestId, route: ROUTE });
+  let removed = false;
   try {
     const { user } = await guardRequest(req, { requireAuth: true });
     const admin = getAdminClient();
 
     const { error } = await admin.auth.admin.deleteUser(user.userId);
-    if (error && !alreadyGone(error)) throw new AppError("store_unavailable", { cause: error });
+    if (error) throw new AppError("store_unavailable", { cause: error });
+    removed = true;
 
-    const counts = await Promise.all(
-      OWNER_TABLES.map(async (table) => {
-        const { count, error: countError } = await admin.from(table).select("owner_id", { count: "exact", head: true }).eq("owner_id", user.userId);
-        return { table, count, failed: countError !== null };
-      }),
-    );
-    const left = counts.filter((c) => c.failed || c.count !== 0).map((c) => c.table);
+    let left = await tablesNotErased(admin, user.userId);
+    if (left.length > 0) left = await tablesNotErased(admin, user.userId);
     if (left.length > 0) {
       log.error("account_delete_rows_remain", new AppError("internal"), { tables: left.join(",") });
       throw new AppError("internal");
@@ -52,6 +62,10 @@ export async function POST(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
   } catch (e) {
     if (e instanceof AppError && e.status >= 500) log.error("account_delete_failed", e);
-    return toResponse(e, requestId);
+    const res = toResponse(e, requestId);
+    if (removed || (e instanceof AppError && e.code === "unauthorized")) {
+      for (const cookie of expiredSessionCookies(req)) res.headers.append("Set-Cookie", cookie);
+    }
+    return res;
   }
 }

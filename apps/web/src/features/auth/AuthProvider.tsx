@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { LAST_USER_KEY, EMAIL_SENT_KEY } from "./afterAccountDeleted";
 import { createAuthController, INITIAL_AUTH_STATE, type AuthDeps, type AuthState, type UpgradeResult } from "./authController";
 
 export interface AuthValue extends AuthState {
@@ -11,8 +12,6 @@ export interface AuthValue extends AuthState {
   upgradeWithEmail(email: string): Promise<UpgradeResult>;
 }
 
-const LAST_USER_KEY = "rumi.auth.lastUser";
-
 const storage = (): Storage | null => {
   try {
     return typeof window === "undefined" ? null : window.localStorage;
@@ -21,6 +20,9 @@ const storage = (): Storage | null => {
     return null;
   }
 };
+
+/** Kept in memory too, so the email cooldown still holds for this page when storage is blocked. */
+let emailAskedAt: number | null = null;
 
 const browserDeps = (): AuthDeps => ({
   getClient: getBrowserClient,
@@ -37,6 +39,27 @@ const browserDeps = (): AuthDeps => ({
   },
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   random: Math.random,
+  now: Date.now,
+  emailSentAt: {
+    get() {
+      let stored: number | null = null;
+      try {
+        const n = Number(storage()?.getItem(EMAIL_SENT_KEY));
+        stored = Number.isFinite(n) && n > 0 ? n : null;
+      } catch {
+        // Blocked storage: only the in-memory time below is known.
+      }
+      return stored === null ? emailAskedAt : Math.max(stored, emailAskedAt ?? 0);
+    },
+    set(t) {
+      emailAskedAt = t;
+      try {
+        storage()?.setItem(EMAIL_SENT_KEY, String(t));
+      } catch {
+        // Blocked or full storage: the cooldown then only lasts for this page.
+      }
+    },
+  },
   lastUser: {
     get() {
       try {

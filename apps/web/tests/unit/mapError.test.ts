@@ -43,6 +43,7 @@ describe("mapSupabaseError", () => {
     const inputs: unknown[] = [
       { status: 401 }, { status: 403 }, { status: 429 }, { status: 500 }, pg("42501"), pg("23505"), pg("23503"), pg("23514"),
       new TypeError("Failed to fetch"), { message: "JWT expired" }, { message: "Invalid Refresh Token" }, { message: "captcha" },
+      new AuthApiError("x", 429, "over_email_send_rate_limit"),
       { message: "Anonymous sign-ins are disabled" }, new AuthApiError("x", 400, "email_exists"), "boom",
     ];
     for (const input of inputs) {
@@ -52,6 +53,15 @@ describe("mapSupabaseError", () => {
       expect(message.endsWith(".")).toBe(true);
       expect({ message, lint: literalLint(message).ok }).toEqual({ message, lint: true });
     }
+  });
+
+  it("rate limits never promise 'one minute': Auth's limits last an hour or are shared", () => {
+    for (const input of [{ status: 429 }, new AuthApiError("x", 429, "over_request_rate_limit"), new AuthApiError("x", 429, "over_email_send_rate_limit")]) {
+      expect(mapSupabaseError(input).message).not.toMatch(/minute/i);
+      expect(mapSupabaseError(input).code).toBe("rate_limited");
+    }
+    expect(mapSupabaseError({ status: 429 }).message).toBe("Saving is paused for a while, and your work is on this device.");
+    expect(mapSupabaseError(new AuthApiError("x", 429, "over_email_send_rate_limit")).message).toContain("for everyone");
   });
 
   it("never returns text taken from the error", () => {
@@ -74,9 +84,9 @@ describe("mapSupabaseError", () => {
 });
 
 describe("isRetryable", () => {
-  it("retries only the network, server faults and rate limits, never a caller fault", () => {
-    const retry = ["network", "server", "rate_limited"] as const;
-    const noRetry = ["disabled", "captcha", "jwt_expired", "refresh_failed", "unauthorized", "forbidden", "consent", "unique", "foreign_key", "check", "email_exists", "unknown"] as const;
+  it("retries only the network and server faults, never a caller fault or a rate limit", () => {
+    const retry = ["network", "server"] as const;
+    const noRetry = ["rate_limited", "email_rate_limited", "disabled", "captcha", "jwt_expired", "refresh_failed", "unauthorized", "forbidden", "consent", "unique", "foreign_key", "check", "email_exists", "unknown"] as const;
     for (const k of retry) expect(isRetryable(k)).toBe(true);
     for (const k of noRetry) expect(isRetryable(k)).toBe(false);
   });

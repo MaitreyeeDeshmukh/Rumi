@@ -21,7 +21,8 @@ export interface GuardOptions {
 }
 
 /**
- * The checks every API route runs before it reads a body: same origin, who is calling, rate limits, declared size.
+ * The checks every API route runs before it reads a body: same origin, declared size, the address rate limit, who
+ * is calling (Supabase Auth), then that user's own rate limit.
  * A signed-out caller is limited by hashed address only and passes unless `requireAuth` is set. Throws AppError only,
  * with fixed codes; nothing from a caught error's message is passed on.
  */
@@ -39,18 +40,29 @@ export async function guardRequest(req: Request, options: GuardOptions = {}): Pr
       if (Number(declared) > (options.maxBytes ?? LIMITS.bodyBytesMax)) throw new AppError("too_large");
     }
 
+    // The address limit runs first, so a flood of requests cannot make us call Supabase Auth for each one.
+    const limiter = options.limiter ?? rateLimiter;
+    const ipVerdict = limiter.check(ipHash, null, ip === null);
+    if (!ipVerdict.ok) throw new AppError("rate_limited", { retryAfterSec: ipVerdict.retryAfterSec });
+
     let user: AuthedUser | null = null;
     try {
       user = await requireUser(req);
     } catch (e) {
       if (!(e instanceof AppError)) throw e;
       if (options.requireAuth) throw e;
-      // Signed out is a normal state (first visit, auth down). An outage or a config fault leaves one structured line.
-      if (e.code !== "unauthorized") createLogger({ requestId: requestIdOf(req), route: new URL(req.url).pathname }).warn("auth_unverified", { code: e.code });
+      // Signed out is a normal state (first visit, auth down). An outage leaves one warning; a configuration fault is an error.
+      if (e.code !== "unauthorized") {
+        const log = createLogger({ requestId: requestIdOf(req), route: new URL(req.url).pathname });
+        if (e.code === "config") log.error("auth_unverified", e, { code: e.code });
+        else log.warn("auth_unverified", { code: e.code });
+      }
     }
 
-    const verdict = (options.limiter ?? rateLimiter).check(ipHash, user?.userHash ?? null, ip === null);
-    if (!verdict.ok) throw new AppError("rate_limited", { retryAfterSec: verdict.retryAfterSec });
+    if (user !== null) {
+      const userVerdict = limiter.checkUser(user.userHash);
+      if (!userVerdict.ok) throw new AppError("rate_limited", { retryAfterSec: userVerdict.retryAfterSec });
+    }
     return { user, ipHash };
   } catch (e) {
     if (e instanceof AppError) throw e;

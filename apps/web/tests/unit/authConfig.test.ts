@@ -29,6 +29,10 @@ describe("supabase/config.toml [auth]", () => {
     expect(section("auth.email")).toContain("enable_confirmations = true");
   });
 
+  it("one email per address per minute, so the email-link upgrade cannot be used to flood an inbox", () => {
+    expect(section("auth.email")).toContain('max_frequency = "60s"');
+  });
+
   it("the captcha section is Turnstile and its secret comes from the environment, never from the file", () => {
     const captcha = section("auth.captcha");
     expect(captcha).toContain('provider = "turnstile"');

@@ -1,9 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
-import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+import { classifyError, isRetryable } from "@/features/auth/mapError";
+import { noteAuthRateLimited } from "@/lib/auth/authFault";
 import { createLogger } from "@/lib/log";
 import { newRequestId, REQUEST_ID_HEADER } from "@/lib/requestContext";
-import { publicSupabaseConfig } from "@/lib/supabase/config";
+import { authProxyRefreshEnabled, publicSupabaseConfig } from "@/lib/supabase/config";
 import { fetchWithTimeout } from "@/lib/supabase/fetch";
 
 /** Supabase stores its session in cookies named `sb-<project>-auth-token` (plus `.0`, `.1` chunks). */
@@ -12,9 +13,14 @@ const hasSessionCookie = (req: NextRequest): boolean => req.cookies.getAll().som
 /**
  * Runs before every page and API route (not static files). It does two things and never blocks a request:
  * 1. gives the request a fresh x-request-id (a client-sent one is ignored) and echoes it on the response;
- * 2. refreshes the Supabase session when the visitor has one, and forwards the refreshed cookies to the route
- *    and to the browser. A visitor with no session cookie costs no network call.
- * An auth outage only means the session is not refreshed this time; the page still loads.
+ * 2. keeps the Supabase session fresh when the visitor has one, and forwards refreshed cookies to the route and to
+ *    the browser. It uses getClaims(): the access token is checked locally against Auth's cached public keys, and the
+ *    network is used only to REFRESH a token that is expired or about to expire (supabase-js refreshes inside its
+ *    margin of 90 seconds). A visitor with no session cookie costs no call at all. It is the pattern in the
+ *    @supabase/ssr docs; the per-request authoritative check stays in requireUser (getUser) on API routes.
+ *    Projects that still sign tokens with a shared secret (HS256) make getClaims fall back to one getUser call.
+ * AUTH_PROXY_REFRESH=off skips all of step 2. An auth outage only means the session is not refreshed this time;
+ * the page still loads.
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const requestId = newRequestId();
@@ -28,7 +34,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   let response = forward();
 
   const config = publicSupabaseConfig();
-  if (!config || !hasSessionCookie(request)) return response;
+  if (!authProxyRefreshEnabled() || !config || !hasSessionCookie(request)) return response;
 
   const supabase = createServerClient(config.url, config.key, {
     global: { fetch: fetchWithTimeout },
@@ -43,17 +49,21 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       },
     },
   });
-  let unreachable = false;
+  let outcome: "ok" | "unreachable" | "limited" = "ok";
   try {
-    // getUser() asks the Auth server to verify the token and refreshes it when needed. Never getSession() here.
-    const { error } = await supabase.auth.getUser();
-    // A rejected token (4xx) is the visitor's state, not a fault. Only an unreachable or failing Auth server is logged.
-    unreachable = error !== null && (isAuthRetryableFetchError(error) || (error.status ?? 0) >= 500);
+    // Never getSession() or getUser() here. A rejected token (4xx) is the visitor's state, not a fault.
+    const { error } = await supabase.auth.getClaims();
+    if (error) {
+      const kind = classifyError(error);
+      outcome = kind === "rate_limited" ? "limited" : isRetryable(kind) ? "unreachable" : "ok";
+    }
   } catch {
-    // getUser reports faults as values; a throw here is unexpected. Treat it as an outage and serve the page anyway.
-    unreachable = true;
+    // getClaims reports faults as values; a throw here is unexpected. Treat it as an outage and serve the page anyway.
+    outcome = "unreachable";
   }
-  if (unreachable) createLogger({ requestId, route: request.nextUrl.pathname }).warn("session_refresh_failed");
+  const ctx = { requestId, route: request.nextUrl.pathname };
+  if (outcome === "limited") noteAuthRateLimited(ctx);
+  else if (outcome === "unreachable") createLogger(ctx).warn("session_refresh_failed");
   return response;
 }
 

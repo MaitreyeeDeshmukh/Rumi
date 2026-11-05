@@ -93,6 +93,22 @@ describe("server client", () => {
     expect(seen[1]).not.toBe(seen[0]);
   });
 
+  it("page-request calls have a 3 s deadline", async () => {
+    const spy = vi.spyOn(AbortSignal, "timeout");
+    const { getServerClient } = await import("@/lib/supabase/server");
+    await getServerClient(new Request("https://rumi.test/x"));
+    const options = mocks.createServerClient.mock.calls[0][2] as { global: { fetch: typeof fetch } };
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(new Response("{}"))) as typeof fetch;
+    try {
+      await options.global.fetch("https://x.test");
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(spy).toHaveBeenCalledWith(3000);
+    spy.mockRestore();
+  });
+
   it("not configured: a config AppError, with no client built", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "");
     const { getServerClient } = await import("@/lib/supabase/server");
@@ -110,6 +126,22 @@ describe("admin client", () => {
     const [url, key, options] = mocks.createClient.mock.calls[0] as [string, string, { auth: object }];
     expect([url, key]).toEqual([URL_, SECRET]);
     expect(options.auth).toMatchObject({ persistSession: false, autoRefreshToken: false });
+  });
+
+  it("admin calls get a longer deadline (10 s), so a slow delete is not cut short", async () => {
+    const spy = vi.spyOn(AbortSignal, "timeout");
+    const { getAdminClient } = await import("@/lib/supabase/admin");
+    getAdminClient();
+    const options = mocks.createClient.mock.calls[0][2] as { global: { fetch: typeof fetch } };
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(new Response("{}"))) as typeof fetch;
+    try {
+      await options.global.fetch("https://x.test");
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(spy).toHaveBeenCalledWith(10_000);
+    spy.mockRestore();
   });
 
   it("without the secret key it is a config error and nothing is built", async () => {

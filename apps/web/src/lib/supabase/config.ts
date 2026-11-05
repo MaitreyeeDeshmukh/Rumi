@@ -21,3 +21,10 @@ export function publicSupabaseConfig(): PublicSupabaseConfig | null {
   }
   return { url, key };
 }
+
+/**
+ * Kill switch for the session refresh in proxy.ts: AUTH_PROXY_REFRESH=off makes the proxy skip Supabase Auth
+ * entirely (it still sets x-request-id). Any other value, or none, leaves the refresh on. API routes still verify
+ * the caller themselves with requireUser, so turning this off never weakens authorization.
+ */
+export const authProxyRefreshEnabled = (): boolean => process.env.AUTH_PROXY_REFRESH?.trim().toLowerCase() !== "off";

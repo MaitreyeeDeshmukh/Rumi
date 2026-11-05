@@ -7,10 +7,10 @@ const SECRET_A = "a".repeat(32);
 const SECRET_B = "b".repeat(32);
 const UID = "00000000-0000-4000-8000-0000000000aa";
 
-const logs = vi.hoisted(() => ({ warn: vi.fn() }));
+const logs = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 const fake = vi.hoisted(() => ({ id: "" }));
 vi.mock("@/lib/supabase/server", () => ({ getServerClient: () => Promise.resolve({ auth: { getUser: () => Promise.resolve({ data: { user: { id: fake.id, is_anonymous: true } }, error: null }) } }) }));
-vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: vi.fn(), error: vi.fn(), warn: logs.warn }) }));
+vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: vi.fn(), error: logs.error, warn: logs.warn }) }));
 
 async function load(env: Record<string, string>) {
   vi.resetModules();
@@ -41,6 +41,23 @@ describe("hashSecret and hashingKey", () => {
     expect(k).toMatch(/^[0-9a-f]{64}$/);
     expect(secret.hashingKey()).toBe(k);
     expect(k).not.toBe("rumi-dev-only-secret-never-used-in-production");
+  });
+
+  it("an unusable secret in production is logged once at ERROR, with the code only, and the address hash keeps working", async () => {
+    logs.error.mockReset();
+    const { secret } = await load({ SESSION_SECRET: "too short", NODE_ENV: "production" });
+    const k = secret.hashingKey();
+    expect(secret.hashingKey()).toBe(k);
+    expect(logs.error).toHaveBeenCalledTimes(1);
+    expect(logs.error).toHaveBeenCalledWith("session_secret_unusable", expect.anything(), { code: "config" });
+    expect(JSON.stringify(logs.error.mock.calls)).not.toContain("too short");
+  });
+
+  it("a usable secret logs nothing", async () => {
+    logs.error.mockReset();
+    const { secret } = await load({ SESSION_SECRET: SECRET_A });
+    secret.hashingKey();
+    expect(logs.error).not.toHaveBeenCalled();
   });
 
   it("the module can be imported with no configuration at all", async () => {
@@ -86,6 +103,6 @@ describe("guardRequest with a broken configuration (07 H-16)", () => {
       expect(r.user).toBeNull();
       expect(r.ipHash).toMatch(/^[0-9a-f]{16}$/);
     }
-    expect(logs.warn).toHaveBeenCalledWith("auth_unverified", { code: "config" });
+    expect(logs.error).toHaveBeenCalledWith("auth_unverified", expect.anything(), { code: "config" });
   });
 });

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // The first import of the Supabase libraries is slow on a busy machine.
 vi.setConfig({ testTimeout: 30_000 });
 const mocks = vi.hoisted(() => ({
+  getClaims: vi.fn(),
   getUser: vi.fn(),
   getSession: vi.fn(),
   setAll: undefined as undefined | ((l: Array<{ name: string; value: string; options: object }>, h: Record<string, string>) => void),
@@ -16,7 +17,7 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: (...args: unknown[]) => {
     mocks.createServerClient(...args);
     mocks.setAll = (args[2] as { cookies: { setAll: typeof mocks.setAll } }).cookies.setAll;
-    return { auth: { getUser: mocks.getUser, getSession: mocks.getSession } };
+    return { auth: { getClaims: mocks.getClaims, getUser: mocks.getUser, getSession: mocks.getSession } };
   },
 }));
 vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: vi.fn(), error: vi.fn(), warn: mocks.warn }) }));
@@ -28,7 +29,9 @@ const call = (path: string, headers: Record<string, string> = {}): NextRequest =
 const withSession = { cookie: "sb-project-auth-token=abc" };
 
 beforeEach(() => {
-  mocks.getUser.mockReset().mockResolvedValue({ data: { user: { id: "u" } }, error: null });
+  vi.unstubAllEnvs();
+  mocks.getClaims.mockReset().mockResolvedValue({ data: { claims: { sub: "u" } }, error: null });
+  mocks.getUser.mockReset();
   mocks.getSession.mockReset();
   mocks.createServerClient.mockClear();
   mocks.warn.mockReset();
@@ -59,20 +62,21 @@ describe("proxy session refresh", () => {
     const res = await proxy(call("/help", { cookie: "theme=dark" }));
     expect(res.status).toBe(200);
     expect(mocks.createServerClient).not.toHaveBeenCalled();
-    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.getClaims).not.toHaveBeenCalled();
   });
 
-  it("with a session cookie it verifies with getUser and never getSession", async () => {
+  it("with a session cookie it checks the token locally with getClaims, never getUser (a network call) or getSession", async () => {
     await proxy(call("/help", withSession));
-    expect(mocks.getUser).toHaveBeenCalledTimes(1);
+    expect(mocks.getClaims).toHaveBeenCalledTimes(1);
+    expect(mocks.getUser).not.toHaveBeenCalled();
     expect(mocks.getSession).not.toHaveBeenCalled();
     expect(mocks.warn).not.toHaveBeenCalled();
   });
 
   it("forwards refreshed cookies to the route and to the browser, with no-cache headers, and keeps the request id", async () => {
-    mocks.getUser.mockImplementation(() => {
+    mocks.getClaims.mockImplementation(() => {
       mocks.setAll?.([{ name: "sb-project-auth-token", value: "fresh", options: { path: "/", httpOnly: true } }], { "Cache-Control": "private, no-cache, no-store, must-revalidate" });
-      return Promise.resolve({ data: { user: { id: "u" } }, error: null });
+      return Promise.resolve({ data: { claims: { sub: "u" } }, error: null });
     });
     const res = await proxy(call("/help", withSession));
     expect(res.cookies.get("sb-project-auth-token")?.value).toBe("fresh");
@@ -82,20 +86,20 @@ describe("proxy session refresh", () => {
   });
 
   it("an unreachable Auth server still serves the page and leaves one warning with no error text", async () => {
-    mocks.getUser.mockResolvedValue({ data: { user: null }, error: new AuthRetryableFetchError("secret socket detail", 0) });
+    mocks.getClaims.mockResolvedValue({ data: null, error: new AuthRetryableFetchError("secret socket detail", 0) });
     expect((await proxy(call("/help", withSession))).status).toBe(200);
     expect(mocks.warn).toHaveBeenCalledTimes(1);
     expect(mocks.warn).toHaveBeenCalledWith("session_refresh_failed");
   });
 
   it("a thrown fault is also served and logged", async () => {
-    mocks.getUser.mockRejectedValue(new Error("boom"));
+    mocks.getClaims.mockRejectedValue(new Error("boom"));
     expect((await proxy(call("/help", withSession))).status).toBe(200);
     expect(mocks.warn).toHaveBeenCalledWith("session_refresh_failed");
   });
 
   it("a rejected token (the visitor's state, not a fault) is not logged", async () => {
-    mocks.getUser.mockResolvedValue({ data: { user: null }, error: new AuthApiError("JWT expired", 401, "bad_jwt") });
+    mocks.getClaims.mockResolvedValue({ data: null, error: new AuthApiError("JWT expired", 401, "bad_jwt") });
     expect((await proxy(call("/help", withSession))).status).toBe(200);
     expect(mocks.warn).not.toHaveBeenCalled();
   });
@@ -105,6 +109,37 @@ describe("proxy session refresh", () => {
     const res = await proxy(call("/help", withSession));
     expect(res.status).toBe(200);
     expect(mocks.createServerClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("proxy kill switch and rate limits", () => {
+  it("AUTH_PROXY_REFRESH=off skips Supabase Auth entirely but still sets the request id", async () => {
+    vi.stubEnv("AUTH_PROXY_REFRESH", "off");
+    const res = await proxy(call("/help", withSession));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-request-id")).toMatch(UUID);
+    expect(mocks.createServerClient).not.toHaveBeenCalled();
+    expect(mocks.getClaims).not.toHaveBeenCalled();
+    vi.stubEnv("AUTH_PROXY_REFRESH", "OFF ");
+    await proxy(call("/help", withSession));
+    expect(mocks.getClaims).not.toHaveBeenCalled();
+  });
+
+  it("any other value leaves the refresh on", async () => {
+    for (const v of ["", "on", "false", "0"]) {
+      vi.stubEnv("AUTH_PROXY_REFRESH", v);
+      mocks.getClaims.mockClear();
+      await proxy(call("/help", withSession));
+      expect(mocks.getClaims).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("a 429 from Auth is logged as auth_rate_limited (code only), at most once a minute, and the page is still served", async () => {
+    mocks.getClaims.mockResolvedValue({ data: null, error: new AuthApiError("secret provider text", 429, "over_request_rate_limit") });
+    expect((await proxy(call("/a", withSession))).status).toBe(200);
+    expect((await proxy(call("/b", withSession))).status).toBe(200);
+    expect(mocks.warn.mock.calls).toEqual([["auth_rate_limited", { code: "rate_limited" }]]);
+    expect(JSON.stringify(mocks.warn.mock.calls)).not.toContain("secret");
   });
 });
 

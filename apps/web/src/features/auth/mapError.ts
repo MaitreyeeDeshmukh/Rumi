@@ -9,6 +9,7 @@ export type ErrorKind =
   | "disabled"
   | "captcha"
   | "rate_limited"
+  | "email_rate_limited"
   | "network"
   | "server"
   | "jwt_expired"
@@ -26,8 +27,8 @@ const KIND_BY_CODE = new Map<string, ErrorKind>(Object.entries({
   anonymous_provider_disabled: "disabled",
   captcha_failed: "captcha",
   over_request_rate_limit: "rate_limited",
-  over_email_send_rate_limit: "rate_limited",
-  over_sms_send_rate_limit: "rate_limited",
+  over_email_send_rate_limit: "email_rate_limited",
+  over_sms_send_rate_limit: "email_rate_limited",
   refresh_token_already_used: "refresh_failed",
   refresh_token_not_found: "refresh_failed",
   session_not_found: "refresh_failed",
@@ -78,8 +79,12 @@ export function classifyError(e: unknown): ErrorKind {
   return "unknown";
 }
 
-/** Faults worth another attempt (08 section 4.1): the network, a failing server, a rate limit. Never a 4xx the caller caused. */
-export const isRetryable = (kind: ErrorKind): boolean => kind === "network" || kind === "server" || kind === "rate_limited";
+/**
+ * Faults worth another attempt (08 section 4.1): the network and a failing server. Never a 4xx the caller caused, and
+ * never a rate limit: Auth's limit for anonymous sign-ins is per address and lasts an hour, so trying again at once
+ * only spends more of a shared allowance.
+ */
+export const isRetryable = (kind: ErrorKind): boolean => kind === "network" || kind === "server";
 
 type Mapped = { code: AppErrorCode | "consent_required"; message: string };
 
@@ -87,7 +92,8 @@ type Mapped = { code: AppErrorCode | "consent_required"; message: string };
 const BY_KIND: Record<ErrorKind, Mapped> = {
   disabled: { code: "store_unavailable", message: "Saving is paused, and your work is on this device." },
   captcha: { code: "forbidden", message: "The safety check failed, so saving is paused on this device." },
-  rate_limited: { code: "rate_limited", message: "That was too many tries, so wait one minute." },
+  rate_limited: { code: "rate_limited", message: "Saving is paused for a while, and your work is on this device." },
+  email_rate_limited: { code: "rate_limited", message: "Email links are limited for everyone right now, so try again in an hour." },
   network: { code: "store_unavailable", message: "I could not reach the server, so your work stays on this device." },
   server: { code: "store_unavailable", message: "The server had a problem, so your work stays on this device." },
   jwt_expired: { code: "unauthorized", message: "Your sign-in ended, so saving is paused on this device." },

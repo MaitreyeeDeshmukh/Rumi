@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { ConfigError, getSessionSecret, isProduction } from "@/lib/env";
+import { createLogger } from "@/lib/log";
 
 /** Used only outside production, so local work and tests need no secret. Never used when NODE_ENV is production. */
 const DEV_SECRET = "rumi-dev-only-secret-never-used-in-production";
@@ -24,8 +25,10 @@ let processKey: string | undefined;
 export function hashingKey(): string {
   try {
     return hashSecret();
-  } catch {
-    // No usable secret: the address hash only has to be stable inside this process.
+  } catch (e) {
+    // No usable secret: the address hash only has to be stable inside this process. This is a misconfiguration in
+    // production, so it is logged once at ERROR (the variable name only, never a value).
+    if (processKey === undefined) createLogger({ requestId: "process", route: "hashingKey" }).error("session_secret_unusable", e, { code: "config" });
     processKey ??= randomBytes(32).toString("hex");
     return processKey;
   }

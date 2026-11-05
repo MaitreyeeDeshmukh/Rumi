@@ -39,7 +39,7 @@ function reachable(entries: string[]): { files: Set<string>; packages: Set<strin
 
 /** A file is client code when it starts with the "use client" directive. */
 const clientEntries = ALL.filter((f) => /^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*["']use client["']/.test(readFileSync(f, "utf8")));
-const SERVER_FILES = ["lib/supabase/admin.ts", "lib/supabase/server.ts", "lib/env.ts", "lib/auth/requireUser.ts", "lib/auth/secret.ts", "lib/auth/ownerTables.ts", "lib/security/guardRequest.ts"];
+const SERVER_FILES = ["lib/supabase/admin.ts", "lib/supabase/server.ts", "lib/env.ts", "lib/auth/requireUser.ts", "lib/auth/authFault.ts", "lib/auth/secret.ts", "lib/auth/ownerTables.ts", "lib/security/guardRequest.ts"];
 
 describe("the secret key and the admin client never reach the browser", () => {
   it("finds the client entries it should (AuthProvider is one)", () => {

@@ -12,7 +12,9 @@ const server = vi.hoisted(() => ({
     throw new Error("getSession must never be used to identify a caller");
   }),
   getServerClient: vi.fn(),
+  noteAuthRateLimited: vi.fn(),
 }));
+vi.mock("@/lib/auth/authFault", () => ({ noteAuthRateLimited: server.noteAuthRateLimited }));
 vi.mock("@/lib/supabase/server", () => ({ getServerClient: server.getServerClient }));
 
 const req = (headers: Record<string, string> = {}): Request => new Request("https://rumi.test/api/plan", { method: "POST", headers, body: JSON.stringify({ userId: FORGED }) });
@@ -28,6 +30,7 @@ const fail = async (r: Request): Promise<AppError> => {
 
 beforeEach(() => {
   server.getUser.mockReset();
+  server.noteAuthRateLimited.mockReset();
   server.getServerClient.mockReset().mockResolvedValue({ auth: { getUser: server.getUser, getSession: server.getSession } });
 });
 
@@ -81,6 +84,25 @@ describe("requireUser", () => {
       const e = await fail(req());
       expect([e.status, e.code]).toEqual([503, "store_unavailable"]);
     }
+  });
+
+  it("429 from Auth is a 503, not a 401 (Auth is refusing us; the caller is not signed out), and is logged through the sampler", async () => {
+    const id = "33333333-3333-4333-8333-333333333333";
+    for (const error of [new AuthApiError("rate limit", 429, "over_request_rate_limit"), new AuthApiError("slow down", 429, undefined)]) {
+      server.getUser.mockResolvedValue({ data: { user: null }, error });
+      const e = await fail(req({ "x-request-id": id }));
+      expect([e.status, e.code]).toEqual([503, "store_unavailable"]);
+    }
+    expect(server.noteAuthRateLimited).toHaveBeenCalledTimes(2);
+    expect(server.noteAuthRateLimited).toHaveBeenCalledWith({ requestId: id, route: "/api/plan" });
+  });
+
+  it("other faults do not touch the rate limit log", async () => {
+    for (const error of [new AuthSessionMissingError(), new AuthApiError("JWT expired", 401, "bad_jwt"), new AuthRetryableFetchError("x", 0)]) {
+      server.getUser.mockResolvedValue({ data: { user: null }, error });
+      await fail(req());
+    }
+    expect(server.noteAuthRateLimited).not.toHaveBeenCalled();
   });
 
   it("a throw from the client is 503 with the cause kept and no text copied into the error", async () => {

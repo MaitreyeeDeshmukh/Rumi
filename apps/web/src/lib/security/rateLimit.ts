@@ -28,6 +28,8 @@ export type LimitResult = { ok: true } | { ok: false; retryAfterSec: number; sco
 export interface RateLimiter {
   /** Records the request when it is allowed. A refused request is not recorded. `unknownIp`: the address could not be read. */
   check(ipHash: string, sessionId: string | null, unknownIp?: boolean): LimitResult;
+  /** Counts one request against a verified user's own window only (the address and instance windows were counted by `check`). */
+  checkUser(userHash: string): LimitResult;
   /** How many addresses and sessions are tracked right now (for the chaos run and tests). Never more than maxKeys each. */
   tracked(): { ips: number; sessions: number };
 }
@@ -53,11 +55,14 @@ function normaliseIp(candidate: string | null | undefined): string | null {
 }
 
 /**
- * The client address, or null when none can be trusted. Trusted proxy: the platform in front of the app (Vercel).
- * Order: x-vercel-forwarded-for, then x-real-ip (both set by the platform), then the LAST x-forwarded-for entry, which
- * is the one the platform appended. Earlier entries are written by the client and are never used.
+ * The client address, or null when none can be trusted. The forwarding headers are written by the platform in front
+ * of the app only on Vercel (the VERCEL variable is set there); anywhere else a client could write them, so they are
+ * ignored and every such request shares the one stricter "unknown" bucket.
+ * On Vercel the order is: x-vercel-forwarded-for, then x-real-ip (both set by the platform), then the LAST
+ * x-forwarded-for entry, which is the one the platform appended. Earlier entries are written by the client and are never used.
  */
 export function clientIp(req: Request): string | null {
+  if (!process.env.VERCEL) return null;
   const forwarded = req.headers.get("x-forwarded-for")?.split(",").pop();
   for (const candidate of [req.headers.get("x-vercel-forwarded-for")?.split(",")[0], req.headers.get("x-real-ip"), forwarded]) {
     const ip = normaliseIp(candidate);
@@ -118,6 +123,13 @@ export function createRateLimiter(options: { now?: () => number; limits?: Partia
       record(ips, ipHash, t, ipHits);
       if (sessionId !== null) record(sessions, sessionId, t, sessionHits);
       instance.push(t);
+      return { ok: true };
+    },
+    checkUser(userHash) {
+      const t = now();
+      const hits = peek(sessions, userHash, t);
+      if (hits.length >= limits.perSession) return { ok: false, retryAfterSec: retryAfter(hits, t), scope: "session" };
+      record(sessions, userHash, t, hits);
       return { ok: true };
     },
     tracked: () => ({ ips: ips.size, sessions: sessions.size }),

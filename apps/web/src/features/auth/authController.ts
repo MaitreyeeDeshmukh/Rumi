@@ -23,6 +23,10 @@ export interface AuthDeps {
   onNetworkChange: (handler: (online: boolean) => void) => () => void;
   sleep: (ms: number) => Promise<void>;
   random: () => number;
+  /** Milliseconds since 1970. Injected so the cooldowns can be tested. */
+  now: () => number;
+  /** When this device last asked for an email link. Reading and writing must never throw. */
+  emailSentAt: { get: () => number | null; set: (t: number) => void };
   /** The id this browser last signed in as. Reading and writing must never throw. */
   lastUser: { get: () => string | null; set: (id: string) => void };
   /** Turnstile token for the anonymous sign-in, when captcha is on. */
@@ -32,6 +36,10 @@ export interface AuthDeps {
 }
 
 export const MAX_SIGN_IN_TRIES = 3;
+/** The shortest time between two manual retries after sign-in failed. */
+export const RETRY_COOLDOWN_MS = 60_000;
+/** The shortest time between two email-link requests from one device (Auth also limits this project-wide per hour). */
+export const EMAIL_COOLDOWN_MS = 60_000;
 const BACKOFF_BASE_MS = 500;
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
@@ -53,6 +61,7 @@ export function createAuthController(deps: AuthDeps) {
   const listeners = new Set<() => void>();
   let running = false;
   let active = false;
+  let lastRetryAt: number | null = null;
 
   const set = (patch: Partial<AuthState>): void => {
     const next = { ...state, ...patch };
@@ -138,15 +147,27 @@ export function createAuthController(deps: AuthDeps) {
         for (const stop of stops) stop();
       };
     },
-    /** Manual retry after `degraded` or `offline`. Does nothing while a sign-in is running or when ready. */
+    /**
+     * Manual retry after `degraded` or `offline`. Does nothing while a sign-in is running or when ready, and at most
+     * one retry is accepted per RETRY_COOLDOWN_MS, so a button pressed again and again cannot hammer Auth.
+     */
     retry(): void {
-      if (state.status === "degraded" || state.status === "offline") void signIn();
+      if (running || (state.status !== "degraded" && state.status !== "offline")) return;
+      const t = deps.now();
+      if (lastRetryAt !== null && t >= lastRetryAt && t - lastRetryAt < RETRY_COOLDOWN_MS) return;
+      lastRetryAt = t;
+      void signIn();
     },
     async upgradeWithEmail(email: string): Promise<UpgradeResult> {
       const address = email.trim();
       if (address.length > 254 || !EMAIL_RE.test(address)) return { ok: false, message: "That email address does not look right." };
       if (state.status !== "ready" || state.userId === null) return { ok: false, message: "Saving is paused, so email sign-in is not available yet." };
       if (!state.isAnonymous) return { ok: false, message: "This device already has an email." };
+      const t = deps.now();
+      const last = deps.emailSentAt.get();
+      if (last !== null && t >= last && t - last < EMAIL_COOLDOWN_MS) return { ok: false, message: "A link was just asked for, so wait one minute before asking again." };
+      // Recorded before the call, so a double click cannot send two.
+      deps.emailSentAt.set(t);
       try {
         const { error } = await deps.getClient().auth.updateUser({ email: address }, deps.redirectTo ? { emailRedirectTo: deps.redirectTo() } : undefined);
         if (!error) return { ok: true };

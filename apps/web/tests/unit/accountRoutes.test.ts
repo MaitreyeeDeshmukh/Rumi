@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OWNER_TABLES } from "@/lib/auth/ownerTables";
 import { AppError } from "@/lib/errors";
 
@@ -8,6 +8,8 @@ import { AppError } from "@/lib/errors";
 // The first import of the Supabase libraries is slow on a busy machine.
 vi.setConfig({ testTimeout: 30_000 });
 const ME = "00000000-0000-4000-8000-0000000000aa";
+const REQ1 = "11111111-1111-4111-8111-111111111111";
+const REQ2 = "22222222-2222-4222-8222-222222222222";
 const FORGED = "00000000-0000-4000-8000-0000000000ff";
 const SECRETS = ["secret-row-42", "secret socket detail"];
 
@@ -15,6 +17,8 @@ const m = vi.hoisted(() => ({
   requireUser: vi.fn(),
   deleteUser: vi.fn(),
   counts: new Map<string, { count: number | null; error: unknown }>(),
+  /** Answers used once, first, for a table; then `counts` applies. */
+  countQueue: new Map<string, Array<{ count: number | null; error: unknown }>>(),
   eqCalls: [] as Array<[string, string, string]>,
   rpc: vi.fn(),
   getServerClient: vi.fn(),
@@ -31,7 +35,7 @@ vi.mock("@/lib/supabase/admin", () => ({
       select: () => ({
         eq: (column: string, value: string) => {
           m.eqCalls.push([table, column, value]);
-          return Promise.resolve(m.counts.get(table) ?? { count: 0, error: null });
+          return Promise.resolve(m.countQueue.get(table)?.shift() ?? m.counts.get(table) ?? { count: 0, error: null });
         },
       }),
     }),
@@ -45,17 +49,22 @@ const alice = { userId: ME, userHash: "a".repeat(16), isAnonymous: true };
 const post = (headers: Record<string, string> = {}, body: unknown = {}): Request =>
   new Request("https://rumi.test/api/account/delete", {
     method: "POST",
-    headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.7", "x-request-id": "req-1", ...headers },
+    headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.7", "x-request-id": REQ1, ...headers },
     body: JSON.stringify(body),
   });
 const get = (headers: Record<string, string> = {}): Request =>
-  new Request("https://rumi.test/api/account/export", { headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.8", "x-request-id": "req-2", ...headers } });
+  new Request("https://rumi.test/api/account/export", { headers: { "sec-fetch-site": "same-origin", "x-real-ip": "203.0.113.8", "x-request-id": REQ2, ...headers } });
 const body = async (r: Response): Promise<{ error?: { code: string; message: string; requestId: string }; ok?: boolean }> => (await r.json()) as never;
 
+afterEach(() => vi.unstubAllEnvs());
+
 beforeEach(() => {
+  // On Vercel the platform writes the forwarding headers that the address limit reads.
+  vi.stubEnv("VERCEL", "1");
   m.requireUser.mockReset().mockResolvedValue(alice);
   m.deleteUser.mockReset().mockResolvedValue({ data: {}, error: null });
   m.counts.clear();
+  m.countQueue.clear();
   m.eqCalls.length = 0;
   m.rpc.mockReset();
   m.getServerClient.mockReset().mockResolvedValue({ rpc: m.rpc });
@@ -72,7 +81,7 @@ describe("POST /api/account/delete", () => {
     expect(m.eqCalls.map((c) => c[0]).sort()).toEqual([...OWNER_TABLES].sort());
     expect(m.eqCalls.every(([, column, value]) => column === "owner_id" && value === ME)).toBe(true);
     expect(r.headers.get("cache-control")).toBe("no-store");
-    expect(r.headers.get("x-request-id")).toBe("req-1");
+    expect(r.headers.get("x-request-id")).toBe(REQ1);
     const cookies = r.headers.getSetCookie();
     expect(cookies).toHaveLength(2);
     expect(cookies.every((c) => c.startsWith("sb-p-auth-token") && c.includes("Max-Age=0"))).toBe(true);
@@ -85,24 +94,35 @@ describe("POST /api/account/delete", () => {
     expect(JSON.stringify(m.eqCalls)).not.toContain(FORGED);
   });
 
-  it("a signed-out caller gets 401 and nothing is deleted", async () => {
+  it("a signed-out caller gets 401 and nothing is deleted, and their dead session cookies are expired", async () => {
     m.requireUser.mockRejectedValue(new AppError("unauthorized"));
-    const r = await deleteAccount(post());
+    const r = await deleteAccount(post({ cookie: "sb-p-auth-token=dead; theme=dark" }));
     expect([r.status, (await body(r)).error?.code]).toEqual([401, "unauthorized"]);
     expect(m.deleteUser).not.toHaveBeenCalled();
+    expect(r.headers.getSetCookie()).toEqual(["sb-p-auth-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"]);
   });
 
-  it("a request from another site gets 403 and nothing is deleted", async () => {
-    const r = await deleteAccount(post({ "sec-fetch-site": "cross-site", origin: "https://evil.test" }));
+  it("a repeat call after a successful delete is a 401 (a deleted user cannot pass requireUser) that clears the cookies again", async () => {
+    await deleteAccount(post({ cookie: "sb-p-auth-token=abc" }));
+    m.requireUser.mockRejectedValue(new AppError("unauthorized"));
+    const r = await deleteAccount(post({ cookie: "sb-p-auth-token=abc" }));
+    expect(r.status).toBe(401);
+    expect(r.headers.getSetCookie()).toHaveLength(1);
+  });
+
+  it("a request from another site gets 403, nothing is deleted and no cookie is touched", async () => {
+    const r = await deleteAccount(post({ "sec-fetch-site": "cross-site", origin: "https://evil.test", cookie: "sb-p-auth-token=abc" }));
     expect(r.status).toBe(403);
+    expect(r.headers.getSetCookie()).toEqual([]);
     expect(m.deleteUser).not.toHaveBeenCalled();
     expect(m.requireUser).not.toHaveBeenCalled();
   });
 
-  it("rows left behind are an error, never ok, and the tables are named in the log, not in the answer", async () => {
+  it("rows left behind are an error, never ok, and the tables are named in the log, not in the answer; the cookies are expired anyway because the user is gone", async () => {
     m.counts.set("plan_items", { count: 2, error: null });
-    const r = await deleteAccount(post());
+    const r = await deleteAccount(post({ cookie: "sb-p-auth-token=abc" }));
     expect(r.status).toBe(500);
+    expect(r.headers.getSetCookie()).toHaveLength(1);
     const b = await body(r);
     expect(b.ok).toBeUndefined();
     expect(b.error?.code).toBe("internal");
@@ -117,21 +137,34 @@ describe("POST /api/account/delete", () => {
     expect((await deleteAccount(post())).status).toBe(500);
   });
 
-  it("when the admin API fails the answer is 503 and the user is told nothing about why", async () => {
+  it("a count that fails once is tried once more, and a second failure is the answer", async () => {
+    m.countQueue.set("persona_facts", [{ count: null, error: { message: "timeout" } }]);
+    const healed = await deleteAccount(post());
+    expect(healed.status).toBe(200);
+    expect(m.eqCalls.filter((c) => c[0] === "persona_facts")).toHaveLength(2);
+    m.eqCalls.length = 0;
+    m.countQueue.set("persona_facts", [
+      { count: null, error: { message: "timeout" } },
+      { count: null, error: { message: "timeout" } },
+    ]);
+    expect((await deleteAccount(post())).status).toBe(500);
+    expect(m.eqCalls.filter((c) => c[0] === "persona_facts")).toHaveLength(2);
+  });
+
+  it("a clean first count is not repeated", async () => {
+    await deleteAccount(post());
+    expect(m.eqCalls).toHaveLength(OWNER_TABLES.length);
+  });
+
+  it("when the admin API fails the answer is 503, the user is told nothing about why, and the session is NOT expired (the user still exists)", async () => {
     m.deleteUser.mockResolvedValue({ data: null, error: { status: 500, message: "secret socket detail" } });
-    const r = await deleteAccount(post());
+    const r = await deleteAccount(post({ cookie: "sb-p-auth-token=abc" }));
+    expect(r.headers.getSetCookie()).toEqual([]);
     const text = JSON.stringify(await body(r));
     expect(r.status).toBe(503);
     for (const s of SECRETS) expect(text).not.toContain(s);
     expect(m.logError).toHaveBeenCalledWith("account_delete_failed", expect.any(AppError));
     expect(m.eqCalls).toEqual([]);
-  });
-
-  it("a user who is already gone is deleted idempotently: the rows are still verified", async () => {
-    m.deleteUser.mockResolvedValue({ data: null, error: { status: 404, code: "user_not_found", message: "x" } });
-    const r = await deleteAccount(post());
-    expect(r.status).toBe(200);
-    expect(m.eqCalls).toHaveLength(OWNER_TABLES.length);
   });
 
   it("never writes the user id or hash to a log line", async () => {
@@ -154,7 +187,7 @@ describe("GET /api/account/export", () => {
     expect(m.rpc).toHaveBeenCalledWith("core_export_my_data");
     expect(r.headers.get("content-disposition")).toBe('attachment; filename="rumi-export.json"');
     expect(r.headers.get("cache-control")).toBe("no-store");
-    expect(r.headers.get("x-request-id")).toBe("req-2");
+    expect(r.headers.get("x-request-id")).toBe(REQ2);
     expect(JSON.parse(await r.text())).toEqual({ plan_items: [{ text: "a" }], persona_facts: [] });
   });
 
@@ -180,16 +213,68 @@ describe("GET /api/account/export", () => {
   });
 });
 
-describe("OWNER_TABLES", () => {
-  const dir = fileURLToPath(new URL("../../../../supabase/migrations/", import.meta.url));
-  // The migrations live in the db lane's folder; this check runs wherever they are present (after merge and in CI).
-  it.skipIf(!existsSync(dir))("lists every table in the migrations that has an owner_id column", () => {
-    const sql = readdirSync(dir)
+describe("OWNER_TABLES stays in step with the migrations", () => {
+  const repoDir = fileURLToPath(new URL("../../../../supabase/migrations/", import.meta.url));
+  const dir = (process.env.RUMI_MIGRATIONS_DIR ?? repoDir).replace(/[\\/]*$/, "/");
+  const present = existsSync(dir);
+  // The migrations belong to the db lane. Where they are not visible these checks are skipped, unless CI (or RUMI_REQUIRE_LANES)
+  // says every lane must be present: then a missing folder is a failure, not a silent pass. RUMI_MIGRATIONS_DIR points elsewhere.
+  const required = Boolean(process.env.CI || process.env.RUMI_REQUIRE_LANES);
+
+  const sql = (): string =>
+    readdirSync(dir)
       .filter((f) => f.endsWith(".sql"))
+      .sort()
       .map((f) => readFileSync(`${dir}${f}`, "utf8"))
       .join("\n");
-    const owned = [...sql.matchAll(/create table (?:if not exists )?public\.(\w+)\s*\(([\s\S]*?)\n\);/gi)].filter((t) => /\bowner_id\b/.test(t[2])).map((t) => t[1]);
+  const hasExport = present && /function public\.core_export_my_data/i.test(sql());
+
+  it.runIf(required)("the migrations folder is present when lanes are required", () => {
+    expect(present, `migrations not found at ${dir}; set RUMI_MIGRATIONS_DIR`).toBe(true);
+  });
+
+  it.skipIf(!present)("lists every table in the migrations that has an owner_id column", () => {
+    const owned = ownerTablesOf(sql());
     expect(owned.length).toBeGreaterThan(0);
     expect([...OWNER_TABLES].sort()).toEqual(owned.sort());
   });
+
+  it.skipIf(!hasExport)("is the same list core_export_my_data exports", () => {
+    expect([...OWNER_TABLES].sort()).toEqual(exportedTablesOf(sql()).sort());
+  });
+
+  it("the parsers read the shapes they are meant to (so a format change fails here, not silently)", () => {
+    const sample = [
+      "create table public.a (",
+      "  id int,",
+      "  owner_id uuid",
+      ");",
+      "create table public.b (",
+      "  id int",
+      ") partition by range (id);",
+      "create table public.d (",
+      "  id int",
+      ");",
+      "create or replace function public.core_export_my_data()",
+      "returns jsonb as $$",
+      "begin",
+      "  for t in select unnest(array[",
+      "    'a', 'c'",
+      "  ]) loop null; end loop;",
+      "end $$;",
+    ].join("\n");
+    expect(ownerTablesOf(sample)).toEqual(["a"]);
+    expect(exportedTablesOf(sample)).toEqual(["a", "c"]);
+  });
 });
+
+function ownerTablesOf(sql: string): string[] {
+  return [...sql.matchAll(/create table (?:if not exists )?public\.(\w+)\s*\(([\s\S]*?)\n\)[^;]*;/gi)].filter((t) => /\bowner_id\b/.test(t[2])).map((t) => t[1]);
+}
+
+/** The quoted names in the array of core_export_my_data: the tables the export reads. */
+function exportedTablesOf(sql: string): string[] {
+  const body = /function public\.core_export_my_data[\s\S]*?\bend \$\$;/i.exec(sql)?.[0] ?? "";
+  const list = /array\[([^\]]*)\]/i.exec(body)?.[1] ?? "";
+  return [...list.matchAll(/'(\w+)'/g)].map((t) => t[1]);
+}

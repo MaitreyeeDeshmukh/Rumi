@@ -1,6 +1,6 @@
 import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
-import { createAuthController, MAX_SIGN_IN_TRIES, type AuthClientLike, type AuthDeps } from "@/features/auth/authController";
+import { createAuthController, EMAIL_COOLDOWN_MS, MAX_SIGN_IN_TRIES, RETRY_COOLDOWN_MS, type AuthClientLike, type AuthDeps } from "@/features/auth/authController";
 
 const ME = "00000000-0000-4000-8000-0000000000aa";
 const OLD = "00000000-0000-4000-8000-0000000000bb";
@@ -14,6 +14,8 @@ const failedWith = (error: unknown): Reply => ({ data: { session: null }, error 
 function setup(options: { session?: { user: { id: string; is_anonymous?: boolean } } | null; signIns?: Array<Reply | Error>; online?: boolean; last?: string | null; captcha?: string | undefined; configured?: boolean } = {}) {
   let online = options.online ?? true;
   let last = options.last ?? null;
+  let clock = 1_000_000;
+  let emailAt: number | null = null;
   const signInQueue = [...(options.signIns ?? [signedIn()])];
   const listeners: Listener[] = [];
   let netHandler: ((online: boolean) => void) | undefined;
@@ -39,6 +41,8 @@ function setup(options: { session?: { user: { id: string; is_anonymous?: boolean
     onNetworkChange: (h) => ((netHandler = h), () => (netHandler = undefined)),
     sleep: (ms) => (sleeps.push(ms), Promise.resolve()),
     random: () => 0.5,
+    now: () => clock,
+    emailSentAt: { get: () => emailAt, set: (t) => (emailAt = t) },
     lastUser: { get: () => last, set: (id) => (last = id) },
     getCaptchaToken: options.captcha === undefined ? undefined : () => Promise.resolve(options.captcha),
     redirectTo: () => "https://rumi.test",
@@ -52,6 +56,8 @@ function setup(options: { session?: { user: { id: string; is_anonymous?: boolean
     network: (value: boolean) => ((online = value), netHandler?.(value)),
     setOnline: (value: boolean) => (online = value),
     last: () => last,
+    tick: (ms: number) => (clock += ms),
+    emailAt: () => emailAt,
     listenerCount: () => listeners.length,
   };
 }
@@ -105,8 +111,16 @@ describe("sign-in", () => {
     expect(s.auth.signInAnonymously).toHaveBeenCalledWith({ options: { captchaToken: "tok-123" } });
   });
 
-  it("rate limited (429): tries MAX_SIGN_IN_TRIES times with jittered, growing backoff, then degraded", async () => {
+  it("rate limited (429): one attempt only, no backoff, degraded (the limit is per address and lasts an hour)", async () => {
     const s = setup({ signIns: [failedWith(new AuthApiError("rate limit", 429, "over_request_rate_limit"))] });
+    await started(s);
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+    expect(s.sleeps).toEqual([]);
+    expect(s.controller.getState().status).toBe("degraded");
+  });
+
+  it("a network fault is retried MAX_SIGN_IN_TRIES times with jittered, growing backoff, then degraded", async () => {
+    const s = setup({ signIns: [failedWith(new AuthRetryableFetchError("fetch failed", 0))] });
     await started(s);
     expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(MAX_SIGN_IN_TRIES);
     expect(MAX_SIGN_IN_TRIES).toBe(3);
@@ -197,6 +211,39 @@ describe("retry()", () => {
     expect(s.controller.getState().status).toBe("ready");
   });
 
+  it("accepts one retry per cooldown: a button pressed again and again cannot hammer Auth", async () => {
+    const s = setup({ signIns: [failedWith(new AuthApiError("x", 429, "over_request_rate_limit"))] });
+    await started(s);
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
+    s.controller.retry();
+    await settle();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 5; i++) {
+      s.tick(RETRY_COOLDOWN_MS / 10);
+      s.controller.retry();
+      await settle();
+    }
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(2);
+    s.tick(RETRY_COOLDOWN_MS);
+    s.controller.retry();
+    await settle();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(3);
+  });
+
+  it("a retry that is refused by the cooldown does not restart the cooldown", async () => {
+    const s = setup({ signIns: [failedWith(new AuthApiError("x", 429, "over_request_rate_limit"))] });
+    await started(s);
+    s.controller.retry();
+    await settle();
+    s.tick(RETRY_COOLDOWN_MS - 1);
+    s.controller.retry();
+    await settle();
+    s.tick(1);
+    s.controller.retry();
+    await settle();
+    expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(3);
+  });
+
   it("does nothing when ready, and two quick retries make one sign-in", async () => {
     const s = setup();
     await started(s);
@@ -206,6 +253,7 @@ describe("retry()", () => {
     const d = setup({ signIns: [failedWith(new AuthApiError("x", 422, "anonymous_provider_disabled")), signedIn()] });
     await started(d);
     d.controller.retry();
+    d.tick(RETRY_COOLDOWN_MS);
     d.controller.retry();
     await settle();
     expect(d.auth.signInAnonymously).toHaveBeenCalledTimes(2);
@@ -323,6 +371,7 @@ describe("upgradeWithEmail", () => {
     await started(s);
     s.auth.updateUser.mockResolvedValueOnce({ data: {}, error: new AuthApiError("A user with this email address has already been registered", 422, "email_exists") });
     const exists = await s.controller.upgradeWithEmail("taken@example.com");
+    s.tick(EMAIL_COOLDOWN_MS);
     s.auth.updateUser.mockResolvedValueOnce({ data: {}, error: null });
     const fresh = await s.controller.upgradeWithEmail("new@example.com");
     expect(exists).toEqual(fresh);
@@ -333,11 +382,44 @@ describe("upgradeWithEmail", () => {
     await started(s);
     s.auth.updateUser.mockResolvedValueOnce({ data: {}, error: new AuthApiError("secret provider text", 429, "over_email_send_rate_limit") });
     const limited = await s.controller.upgradeWithEmail("me@example.com");
-    expect(limited).toEqual({ ok: false, message: "That was too many tries, so wait one minute." });
+    expect(limited.ok).toBe(false);
+    expect(JSON.stringify(limited)).toContain("for everyone");
+    expect(JSON.stringify(limited)).not.toMatch(/minute/i);
+    s.tick(EMAIL_COOLDOWN_MS);
     s.auth.updateUser.mockRejectedValueOnce(new TypeError("Failed to fetch secret"));
     const thrown = await s.controller.upgradeWithEmail("me@example.com");
     expect(thrown.ok).toBe(false);
     expect(JSON.stringify(thrown)).not.toContain("secret");
+  });
+
+  it("one link per device per minute: a second request inside the cooldown is refused before any network call, and allowed after it", async () => {
+    const s = setup();
+    await started(s);
+    await expect(s.controller.upgradeWithEmail("me@example.com")).resolves.toEqual({ ok: true });
+    const again = await s.controller.upgradeWithEmail("other@example.com");
+    expect(again.ok).toBe(false);
+    expect(s.auth.updateUser).toHaveBeenCalledTimes(1);
+    s.tick(EMAIL_COOLDOWN_MS - 1);
+    expect((await s.controller.upgradeWithEmail("me@example.com")).ok).toBe(false);
+    s.tick(1);
+    await expect(s.controller.upgradeWithEmail("me@example.com")).resolves.toEqual({ ok: true });
+    expect(s.auth.updateUser).toHaveBeenCalledTimes(2);
+  });
+
+  it("the cooldown is recorded even when the address is already registered, so it cannot be used to probe", async () => {
+    const s = setup();
+    await started(s);
+    s.auth.updateUser.mockResolvedValueOnce({ data: {}, error: new AuthApiError("registered", 422, "email_exists") });
+    await s.controller.upgradeWithEmail("taken@example.com");
+    expect(s.emailAt()).not.toBeNull();
+    expect((await s.controller.upgradeWithEmail("another@example.com")).ok).toBe(false);
+  });
+
+  it("an invalid address does not start the cooldown", async () => {
+    const s = setup();
+    await started(s);
+    await s.controller.upgradeWithEmail("not an email");
+    expect(s.emailAt()).toBeNull();
   });
 
   it("is refused while saving is paused, and for an identity that already has an email", async () => {

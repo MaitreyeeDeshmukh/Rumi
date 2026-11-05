@@ -2,7 +2,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors";
 import { publicSupabaseConfig } from "./config";
-import { fetchWithTimeout } from "./fetch";
+import { ADMIN_TIMEOUT_MS, timeoutFetch } from "./fetch";
 
 let cached: SupabaseClient | undefined;
 
@@ -17,7 +17,7 @@ export function getAdminClient(): SupabaseClient {
   if (!config || !key) throw new AppError("config");
   cached = createClient(config.url, key, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { fetch: fetchWithTimeout },
+    global: { fetch: timeoutFetch(ADMIN_TIMEOUT_MS) },
   });
   return cached;
 }

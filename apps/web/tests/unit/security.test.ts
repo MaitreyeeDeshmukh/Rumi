@@ -1,18 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 import { assertSameOrigin } from "@/lib/security/origin";
 import { clientIp, createRateLimiter, hashClientIp, type RateLimiter } from "@/lib/security/rateLimit";
 import { guardRequest } from "@/lib/security/guardRequest";
 
 const auth = vi.hoisted(() => ({ requireUser: vi.fn() }));
-const logs = vi.hoisted(() => ({ warn: vi.fn() }));
+const logs = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/lib/auth/requireUser", () => ({ requireUser: auth.requireUser }));
-vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: vi.fn(), error: vi.fn(), warn: logs.warn }) }));
+vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: vi.fn(), error: logs.error, warn: logs.warn }) }));
 
 beforeEach(() => {
+  // On Vercel the platform writes the forwarding headers; these tests simulate that. Without it they are ignored (see below).
+  vi.stubEnv("VERCEL", "1");
+  logs.error.mockReset();
   auth.requireUser.mockReset().mockRejectedValue(new AppError("unauthorized"));
   logs.warn.mockReset();
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 const URL_ = "https://rumi.test/api/plan";
 const req = (headers: Record<string, string>): Request => new Request(URL_, { method: "POST", headers, body: "{}" });
@@ -48,6 +53,30 @@ describe("assertSameOrigin", () => {
     ["neither header", {}],
   ])("rejects %s with 403", (_name, headers) => {
     expect(status(() => assertSameOrigin(req(headers)))).toBe(403);
+  });
+});
+
+describe("clientIp outside Vercel", () => {
+  it("ignores every forwarding header, because a client could have written them", () => {
+    vi.stubEnv("VERCEL", "");
+    const cases: Array<Record<string, string>> = [{ "x-vercel-forwarded-for": "203.0.113.9" }, { "x-real-ip": "203.0.113.7" }, { "x-forwarded-for": "198.51.100.1" }, { "x-forwarded-for": "6.6.6.6, 198.51.100.1", "x-real-ip": "203.0.113.7" }];
+    for (const headers of cases) {
+      expect(clientIp(req(headers))).toBeNull();
+    }
+  });
+
+  it("so rotating a spoofed address does not escape the one shared stricter bucket", async () => {
+    vi.stubEnv("VERCEL", "");
+    const l = createRateLimiter({ now: () => 1 });
+    const spoofed = (i: number): Request => new Request("https://rumi.test/api/plan", { method: "POST", headers: { "sec-fetch-site": "same-origin", "x-real-ip": `203.0.113.${i}` }, body: "{}" });
+    for (let i = 1; i <= 10; i++) await guardRequest(spoofed(i), { limiter: l });
+    const err = await guardRequest(spoofed(11), { limiter: l }).catch((e: unknown) => e);
+    expect((err as AppError).status).toBe(429);
+  });
+
+  it("on Vercel the same headers are used", () => {
+    vi.stubEnv("VERCEL", "1");
+    expect(clientIp(req({ "x-real-ip": "203.0.113.7" }))).toBe("203.0.113.7");
   });
 });
 
@@ -216,7 +245,7 @@ describe("guardRequest", () => {
 
   it("refuses a foreign origin with 403 before it touches the limiter or the auth server", async () => {
     let checked = 0;
-    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
+    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), checkUser: () => ({ ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
     const err = await catchError(() => guardRequest(new Request(URL_, { method: "POST", headers: { origin: "https://evil.test" } }), { limiter: spy }));
     expect(err.status).toBe(403);
     expect([checked, auth.requireUser.mock.calls.length]).toEqual([0, 0]);
@@ -244,11 +273,37 @@ describe("guardRequest", () => {
     expect((await catchError(() => guardRequest(good({ "content-length": "-1" }), { limiter: fresh() }))).status).toBe(400);
   });
 
-  it("requireAuth: a signed-out caller gets 401 and is not counted", async () => {
+  it("requireAuth: a signed-out caller gets 401, counted by address only, never as a user", async () => {
     let checked = 0;
-    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
+    let userChecks = 0;
+    const spy: RateLimiter = { check: () => ((checked += 1), { ok: true }), checkUser: () => ((userChecks += 1), { ok: true }), tracked: () => ({ ips: 0, sessions: 0 }) };
     const err = await catchError(() => guardRequest(good(), { limiter: spy, requireAuth: true }));
-    expect([err.status, err.code, checked]).toEqual([401, "unauthorized", 0]);
+    expect([err.status, err.code, checked, userChecks]).toEqual([401, "unauthorized", 1, 0]);
+  });
+
+  it("the address limit runs BEFORE the Auth call: a limited address never reaches Supabase", async () => {
+    const l = createRateLimiter({ now: () => 5, limits: { perIp: 1 } });
+    await guardRequest(good(), { limiter: l });
+    auth.requireUser.mockClear();
+    const err = await catchError(() => guardRequest(good(), { limiter: l }));
+    expect(err.status).toBe(429);
+    expect(auth.requireUser).not.toHaveBeenCalled();
+  });
+
+  it("a signed-in request counts once against the address and once against the user", async () => {
+    auth.requireUser.mockResolvedValue(alice);
+    const l = createRateLimiter({ now: () => 1, limits: { perIp: 2, perSession: 100 } });
+    await guardRequest(good(), { limiter: l });
+    await guardRequest(good(), { limiter: l });
+    expect((await catchError(() => guardRequest(good(), { limiter: l }))).status).toBe(429);
+  });
+
+  it("a configuration fault in auth is logged at ERROR with the code only, and the caller is served signed out", async () => {
+    auth.requireUser.mockRejectedValue(new AppError("config"));
+    const r = await guardRequest(good(), { limiter: fresh() });
+    expect(r.user).toBeNull();
+    expect(logs.error).toHaveBeenCalledWith("auth_unverified", expect.any(AppError), { code: "config" });
+    expect(logs.warn).not.toHaveBeenCalled();
   });
 
   it("requireAuth: an unreachable auth server is a 503, not a 401", async () => {
@@ -278,6 +333,7 @@ describe("guardRequest never throws a plain Error (07 H-16)", () => {
       check: () => {
         throw new Error("secret detail user text sk-123");
       },
+      checkUser: () => ({ ok: true }),
       tracked: () => ({ ips: 0, sessions: 0 }),
     };
     const err = await guardRequest(good(), { limiter: boom }).catch((e: unknown) => e);

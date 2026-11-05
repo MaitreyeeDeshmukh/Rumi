@@ -21,4 +21,5 @@ export const OWNER_TABLES = [
   "recap_unconfirmed_items",
   "recap_plan_status",
   "persona_facts",
+  "persona_removed",
 ] as const;
