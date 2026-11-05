@@ -6,10 +6,17 @@ import { describe, expect, it } from "vitest";
 const SRC = fileURLToPath(new URL("../../src", import.meta.url));
 
 /** Server-side modules: they hold the Supermemory key, the tag secret or node-only code. */
-const SERVER_ONLY = ["features/memory/smClient", "features/memory/remoteSync", "features/memory/forgetAll", "features/memory/tag"];
+const SERVER_ONLY = ["features/memory/smClient", "features/memory/remoteSync", "features/memory/forgetAll", "features/memory/tag", "features/memory/memoryHandlers"];
 /** Entry points that ship to the browser. */
-// Add features/memory/useMemoryControls.ts here when Phase 2 creates it: it runs in the browser too.
-const CLIENT_ENTRIES = ["features/state/RumiProvider.tsx", "lib/api/client.ts", "features/memory/actions.ts", "features/share/buildShareText.ts", "features/support/card.ts"];
+const CLIENT_ENTRIES = [
+  "features/state/RumiProvider.tsx",
+  "lib/api/client.ts",
+  "lib/api/calls.ts",
+  "features/memory/actions.ts",
+  "features/memory/useMemoryControls.ts",
+  "features/share/buildShareText.ts",
+  "features/support/card.ts",
+];
 
 const IMPORT_RE = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -55,6 +62,10 @@ describe("browser bundle stays free of server modules", () => {
 
   it("no module reachable from RumiProvider, callApi, the memory actions or the builders is a server module", () => {
     for (const server of SERVER_ONLY) expect(rel.some((f) => f.startsWith(server))).toBe(false);
+  });
+
+  it("the new browser entries (task calls, memory hook) are walked and reach the browser code they use", () => {
+    expect(rel).toEqual(expect.arrayContaining(["lib/api/calls.ts", "features/memory/useMemoryControls.ts", "lib/crisis.ts", "lib/literalLint.ts"]));
   });
 
   it("nothing reachable imports a node: module", () => {

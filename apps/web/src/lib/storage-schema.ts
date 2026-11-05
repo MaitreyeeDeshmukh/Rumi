@@ -30,7 +30,8 @@ import { isRecoveryCode } from '@/features/memory/recoveryCode';
 import { presetText } from '@/features/support/presets';
 
 export const MAX_SESSIONS = 20;
-const MAX_SUPPORT_ITEMS = 20;
+/** More than this many support lines are dropped when stored data is read back, so the card refuses to grow past it. */
+export const MAX_SUPPORT_ITEMS = 20;
 const MAX_STORED_TURNS = 40;
 
 export const defaultSettings = (): Settings => ({
@@ -153,6 +154,7 @@ function parseSupportCard(raw: unknown): SupportCard | undefined {
     id: Id.catch('support-card').parse(raw.id),
     items: uniqueBy(items, (i) => i.id).slice(0, MAX_SUPPORT_ITEMS),
     topQuestionIds: validItems(Id, raw.topQuestionIds).slice(0, 2),
+    ...(Number.isSafeInteger(raw.nextCustomId) && (raw.nextCustomId as number) >= 1 && (raw.nextCustomId as number) <= 1_000_000_000 ? { nextCustomId: raw.nextCustomId as number } : {}),
   };
 }
 
