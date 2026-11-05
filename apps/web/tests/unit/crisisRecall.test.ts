@@ -126,6 +126,7 @@ describe("each rule family added in fix round 1 shows the card on its own phrase
   it.each([
     // passive wishes, permanence
     "i want to turn myself off permanently",
+    "maybe i should just turn myself off for good",
     "i dont want to continue living",
     "i do not see why i should keep going",
     "i just want to rest forever",
@@ -166,6 +167,8 @@ describe("each rule family added in fix round 1 shows the card on its own phrase
     "he collapsed and is unconscious",
     "i cannot get any air",
     "she is choking and turning blue",
+    "he is turning blue",
+    "i want too die",
     "my son swallowed a battery",
     "i think i took too much medicine",
     "she is having a seizure",
@@ -206,6 +209,12 @@ describe("each rule family added in fix round 1 shows the card on its own phrase
       "I am done being late to my visits.",
     ]) {
       expect(crisisTier(s), s).not.toBe("certain");
+    }
+  });
+
+  it("words only the broad tier 2 list knows still reach the classifier", () => {
+    for (const s of ["i keep thinking about a massacre at school", "the world would be fine without me", "i keep thinking about a weapon"]) {
+      expect(crisisTier(s), s).not.toBe("none");
     }
   });
 
