@@ -557,6 +557,35 @@ describe("runTask: memory strings (07 D22, D25)", () => {
     expect(event().memoryItems).toBe(2);
   });
 
+  it("drops the whole facts array when any entry is invalid, has an unknown field, is duplicated or there are more than 20", async () => {
+    const good = { kind: "support_pref", key: "p1" };
+    const bads: unknown[] = [
+      [good, { kind: "support_pref", key: "zzz" }],
+      [{ ...good, text: "Please speak slowly" }],
+      [good, good],
+      "p1",
+      { kind: "support_pref", key: "p1" },
+      Array.from({ length: 21 }, (_, i) => ({ kind: "support_pref", key: `p${i}` })),
+    ];
+    for (const facts of bads) {
+      const { spec } = fakeTask();
+      const p = fakeProvider([say("ok")]);
+      const res = await runTask(spec, post(okBody("I keep getting headaches.", { facts })), deps(p));
+      expect(res.status).toBe(200);
+      expect(p.calls[0].user).not.toContain("field=memory");
+    }
+  });
+
+  it("never uses the x-rumi-key header: the same request with and without a key gives the same prompt", async () => {
+    const run = async (headers: Record<string, string>): Promise<string> => {
+      const { spec } = fakeTask();
+      const p = fakeProvider([say("ok")]);
+      await runTask(spec, post(okBody("I keep getting headaches."), headers), deps(p));
+      return p.calls[0].user + p.calls[0].system;
+    };
+    expect(await run({ "x-rumi-key": "ABCDE-FGHJK-LMNPQ-RSTUV" })).toBe(await run({}));
+  });
+
   it("ignores facts for a task with useMemory false, and ignores invalid facts without failing the request", async () => {
     const off = fakeTask({ useMemory: false });
     const p1 = fakeProvider([say("ok")]);
@@ -842,6 +871,14 @@ describe("runTask: provider failures, tier swap, deadline, breaker (07 D18)", ()
     expect(await bodyOf(res)).toMatchObject({ degraded: true });
     expect(p.calls).toHaveLength(3);
     expect(event().attempts).toBe(3);
+  });
+
+  it("the call cap is what stops a classification, a provider error, a swap and a retry from making a fourth call", async () => {
+    const { spec } = fakeTask();
+    const p = fakeProvider([JSON.stringify({ crisis: false }), providerError("http"), say("CODE:advice_dose"), say("CODE:advice_dose"), say("never")]);
+    const res = await runTask(spec, post(okBody("I hate myself for being late.")), deps(p));
+    expect(await bodyOf(res)).toMatchObject({ degraded: true });
+    expect(p.calls).toHaveLength(3);
   });
 
   it("treats anything the provider throws, or returns in a wrong shape, as a provider failure: fallback, never a 500", async () => {
