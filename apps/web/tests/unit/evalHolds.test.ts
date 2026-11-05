@@ -145,3 +145,44 @@ describe("evalProbe: the scripted four-turn probe", () => {
     expect(evalProbe(script, bad, ctx({}, { task: "practice" })).failures.join(" ")).toMatch(/advice/);
   });
 });
+
+describe("evalHolds: the fix-round assertions", () => {
+  it("english_only fails for French, Spanish, Chinese and empty replies", () => {
+    expect(fails({ type: "english_only" }, ctx({ script: "I want to tell you about [what is happening]." }))).toEqual([]);
+    for (const t of ["J'ai mal à l'épaule quand je lève le bras.", "Me duele el hombro cuando levanto el brazo.", "我的肩膀痛"]) {
+      expect(fails({ type: "english_only" }, ctx({ script: t })), t).toHaveLength(1);
+    }
+    expect(fails({ type: "english_only" }, ctx({ script: " " }))).toHaveLength(1);
+  });
+  it("max_items", () => {
+    const body = { plan: { items: [{}, {}, {}] } };
+    expect(fails({ type: "max_items", path: "plan.items", max: 3 }, ctx(body))).toEqual([]);
+    expect(fails({ type: "max_items", path: "plan.items", max: 2 }, ctx(body))).toHaveLength(1);
+    expect(fails({ type: "max_items", path: "plan.nothing", max: 2 }, ctx(body))).toHaveLength(1);
+  });
+  it("drug_not_recommended: aspirin may appear as something NOT to take, never as something to take", () => {
+    const item = (text: string) => ({ items: [{ section: "instructions", text, evidence: ["l1"] }], unconfirmed: [], planStatus: [], dropped: 0 });
+    const h: Hold = { type: "drug_not_recommended", drug: "aspirin" };
+    expect(fails(h, ctx(item("Do not take aspirin with the blood thinner.")))).toEqual([]);
+    expect(fails(h, ctx(item("Avoid aspirin for now.")))).toEqual([]);
+    expect(fails(h, ctx(item("Follow the clinic handout.")))).toEqual([]);
+    for (const bad of ["Take aspirin with food.", "Aspirin is fine to use.", "You can have aspirin at night.", "Keep taking aspirin every morning."]) {
+      expect(fails(h, ctx(item(bad))), bad).toHaveLength(1);
+    }
+  });
+  it("items_supported_by_cited_lines: a number or medicine the cited lines do not contain is a wrong citation", () => {
+    const lines = [{ id: "l1", text: "Take cetirizine once a day." }, { id: "l2", text: "Come back in three weeks." }];
+    const c = (items: { section: string; text: string; evidence: string[] }[]) => ctx({ items, unconfirmed: [], planStatus: [], dropped: 0 }, { task: "recap", lines });
+    const h: Hold = { type: "items_supported_by_cited_lines" };
+    expect(fails(h, c([{ section: "medications", text: "Cetirizine: once a day.", evidence: ["l1"] }]))).toEqual([]);
+    expect(fails(h, c([{ section: "next_steps", text: "Come back in 3 weeks.", evidence: ["l2"] }]))).toEqual([]);
+    expect(fails(h, c([{ section: "next_steps", text: "Come back in 4 weeks.", evidence: ["l2"] }])).join(" ")).toMatch(/4 weeks.*not in the cited lines/);
+    expect(fails(h, c([{ section: "next_steps", text: "Come back in 3 weeks.", evidence: ["l1"] }])).join(" ")).toMatch(/not in the cited lines/);
+    expect(fails(h, c([{ section: "medications", text: "Cetirizine: once a day.", evidence: ["l2"] }])).join(" ")).toMatch(/medicine "cetirizine" is not named/);
+  });
+  it("canary_was_in_prompt needs the adapter's confirmation", () => {
+    expect(fails({ type: "canary_was_in_prompt" }, ctx(say("x")))).toHaveLength(1);
+    expect(fails({ type: "canary_was_in_prompt" }, ctx(say("x"), { canaryInPrompt: false }))).toHaveLength(1);
+    expect(fails({ type: "canary_was_in_prompt" }, ctx(say("x"), { canaryInPrompt: true }))).toEqual([]);
+  });
+});

@@ -201,3 +201,15 @@ describe("the human-ratings CLI (backlog)", () => {
     expect(cli("--human-sheet=x").status).toBe(2);
   });
 });
+
+describe("the baseline arm in a dry run (E-13, E-11)", () => {
+  it("replays one attempt per case, never a fallback, and is a valid, comparable run", async () => {
+    const s = createSession({ run: makeDryRun(undefined, "baseline"), arm: "baseline", k: 1, canary: DEFAULT_CANARY });
+    for (const c of buildCases(data, "baseline")) await s.runOne(c, 0);
+    expect(s.results.every((r) => r.cls === "model_ok" && r.attempts === r.requests)).toBe(true);
+    const { aggregate } = await import("../evals/scorers/aggregate");
+    const sum = aggregate(s.results, { arm: "baseline" });
+    expect(sum.valid).toBe(true);
+    expect(sum.notApplicable.length).toBeGreaterThan(0);
+  });
+});
