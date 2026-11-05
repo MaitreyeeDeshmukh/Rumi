@@ -3,7 +3,7 @@
  * Kept apart from lib/env.ts so this lane does not edit a file other lanes own; the reads are plain and never throw.
  */
 import { timingSafeEqual, createHash } from "node:crypto";
-import { assertRuntimeEnv, ConfigError } from "@/lib/env";
+import { runtimeConfigProblems } from "@/lib/env";
 import { adminConfigProblems } from "@/lib/supabase/admin";
 
 const present = (name: string): boolean => (process.env[name] ?? "").trim() !== "";
@@ -36,16 +36,17 @@ export function readyTokenOk(sent: string | null): boolean {
 }
 
 /**
- * Names of the variables the server cannot run without: the three Supabase ones, plus whatever env.ts says a live
- * request needs (Groq keys and models, SESSION_SECRET in production). The AI rules are env.ts's, not copied here.
+ * Names of what is wrong with the configuration: the Supabase variables, plus everything env.ts reports through
+ * runtimeConfigProblems() (missing Groq keys and SESSION_SECRET, values that fail validation, mock mode on a deployment). Names only.
  */
 export function missingEnvNames(): string[] {
   const names = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"].filter((n) => !present(n)).concat(adminConfigProblems());
   try {
-    assertRuntimeEnv();
-  } catch (e) {
-    // env.ts reports variable names only. Anything else is still a configuration problem, reported without its text.
-    names.push(...(e instanceof ConfigError ? e.names : ["runtime_env"]));
+    // MOCK_AI_ACTIVE is informational (the harness raises an app event for it); a deliberate mock deployment must stay in rotation.
+    for (const n of runtimeConfigProblems()) if (n !== "MOCK_AI_ACTIVE" && !names.includes(n)) names.push(n);
+  } catch {
+    // runtimeConfigProblems reports names only. If it ever throws, that is still a configuration problem, reported without its text.
+    names.push("runtime_env");
   }
   return names;
 }

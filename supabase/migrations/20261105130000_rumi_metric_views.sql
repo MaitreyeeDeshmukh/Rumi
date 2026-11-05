@@ -1,5 +1,5 @@
 -- Rumi operations metrics. Read-only views over ops_ai_events, ops_app_events and ops_ai_usage_daily.
--- Source: supabase/views/metrics.sql from branch agent/prod-observability, shipped as a migration so it runs after v2 (needs ops_app_events and ops_ai_events.cached_tokens).
+-- The one source of the metric views (the observability lane wrote them as supabase/views/metrics.sql; that copy was removed at integration). Runs after v2: needs ops_app_events and ops_ai_events.cached_tokens.
 --
 -- Rules:
 --   * Counts, rates, latencies and cost only. The source tables hold no text and no user id.

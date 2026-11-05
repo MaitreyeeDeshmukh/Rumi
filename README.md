@@ -58,7 +58,7 @@ An uptime monitor that is NOT GitHub or Vercel is required, not optional. It is 
 | `SENTRY_DSN` | Optional, see Sentry below. |
 
 ### Dashboards
-Views in `supabase/views/metrics.sql`. Counts, rates, latency and cost only. No text, no user id. Read them with the Supabase SQL editor (service role).
+Views in `supabase/migrations/20261105130000_rumi_metric_views.sql`. Counts, rates, latency and cost only. No text, no user id. Read them with the Supabase SQL editor (service role).
 | View | Shows |
 | --- | --- |
 | `ops_v_ai_daily` | Per task per day: calls, error rate, fallback rate, p50 and p95 ms, tokens, cached tokens, cost USD |
@@ -166,7 +166,7 @@ Not installed. The adapter and the `beforeSend` scrubber are in `apps/web/src/li
 - Vercel env: `READY_TOKEN` (any long random string, Sensitive), optionally `RELEASE` for manual deploys.
 - GitHub: create the environment `alerts` (Settings, Environments), restrict its deployment branches to `main`, and put these ENVIRONMENT secrets in it: `ALERTS_SUPABASE_URL`, `ALERTS_SUPABASE_KEY`, `ALERTS_APP_URL`, `ALERTS_READY_TOKEN` (same value as `READY_TOKEN`). Optional environment variable `AI_DAILY_GLOBAL_SPEND_CAP_USD`.
 - `ALERTS_SUPABASE_KEY` is a service-role key today, because `ops_alert_snapshot()` is granted to `service_role` only. The workflow only calls that one function, but the key can do more. Swap it for a read-only database role that can execute only `ops_alert_snapshot()` once the database lane creates one. Until then keep it only in the restricted `alerts` environment.
-- Apply the migration that contains `supabase/views/metrics.sql` (it also creates `ops_alert_snapshot()`) before the first deploy of this code.
+- Apply the migration `20261105130000_rumi_metric_views.sql` (it also creates `ops_alert_snapshot()`) before the first deploy of this code.
 
 ## Build the prototype
 Requires Node (version in `.nvmrc`).

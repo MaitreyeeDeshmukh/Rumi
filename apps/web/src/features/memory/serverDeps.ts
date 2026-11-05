@@ -24,8 +24,11 @@ export function makeUserLimit(limiter: RateLimiter): (userId: string) => void {
 export const newUserLimiter = (): RateLimiter => createRateLimiter({ limits: { perIp: 20, perInstance: Number.MAX_SAFE_INTEGER } });
 
 export const routeDeps: RouteDeps = {
-  // guardRequest throws HttpError only: same origin, address rate limit, declared size. Its session cookie is not used here.
-  guard: (req, maxBytes) => void guardRequest(req, { maxBytes }),
+  // guardRequest is async (it verifies the caller with Supabase Auth) and throws AppError only. It must be awaited: a dropped promise would let a refused request through.
+  guard: async (req, maxBytes) => {
+    const { user } = await guardRequest(req, { maxBytes, requireAuth: true });
+    return { userId: user.userId };
+  },
   requireUser,
   getDb: async (req) => (await getServerClient(req)) as unknown as MemoryDb,
   getFlag,

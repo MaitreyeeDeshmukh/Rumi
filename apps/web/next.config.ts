@@ -1,21 +1,10 @@
 import type { NextConfig } from "next";
+import { buildCsp } from "./src/lib/security/csp";
 
 const isDev = process.env.NODE_ENV !== "production";
 
 // Static CSP (no nonces) keeps pages cacheable. Tighten to nonce-based once pages render dynamically.
-const csp = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "media-src 'self' blob:",
-  "connect-src 'self' https://api.cartesia.ai wss://api.cartesia.ai",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
+const csp = buildCsp({ isDev, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL });
 
 // The static preview loads Google Fonts; allow only that extra, and only on /preview.
 const previewCsp = csp

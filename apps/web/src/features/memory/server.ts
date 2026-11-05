@@ -24,8 +24,11 @@ import { MemoryStoreError, type MemoryDb } from './types';
 export const MAX_BODY_BYTES = 32_000;
 
 export interface RouteDeps {
-  /** Same origin, rate limit and declared size. Throws HttpError. */
-  guard: (req: Request, maxBytes: number) => void;
+  /**
+   * Same origin, declared size, address limit and (when it can) the verified caller. Async: it asks Supabase Auth. Throws AppError or HttpError.
+   * It may return the user it already verified, so the route does not ask Auth a second time.
+   */
+  guard: (req: Request, maxBytes: number) => void | Promise<void | { userId: string }>;
   requireUser: (req: Request) => Promise<{ userId: string }>;
   /** A database client that acts as the signed-in user (cookie-bound, publishable key). */
   getDb: (req: Request) => Promise<MemoryDb>;
@@ -94,8 +97,8 @@ async function run(req: Request, route: string, work: (log: Logger, requestId: s
   const requestId = sent !== null && REQUEST_ID_RE.test(sent) ? sent : newRequestId();
   const log = (deps.createLog ?? createLogger)({ requestId, route });
   try {
-    deps.guard(req, MAX_BODY_BYTES);
-    const { userId } = await deps.requireUser(req);
+    const verified = await deps.guard(req, MAX_BODY_BYTES);
+    const { userId } = verified ?? (await deps.requireUser(req));
     deps.userLimit(userId);
     return await work(log, requestId, userId);
   } catch (e) {

@@ -252,8 +252,8 @@ describe("alerts-check.mjs", () => {
   });
 });
 
-describe("supabase/views/metrics.sql", () => {
-  const sql = readFileSync(root("supabase/views/metrics.sql"), "utf8");
+describe("supabase/migrations/20261105130000_rumi_metric_views.sql (the one source of the metric views)", () => {
+  const sql = readFileSync(root("supabase/migrations/20261105130000_rumi_metric_views.sql"), "utf8");
   const views = ["ops_v_ai_daily", "ops_v_app_errors_daily", "ops_v_usage_today", "ops_v_ai_recent_30m"];
 
   it("defines every view as security_invoker and reads it only through service_role", () => {

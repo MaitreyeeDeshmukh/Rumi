@@ -1,8 +1,10 @@
 /**
  * The anonymous flow in a real browser (MOCK_AI=1, Supabase answered by tests/e2e/supabaseMock.ts, nothing leaves the machine).
  *
- * Runs now: the mock itself, and "Supabase is unreachable" for every page (the app still works, axe is clean, no page
- * error, and no browser request ever carries a secret). Waiting for lanes: the blocks marked `describe.skip` below.
+ * Runs now: the mock itself, "Supabase is unreachable" for every page (the app still works, axe is clean, no page
+ * error, and no browser request ever carries a secret), and the anonymous sign-in on page load (needs RUMI_E2E_AUTH=1 and a
+ * build with NEXT_PUBLIC_SUPABASE_URL=https://rumi-ci.supabase.test). Still skipped: the tests that need UI that does not exist yet,
+ * each marked `test.fixme` below with the missing piece named.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
@@ -95,12 +97,12 @@ test.describe("Supabase is unreachable: every page still works", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Waiting for lane auth: AuthProvider (src/features/auth/AuthProvider.tsx) must sign in anonymously and show the paused line;
-// waiting for lane persona and the UI owner: the consent control, the save action and the "data on this device only"
-// notice. Set RUMI_E2E_AUTH=1 (CI e2e job) once they are merged and replace `describe.skip` with `describe`.
-// The visible texts live in `UI` above; confirm each one against the merged UI.
+// AuthProvider is mounted in layout.tsx and signs in anonymously, so the first test runs. The others need UI that belongs to
+// the UI lane and is not in this branch: nothing renders the paused-saving line (useAuth().status is not shown anywhere), and
+// there is no cloud-sync consent control, "Save plan" button or "data on this device only" notice. They stay as test.fixme
+// until that UI lands; then change test.fixme back to test and confirm the texts in `UI` above against it.
 // ---------------------------------------------------------------------------------------------------------------------
-test.describe.skip("anonymous flow with a working Supabase [waiting for lanes auth, persona]", () => {
+test.describe("anonymous flow with a working Supabase", () => {
   test.skip(process.env.RUMI_E2E_AUTH !== "1", "set RUMI_E2E_AUTH=1 (the CI e2e job does)");
 
   test("a fresh browser signs in anonymously without being asked, and the page stays usable", async ({ page, context }) => {
@@ -111,7 +113,8 @@ test.describe.skip("anonymous flow with a working Supabase [waiting for lanes au
     expect(await page.locator("body").innerText()).not.toContain(UI.pausedLine);
   });
 
-  test("saving a plan with consent writes to Supabase as the signed-in user, then keeps working offline and syncs on reconnect", async ({ page, context }) => {
+  // Needs UI lane: a cloud-sync consent checkbox and a "Save plan" button. Neither exists in the built app.
+  test.fixme("saving a plan with consent writes to Supabase as the signed-in user, then keeps working offline and syncs on reconnect", async ({ page, context }) => {
     const mock = await mockSupabase(context);
     await page.goto("/");
     await expect.poll(() => mock.to("/auth/v1/signup").length).toBe(1);
@@ -133,7 +136,8 @@ test.describe.skip("anonymous flow with a working Supabase [waiting for lanes au
     await expect.poll(() => mock.to("/rest/v1/").filter((c) => c.method !== "GET").length, { message: "sync after reconnect" }).toBeGreaterThan(before);
   });
 
-  test("clearing site data shows the 'data on this device only' notice", async ({ page, context }) => {
+  // Needs UI lane: the "data on this device only" notice (shown when the identity changed). Not in the built app.
+  test.fixme("clearing site data shows the 'data on this device only' notice", async ({ page, context }) => {
     await mockSupabase(context);
     await page.goto("/");
     await context.clearCookies();
@@ -145,7 +149,8 @@ test.describe.skip("anonymous flow with a working Supabase [waiting for lanes au
     await expect(page.getByText(UI.deviceOnlyNotice)).toBeVisible();
   });
 
-  test("axe passes on the signed-in state and the notice state", async ({ page, context }) => {
+  // Needs UI lane: the notice state it checks does not exist (the signed-in half is covered by the per-page axe tests above).
+  test.fixme("axe passes on the signed-in state and the notice state", async ({ page, context }) => {
     await mockSupabase(context);
     await page.goto("/");
     await expect(page.locator("main")).toBeVisible();
@@ -158,7 +163,8 @@ test.describe.skip("anonymous flow with a working Supabase [waiting for lanes au
   });
 });
 
-test.describe.skip("sign-in refused [waiting for lane auth]", () => {
+// Needs UI lane: nothing renders the paused-saving line from useAuth().status yet, so these cannot find it.
+test.describe.fixme("sign-in refused", () => {
   test.skip(process.env.RUMI_E2E_AUTH !== "1", "set RUMI_E2E_AUTH=1 (the CI e2e job does)");
 
   for (const mode of ["anonymous_disabled", "rate_limited", "down"] as const) {
