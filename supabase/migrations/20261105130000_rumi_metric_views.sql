@@ -9,6 +9,9 @@
 --     Crisis, rate_limited, invalid_input, unauthorized and config_error never reached it, so they are not in the error rate.
 --   * "Error" = provider_error, timeout. "Degraded" = the deterministic fallback was served.
 
+set local lock_timeout = '3s';
+set local statement_timeout = '60s';
+
 create or replace view public.ops_v_ai_daily with (security_invoker = true) as
 select
   (created_at at time zone 'utc')::date                                              as day,
@@ -80,10 +83,17 @@ comment on view public.ops_v_usage_today is '[OPS][SERVICE-ONLY] Today''s usage 
 comment on view public.ops_v_ai_recent_30m is '[OPS][SERVICE-ONLY] Provider calls, errors and fallbacks in the last 30 minutes. Alert job reads it.';
 
 -- One call for the alert job (service_role only), so it does not read tables directly.
--- Shape: { at, ai_30m: {calls, error_calls, degraded_calls}, usage_today: {global_calls, global_cost_usd},
---          app_events_30m: {<area>: count}, default_partition_rows: bool }
+-- SECURITY DEFINER (owner postgres): it also reads cron.job_run_details and auth.users, which service_role may not.
+-- Shape (final):
+--   { at, ai_30m: {calls, error_calls, degraded_calls},
+--     usage_today: {global_calls, global_cost_usd},
+--     app_events_30m: {<area>: count},
+--     default_partition_rows: bool,
+--     last_maintenance: {partitions|retention|prune|anon-purge|health: {status, at}},   -- latest pg_cron run per job; null/null = never ran
+--     anon_purge_enabled: bool,
+--     anonymous_user_backlog: int }                                                      -- anonymous users past the purge age (counted up to 100000)
 create or replace function public.ops_alert_snapshot()
-returns jsonb language sql stable security invoker set search_path = '' as $$
+returns jsonb language sql security definer set search_path = '' as $$
   select jsonb_build_object(
     'at', now(),
     'ai_30m', (select to_jsonb(r) from public.ops_v_ai_recent_30m r),
@@ -91,8 +101,14 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
                     from public.ops_ai_usage_daily where day = (now() at time zone 'utc')::date and bucket = 'global'),
     'app_events_30m', (select coalesce(jsonb_object_agg(area, n), '{}'::jsonb)
                        from (select area, count(*) as n from public.ops_app_events where created_at >= now() - interval '30 minutes' group by area) a),
-    'default_partition_rows', exists (select 1 from public.ops_app_events_default) or exists (select 1 from public.ops_ai_events_default));
+    'default_partition_rows', exists (select 1 from public.ops_app_events_default) or exists (select 1 from public.ops_ai_events_default),
+    'last_maintenance', (select coalesce(jsonb_object_agg(substr(j.jobname, 12), jsonb_build_object('status', d.status, 'at', d.start_time)), '{}'::jsonb)
+                         from cron.job j
+                         left join lateral (select r.status, r.start_time from cron.job_run_details r where r.jobid = j.jobid order by r.start_time desc limit 1) d on true
+                         where j.jobname like 'rumi-maint-%'),
+    'anon_purge_enabled', coalesce((select f.enabled from public.ops_feature_flags f where f.key = 'anon_purge_enabled'), false),
+    'anonymous_user_backlog', (select count(*) from private.anon_purge_candidate_ids(100000)));
 $$;
 revoke execute on function public.ops_alert_snapshot() from public, anon, authenticated;
 grant  execute on function public.ops_alert_snapshot() to service_role;
-comment on function public.ops_alert_snapshot() is '[OPS][SERVICE-ONLY] One-row JSON for the alert job: AI errors and fallbacks (30 min), global usage today, app events by area (30 min), default-partition rows.';
+comment on function public.ops_alert_snapshot() is '[OPS][SERVICE-ONLY] One-row JSON for the alert job: AI errors and fallbacks (30 min), global usage today, app events by area (30 min), default-partition rows, latest cron run per maintenance job, purge flag, anonymous-user backlog.';

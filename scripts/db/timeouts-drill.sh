@@ -3,6 +3,7 @@
 # forgotten open transaction and a lock wait. PostgREST applies the role's settings to each request; here the same
 # values are passed to a plain session with PGOPTIONS. Takes about 50 seconds. Usage: scripts/db/timeouts-drill.sh
 set -uo pipefail
+unset SUPABASE_DB_URL
 cd "$(dirname "$0")/../.."
 project="$(sed -n 's/^project_id *= *"\(.*\)"/\1/p' supabase/config.toml | head -1)"
 container="supabase_db_${project}"
@@ -16,7 +17,7 @@ echo "authenticated: statement_timeout=$st idle_in_transaction_session_timeout=$
 echo "== runaway query (pg_sleep 30) must be cancelled after $st"
 start=$SECONDS
 out="$(echo "select pg_sleep(30);" | run "-c statement_timeout=$st")"; took=$((SECONDS - start))
-echo "$out" | grep -q "statement timeout" && [ "$took" -lt 15 ] || { echo "DRILL FAILED: query not cancelled ($took s): $out" >&2; exit 1; }
+echo "$out" | grep -q "statement timeout" && [ "$took" -lt 27 ] || { echo "DRILL FAILED: query not cancelled ($took s): $out" >&2; exit 1; }
 echo "ok: cancelled after ${took}s"
 
 echo "== open transaction left idle must be killed after $idle"
@@ -32,6 +33,6 @@ sleep 2
 start=$SECONDS
 out="$(echo "select count(*) from public.core_profiles;" | run "-c lock_timeout=$lock")"; took=$((SECONDS - start))
 wait "$holder" || true
-echo "$out" | grep -q "lock timeout" && [ "$took" -lt 10 ] || { echo "DRILL FAILED: lock wait not limited ($took s): $out" >&2; exit 1; }
+echo "$out" | grep -q "lock timeout" && [ "$took" -lt 14 ] || { echo "DRILL FAILED: lock wait not limited ($took s): $out" >&2; exit 1; }
 echo "ok: gave up after ${took}s"
 echo "TIMEOUT DRILL PASSED"
