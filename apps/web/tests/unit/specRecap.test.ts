@@ -112,6 +112,13 @@ describe("recapSpec finalize", () => {
     expect(reply.planStatus.find((p) => p.itemId === "real-1")).toMatchObject({ status: "asked_by_other" });
   });
 
+  it("a status the model gives for a plan label is applied to the real plan item, not lost", () => {
+    const plan = { ...DEMO_PLAN, items: DEMO_PLAN.items.map((i, n) => ({ ...i, id: `real-${n + 1}` })) };
+    // The lines would say asked_by_me for q2; the model says unclear, which the check accepts as a safe answer.
+    const reply = finalize(out([], [{ itemId: "q2", status: "unclear", evidence: [] }]), { ...R, plan });
+    expect(reply.planStatus.find((p) => p.itemId === "real-2")).toMatchObject({ status: "unclear", evidence: [] });
+  });
+
   it("a speaker claim the lines contradict is corrected by code (Mom spoke q1, not Sam)", () => {
     const o = labelled();
     o.planStatus = o.planStatus.map((p) => (p.itemId === "q1" ? { ...p, status: "asked_by_me" as const } : p));
