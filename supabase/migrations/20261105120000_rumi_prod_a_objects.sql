@@ -32,7 +32,7 @@ create trigger ops_feature_flags_touch before update on public.ops_feature_flags
   for each row execute function private.touch_updated_at();
 
 insert into public.ops_feature_flags (key, enabled) values
-  ('ai_enabled', true), ('memory_sync_enabled', true), ('cloud_sync_enabled', true), ('anon_purge_enabled', false)
+  ('ai_enabled', true), ('memory_sync_enabled', true), ('cloud_sync_enabled', false), ('anon_purge_enabled', false)
 on conflict (key) do nothing;
 
 comment on table public.ops_feature_flags is '[OPS][SERVICE-ONLY] Kill switches read by the server (cached 30 s). Flip with: update public.ops_feature_flags set enabled = false where key = ''ai_enabled''; anon_purge_enabled (default false) arms the anonymous-user purge.';

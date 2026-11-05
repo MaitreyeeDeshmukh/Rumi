@@ -105,7 +105,7 @@ atomic "metric views" "$M" applied_M
 apply "$M" "metric views" applied_M
 
 echo "== the set, on the populated database"
-expect "flags seeded (anon purge off)" "$(q "select string_agg(key || '=' || enabled::text, ',' order by key) from public.ops_feature_flags")" "ai_enabled=true,anon_purge_enabled=false,cloud_sync_enabled=true,memory_sync_enabled=true"
+expect "flags seeded (anon purge off)" "$(q "select string_agg(key || '=' || enabled::text, ',' order by key) from public.ops_feature_flags")" "ai_enabled=true,anon_purge_enabled=false,cloud_sync_enabled=false,memory_sync_enabled=true"
 expect "valid persona row kept" "$(q "select count(*) from public.persona_facts where kind = 'support_pref' and key = 'p1'")" "1"
 expect "existing rows got client_updated_at" "$(q "select count(*) from public.persona_facts where client_updated_at is not null")" "1"
 echo "ROLLBACK DRILL PASSED"
