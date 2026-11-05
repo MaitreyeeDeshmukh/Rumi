@@ -24,8 +24,8 @@ begin
   select md5('u' || g)::uuid, k, true, 'v1', now() from generate_series(1, n) g, unnest(array['cloud_sync', 'persona_memory']) k;
   raise notice 'seeded % after % s', 'public.core_consents', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
-  insert into public.plan_visit_plans (id, owner_id, title, main_concern, symptoms_in_my_words)
-  select md5('p' || g)::uuid, md5('u' || g)::uuid, 'synthetic plan ' || g, 'synthetic concern', array['synthetic symptom']
+  insert into public.plan_visit_plans (id, owner_id, title, main_concern, symptoms_in_my_words, created_at, updated_at)
+  select md5('p' || g)::uuid, md5('u' || g)::uuid, 'synthetic plan ' || g, 'synthetic concern', array['synthetic symptom'], now() - (g % 120) * interval '1 day', now() - (g % 120) * interval '1 day'
   from generate_series(1, n) g;
   raise notice 'seeded % after % s', 'public.plan_visit_plans', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
@@ -48,8 +48,8 @@ begin
   from public.plan_support_cards c join public.plan_items pi on pi.plan_id = c.plan_id and pi.position in (0, 1);
   raise notice 'seeded % after % s', 'public.plan_support_top_questions', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
-  insert into public.practice_sessions (id, owner_id, plan_id, focus, status, help_count)
-  select md5('s' || g)::uuid, md5('u' || g)::uuid, md5('p' || g)::uuid, 'whole', 'completed', g % 4
+  insert into public.practice_sessions (id, owner_id, plan_id, focus, status, help_count, created_at, updated_at)
+  select md5('s' || g)::uuid, md5('u' || g)::uuid, md5('p' || g)::uuid, 'whole', 'completed', g % 4, now() - (g % 120) * interval '1 day', now() - (g % 120) * interval '1 day'
   from generate_series(1, n) g;
   raise notice 'seeded % after % s', 'public.practice_sessions', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
@@ -63,8 +63,8 @@ begin
   from public.practice_sessions s join public.plan_items pi on pi.plan_id = s.plan_id;
   raise notice 'seeded % after % s', 'public.practice_item_outcomes', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
-  insert into public.recap_recaps (id, owner_id, plan_id, my_speaker)
-  select md5('r' || g)::uuid, md5('u' || g)::uuid, md5('p' || g)::uuid, 'B' from generate_series(1, n) g where g % 2 = 0;
+  insert into public.recap_recaps (id, owner_id, plan_id, my_speaker, created_at)
+  select md5('r' || g)::uuid, md5('u' || g)::uuid, md5('p' || g)::uuid, 'B', now() - (g % 120) * interval '1 day' from generate_series(1, n) g where g % 2 = 0;
   raise notice 'seeded % after % s', 'public.recap_recaps', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
   insert into public.recap_transcript_lines (owner_id, recap_id, line_no, local_id, speaker, text)
@@ -86,7 +86,12 @@ begin
   from public.recap_recaps r join public.plan_items pi on pi.plan_id = r.plan_id;
   raise notice 'seeded % after % s', 'public.recap_plan_status', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 
-  insert into public.persona_facts (owner_id, kind, key, level)
-  select md5('u' || g)::uuid, 'support_pref', 'pref_' || k, null from generate_series(1, n) g, generate_series(1, 5) k;
+  insert into public.persona_facts (owner_id, kind, key, level, created_at, updated_at)
+  select md5('u' || g)::uuid, 'support_pref', 'p' || k, null, now() - (g % 120) * interval '1 day', now() - (g % 120) * interval '1 day' from generate_series(1, n) g, generate_series(1, 5) k;
+
+  -- the sign-up trigger stamped every settings row with now(): give them the user's age (the touch trigger would undo it)
+  alter table public.core_settings disable trigger core_settings_touch;
+  update public.core_settings s set updated_at = u.created_at from auth.users u where u.id = s.owner_id;
+  alter table public.core_settings enable trigger core_settings_touch;
   raise notice 'seeded % after % s', 'public.persona_facts', round(extract(epoch from clock_timestamp() - t0)::numeric, 1);
 end $$;

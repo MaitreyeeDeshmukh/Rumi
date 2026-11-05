@@ -4,6 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 users="${1:-100000}"
+[[ "$users" =~ ^[0-9]+$ ]] && [ "$users" -ge 6000 ] && [ "$users" -le 1000000 ] || { echo "users must be an integer between 6000 and 1000000" >&2; exit 2; }
+unset SUPABASE_DB_URL
 tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 {
   echo "begin;"

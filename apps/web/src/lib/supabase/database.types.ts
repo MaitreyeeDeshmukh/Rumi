@@ -1635,14 +1635,19 @@ export type Database = {
         Args: {
           p_area: string
           p_code: string
-          p_fingerprint: string
-          p_release: string
-          p_route: string
+          p_fingerprint?: string
+          p_release?: string
+          p_route?: string
           p_source: string
-          p_status: number
+          p_status?: number
         }
         Returns: undefined
       }
+      ops_maint_anon_purge: { Args: Record<PropertyKey, never>; Returns: Json }
+      ops_maint_health: { Args: Record<PropertyKey, never>; Returns: Json }
+      ops_maint_partitions: { Args: Record<PropertyKey, never>; Returns: Json }
+      ops_maint_prune: { Args: Record<PropertyKey, never>; Returns: Json }
+      ops_maint_retention: { Args: Record<PropertyKey, never>; Returns: Json }
       ops_maintenance_daily: { Args: Record<PropertyKey, never>; Returns: Json }
       ops_prune_ai_usage: { Args: { p_keep_days?: number }; Returns: number }
       ops_take_ai_quota: { Args: { p_buckets: string[]; p_limits: number[] }; Returns: boolean }
