@@ -29,6 +29,9 @@ add "RLS off on a new partition table" "alter table public.ops_app_events_defaul
 add "function without search_path" "alter function public.persona_forget_all() reset search_path;"
 add "ops function callable by users" "grant execute on function public.ops_log_app_event(text, text, text, text, text, text, smallint) to authenticated;"
 add "anon may call the export" "grant execute on function public.core_export_my_data() to anon;"
+add "quota function callable by users" "grant execute on function public.ops_take_ai_quota(text[], integer[]) to authenticated;"
+add "alert snapshot callable by users" "grant execute on function public.ops_alert_snapshot() to authenticated;"
+add "tombstone table readable by anon" "grant select on public.persona_removed to anon;"
 add "pg_cron job removed" "select cron.unschedule('rumi-ops-maintenance-daily');"
 
 failed=0

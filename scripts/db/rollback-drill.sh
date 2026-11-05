@@ -48,4 +48,7 @@ expect "valid kind kept" "$(q "select count(*) from public.persona_facts where k
 expect "existing rows got client_updated_at" "$(q "select count(*) from public.persona_facts where client_updated_at is not null")" "1"
 expect "all constraints validated" "$(q "select count(*) from pg_constraint where conrelid in ('public.persona_facts'::regclass,'public.ops_ai_events'::regclass) and not convalidated")" "0"
 expect "cron job scheduled" "$(q "select count(*) from cron.job where jobname='rumi-ops-maintenance-daily'")" "1"
+psql_ --single-transaction -f supabase/migrations/20261105130000_rumi_metric_views.sql >/dev/null
+psql_ --single-transaction -f supabase/migrations/20261105140000_rumi_quota_and_tombstones.sql >/dev/null
+expect "later migrations apply on top (quota function, tombstone table)" "$(q "select (to_regprocedure('public.ops_take_ai_quota(text[],integer[])') is not null and to_regclass('public.persona_removed') is not null and to_regclass('public.ops_v_ai_daily') is not null)::text")" "true"
 echo "ROLLBACK DRILL PASSED"
