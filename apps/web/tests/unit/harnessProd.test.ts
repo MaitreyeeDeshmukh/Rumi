@@ -114,15 +114,36 @@ describe("identity (08 section 1.1)", () => {
     expect(checkAndBump).toHaveBeenCalledWith(expect.objectContaining({ userHash: null }));
   });
 
-  it("a lookup that never answers is given up after 2 s: signed out (optional) or 401 (required)", async () => {
+  it("a lookup that never answers is given up after 2 s: Auth is unavailable (store_unavailable), so signed out (optional) or 503 (required), never 401", async () => {
     vi.useFakeTimers();
     const { spec } = fakeTask();
     const hang = (): Promise<SignedIn> => new Promise(() => undefined);
-    const optional = runTask(spec, post(okBody()), base(fakeProvider([say("fine")]), { requireUser: hang }));
+    const checkAndBump = vi.fn().mockResolvedValue({ ok: true });
+    const optional = runTask(spec, post(okBody()), base(fakeProvider([say("fine")]), { requireUser: hang, checkAndBump }));
     const required = runTask(spec, post(okBody()), base(fakeProvider([]), { requireUser: hang, auth: "required" }));
     await vi.advanceTimersByTimeAsync(2_000);
     expect((await optional).status).toBe(200);
-    expect((await required).status).toBe(401);
+    expect(checkAndBump).toHaveBeenCalledWith(expect.objectContaining({ userHash: null }));
+    const refused = await required;
+    expect(refused.status).toBe(503);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("store_unavailable");
+  });
+
+  it("the timeout is a store_unavailable that guardRequest warns about (not an unauthorized, which is silent)", async () => {
+    vi.useFakeTimers();
+    const { spec } = fakeTask();
+    const warns: string[] = [];
+    setLogSink((l) => warns.push(l));
+    const run = runTask(spec, post(okBody()), base(fakeProvider([say("fine")]), { requireUser: () => new Promise(() => undefined) }));
+    await vi.advanceTimersByTimeAsync(2_000);
+    await run;
+    expect(warns.some((l) => l.includes("auth_unverified") && l.includes("store_unavailable"))).toBe(true);
+  });
+
+  it("a lookup that fails fast with something that is not ours stays a plain unauthorized", async () => {
+    const { spec } = fakeTask();
+    const res = await runTask(spec, post(okBody(), as("abc")), base(fakeProvider([]), { auth: "required", requireUser: () => Promise.reject(new Error("boom")) }));
+    expect(res.status).toBe(401);
   });
 });
 

@@ -104,10 +104,11 @@ const isIdKey = (key: string): boolean => ID_KEYS.has(key);
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const otherTier = (t: Tier): Tier => (t === "quality" ? "fast" : "quality");
-async function within<T>(work: Promise<T>, ms: number): Promise<T> {
+const DEADLINE = "deadline";
+async function within<T>(work: Promise<T>, ms: number, onLate: () => Error = () => new Error(DEADLINE)): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("deadline")), ms);
+    timer = setTimeout(() => reject(onLate()), ms);
   });
   try {
     return await Promise.race([work, late]);
@@ -532,7 +533,9 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       limiter: deps.limiter,
       maxBytes: LIMITS.bodyBytesMax,
       requireAuth: deps.auth === "required",
-      authenticate: mock ? null : (r) => within(lookup(r), AUTH_MS).catch((e: unknown) => Promise.reject(e instanceof AppError ? e : new AppError("unauthorized"))),
+      // A lookup that does not answer in time is Auth being unavailable, not the caller being unauthorized: guardRequest then
+      // logs its warning (and counts an app event) and carries on signed out, or answers 503 on a route that needs a user.
+      authenticate: mock ? null : (r) => within(lookup(r), AUTH_MS, () => new AppError("store_unavailable")).catch((e: unknown) => Promise.reject(e instanceof AppError ? e : new AppError("unauthorized"))),
     });
     user = guard.user;
     ipHash = guard.ipHash;
