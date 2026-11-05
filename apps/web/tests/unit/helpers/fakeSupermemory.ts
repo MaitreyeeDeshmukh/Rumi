@@ -42,7 +42,7 @@ const flat = (m: unknown): boolean =>
   Object.values(m).every((v) => ["string", "number", "boolean"].includes(typeof v) || (Array.isArray(v) && v.every((x) => typeof x === "string")));
 
 export function fakeSupermemory(): FakeSm {
-  const sm: FakeSm = {
+  const sm: Omit<FakeSm, "fetchFn"> = {
     calls: [],
     store: new Map(),
     deleteLag: 0,
@@ -55,13 +55,12 @@ export function fakeSupermemory(): FakeSm {
       if (!d) sm.store.set(ns, (d = new Map()));
       return d;
     },
-    fetchFn: undefined as unknown as typeof fetch,
   };
   const lagging = new Map<string, Map<string, FakeDoc>>();
   let lagLeft = 0;
   const json = (status: number, body: unknown) => new Response(status === 204 ? null : JSON.stringify(body), { status });
 
-  sm.fetchFn = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const handler = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" && init.body ? JSON.parse(init.body) : undefined;
@@ -132,5 +131,5 @@ export function fakeSupermemory(): FakeSm {
     }
     return json(405, {});
   }) as typeof fetch;
-  return sm;
+  return Object.assign(sm, { fetchFn: handler });
 }

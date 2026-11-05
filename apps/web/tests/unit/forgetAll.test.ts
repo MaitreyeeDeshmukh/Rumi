@@ -13,17 +13,29 @@ function clock() {
   return { now: () => t, sleep: async (ms: number) => void (t += ms, sleeps.push(ms)), sleeps };
 }
 
+const nope = async (): Promise<never> => {
+  throw new Error("not used in this test");
+};
+
 function scripted(lists: (SmDoc[] | Error)[]) {
   const dels: string[][] = [];
   let i = 0;
-  const client = {
+  const unused = {
+    add: nope,
+    patch: nope,
+    get: nope,
+    upsert: nope,
+    listPage: nope,
+  };
+  const client: SmClient = {
     listAll: async () => {
       const next = lists[Math.min(i++, lists.length - 1)];
       if (next instanceof Error) throw next;
       return next;
     },
     del: async (_ns: string, ids: readonly string[]) => void dels.push([...ids]),
-  } as unknown as SmClient;
+    ...unused,
+  };
   return { client, dels, listCalls: () => i };
 }
 const doc = (id: string): SmDoc => ({ id });

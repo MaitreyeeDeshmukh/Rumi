@@ -41,7 +41,7 @@ describe("memoryCodeFor", () => {
 describe("syncPersona with memory off", () => {
   it("saves facts on the device and makes no network call", async () => {
     const fetchFn = vi.fn(ok({ saved: 0, rejected: 0 }));
-    const { actions, state, storage } = setup(fetchFn as unknown as typeof fetch);
+    const { actions, state, storage } = setup(fetchFn);
     expect(await actions.syncPersona()).toEqual({ saved: 3, remote: "off" });
     expect(fetchFn).not.toHaveBeenCalled();
     const ids = ["support_pref:p1", "support_pref:p2", "pacing:one_question"];
@@ -75,7 +75,7 @@ describe("enableMemory", () => {
 
   it("does not switch memory on when the code cannot be saved on this device, and sends nothing", async () => {
     const fetchFn = vi.fn(ok({ saved: 0, rejected: 0 }));
-    const { actions, state, storage } = setup(fetchFn as unknown as typeof fetch);
+    const { actions, state, storage } = setup(fetchFn);
     storage.failWrites = new DOMException("full", "QuotaExceededError");
     expect(await actions.enableMemory()).toEqual({ ok: false, remote: "failed" });
     expect(state().settings.memoryOptIn).toBe(false);
@@ -92,7 +92,7 @@ describe("syncPersona with memory on", () => {
       ok({ unexpected: true }),
       async () => new Response("not json", { status: 200 }),
     ]) {
-      const { actions, state } = setup(fetchFn as unknown as typeof fetch);
+      const { actions, state } = setup(fetchFn);
       const r = await actions.enableMemory();
       expect(r.remote).toBe("failed");
       expect(state().persona.facts.length).toBeGreaterThan(0);
@@ -223,7 +223,7 @@ describe("forgetAll and deleteEverything", () => {
 
   it("an error, a bad answer or a timeout is failed too", async () => {
     for (const fetchFn of [async () => new Response("x", { status: 500 }), ok({ status: "maybe" }), ok({}), async () => Promise.reject(new Error("net"))]) {
-      const { actions, state, store } = setup(fetchFn as unknown as typeof fetch);
+      const { actions, state, store } = setup(fetchFn);
       store.update((d) => {
         d.persona.recoveryCode = CODE;
         d.settings.memoryOptIn = true;
@@ -235,7 +235,7 @@ describe("forgetAll and deleteEverything", () => {
 
   it("with no code there is nothing remote: local facts are cleared and remote is off", async () => {
     const fetchFn = vi.fn(ok({ status: "ok" }));
-    const { actions, state } = setup(fetchFn as unknown as typeof fetch);
+    const { actions, state } = setup(fetchFn);
     await actions.syncPersona();
     expect(state().persona.facts.length).toBeGreaterThan(0);
     expect(await actions.forgetAll()).toEqual({ remote: "off" });
@@ -269,7 +269,7 @@ describe("forgetAll and deleteEverything", () => {
 
   it("delete everything with no code resets the device without any request", async () => {
     const fetchFn = vi.fn(ok({ status: "ok" }));
-    const { actions, state } = setup(fetchFn as unknown as typeof fetch);
+    const { actions, state } = setup(fetchFn);
     expect(await actions.deleteEverything()).toEqual({ status: "ok" });
     expect(fetchFn).not.toHaveBeenCalled();
     expect(state()).toEqual(defaultState());
@@ -277,7 +277,7 @@ describe("forgetAll and deleteEverything", () => {
 
   it("if the device cannot be reset, delete everything says failed", async () => {
     const fetchFn = vi.fn(ok({ status: "ok" }));
-    const { actions, storage } = setup(fetchFn as unknown as typeof fetch);
+    const { actions, storage } = setup(fetchFn);
     storage.removeItem = () => {
       throw new Error("blocked");
     };

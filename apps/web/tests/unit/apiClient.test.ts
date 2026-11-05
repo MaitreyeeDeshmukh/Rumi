@@ -11,7 +11,7 @@ const res = (status: number, body: unknown) => new Response(typeof body === "str
 function setup(over: { fetchFn?: typeof fetch; online?: boolean; crisis?: (t: string) => boolean; timeoutMs?: number } = {}) {
   const fetchFn = vi.fn(over.fetchFn ?? (async () => res(200, REPLY)));
   const call = createCallApi({
-    fetchFn: fetchFn as unknown as typeof fetch,
+    fetchFn,
     isCrisis: over.crisis ?? isCrisis,
     isOnline: () => over.online ?? true,
     timeoutMs: over.timeoutMs,
@@ -108,7 +108,7 @@ describe("callApi: failures are friendly and never throw", () => {
     const throwing = setup({
       fetchFn: (() => {
         throw new Error("sync");
-      }) as unknown as typeof fetch,
+      }) as typeof fetch,
     });
     expect(await throwing.go()).toMatchObject({ error: { code: "ai_unavailable" } });
   });
