@@ -118,6 +118,8 @@ export function createMemoryActions({ store, fetchFn, now = () => new Date().toI
       if (ForgetReply.safeParse(answer).data?.status !== 'ok') return { remote: 'failed' };
     }
     store.update((d) => {
+      // Clear only what was erased: a newer code (made in another tab while the request ran) stays.
+      if (d.persona.recoveryCode !== code) return;
       d.persona.facts = [];
       delete d.persona.recoveryCode;
       d.settings.memoryOptIn = false;

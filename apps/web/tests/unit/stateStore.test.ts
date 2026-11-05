@@ -420,3 +420,69 @@ describe("stateStore: data from a newer app version", () => {
     expect(loadState(storage).settings.name).toBe("fresh");
   });
 });
+
+describe("stateStore: updates dropped for a reason", () => {
+  it("a queued update that throws during hydration is counted and its reason is exposed", () => {
+    const store = createStateStore({ storage: fakeStorage() });
+    store.update((d) => void (d.settings.name = "A"));
+    store.update(() => {
+      throw new Error("bug");
+    });
+    store.update((d) => void (d.settings.detail = "detailed"));
+    expect(store.getSnapshot().dropReason).toBeNull();
+    store.hydrate();
+    const s = store.getSnapshot();
+    expect(s.droppedUpdates).toBe(1);
+    expect(s.dropReason).toBe("draft_threw");
+    expect(s.state.settings).toMatchObject({ name: "A", detail: "detailed" });
+  });
+
+  it("a full queue gives the reason queue_full, and the counts add up", () => {
+    const store = createStateStore({ storage: fakeStorage() });
+    store.update(() => {
+      throw new Error("bug");
+    });
+    for (let n = 0; n < MAX_PENDING_UPDATES; n++) store.update(() => undefined);
+    expect(store.getSnapshot().dropReason).toBe("queue_full");
+    store.hydrate();
+    expect(store.getSnapshot().droppedUpdates).toBe(2);
+    expect(store.getSnapshot().dropReason).toBe("draft_threw");
+  });
+});
+
+describe("stateStore: a recovery code inside newer-version data", () => {
+  const CODE_IN_FUTURE = "ABCDE-FGHJK-LMNPQ-RSTUV";
+  const blob = (code: unknown) => JSON.stringify({ version: 2, persona: { recoveryCode: code }, plan: { keep: "me" } });
+
+  it("a valid code is read best-effort, the blob stays untouched and remote writes stay locked", () => {
+    const storage = fakeStorage({ [KEY]: blob(CODE_IN_FUTURE) });
+    const store = createStateStore({ storage });
+    store.hydrate();
+    expect(store.getSnapshot().readOnly).toBe(true);
+    expect(store.getSnapshot().state.persona.recoveryCode).toBe(CODE_IN_FUTURE);
+    expect(store.verifiedRecoveryCode()).toBeUndefined();
+    expect(storage.data.get(KEY)).toBe(blob(CODE_IN_FUTURE));
+  });
+
+  it("an invalid code, a non-string and a missing persona are ignored", () => {
+    for (const code of [CODE_IN_FUTURE + "\n", "abc", 42, null, { x: 1 }]) {
+      const store = createStateStore({ storage: fakeStorage({ [KEY]: blob(code) }) });
+      store.hydrate();
+      expect(store.getSnapshot().state.persona.recoveryCode).toBeUndefined();
+    }
+    const bare = createStateStore({ storage: fakeStorage({ [KEY]: JSON.stringify({ version: 3 }) }) });
+    bare.hydrate();
+    expect(bare.getSnapshot().state.persona.recoveryCode).toBeUndefined();
+  });
+
+  it("a newer app version appearing in another tab brings its code in too", () => {
+    const storage = fakeStorage();
+    const events = fakeEvents();
+    const store = createStateStore({ storage, events });
+    store.start();
+    storage.data.set(KEY, blob(CODE_IN_FUTURE));
+    events.fire({ key: KEY });
+    expect(store.getSnapshot().readOnly).toBe(true);
+    expect(store.getSnapshot().state.persona.recoveryCode).toBe(CODE_IN_FUTURE);
+  });
+});

@@ -25,9 +25,12 @@ export interface StateSnapshot {
   lastSave: SaveResult;
   /** True when storage holds data from a newer app version. The store does not write while this is set. */
   readOnly: boolean;
-  /** How many updates arrived before hydration with the queue already full and were not kept. */
+  /** How many updates were not kept: the queue was full before hydration, or the update function threw. */
   droppedUpdates: number;
+  /** Why the latest one was dropped; null when none was. */
+  dropReason: DropReason | null;
 }
+export type DropReason = 'queue_full' | 'draft_threw';
 export interface StorageEventLike {
   key: string | null;
 }
@@ -57,7 +60,7 @@ export interface StateStore {
   verifiedRecoveryCode(): string | undefined;
 }
 
-const fresh = (): StateSnapshot => ({ state: defaultState(), hydrated: false, lastSave: { ok: true }, readOnly: false, droppedUpdates: 0 });
+const fresh = (): StateSnapshot => ({ state: defaultState(), hydrated: false, lastSave: { ok: true }, readOnly: false, droppedUpdates: 0, dropReason: null });
 const SERVER_SNAPSHOT: StateSnapshot = fresh();
 
 export function createStateStore({ storage, events = null }: StateStoreDeps): StateStore {
@@ -95,7 +98,8 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
       try {
         current = applied(current, fn);
       } catch {
-        // a broken queued update is skipped; the rest still apply
+        // a broken queued update is skipped (and counted); the rest still apply
+        current = { ...current, droppedUpdates: current.droppedUpdates + 1, dropReason: 'draft_threw' };
       }
     }
     publish(current);
@@ -108,7 +112,7 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
         pending.push(fn);
         return 'queued';
       }
-      publish({ ...snapshot, droppedUpdates: snapshot.droppedUpdates + 1 });
+      publish({ ...snapshot, droppedUpdates: snapshot.droppedUpdates + 1, dropReason: 'queue_full' });
       return 'dropped';
     }
     publish(applied(snapshot, fn));
@@ -121,7 +125,8 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
     // A corrupt value from another tab must not blank this one; the next save writes this tab's valid state back.
     if (stored.status === 'corrupt') return;
     if (stored.status === 'future') {
-      publish({ ...snapshot, readOnly: true });
+      const code = snapshot.state.persona.recoveryCode ?? stored.state.persona.recoveryCode;
+      publish({ ...snapshot, readOnly: true, state: code ? { ...snapshot.state, persona: { ...snapshot.state.persona, recoveryCode: code } } : snapshot.state });
       return;
     }
     publish({ ...snapshot, state: stored.state, readOnly: false });
@@ -148,10 +153,12 @@ export function createStateStore({ storage, events = null }: StateStoreDeps): St
         publish({ ...snapshot, lastSave: result });
         return result;
       }
-      publish({ state: defaultState(), hydrated: true, lastSave: result, readOnly: false, droppedUpdates: snapshot.droppedUpdates });
+      publish({ state: defaultState(), hydrated: true, lastSave: result, readOnly: false, droppedUpdates: snapshot.droppedUpdates, dropReason: snapshot.dropReason });
       return result;
     },
     verifiedRecoveryCode() {
+      // Read-only mode never writes, so a code seen in a newer blob must not unlock remote writes.
+      if (snapshot.readOnly) return undefined;
       const inMemory = snapshot.state.persona.recoveryCode;
       return inspectStorage(storage).state.persona.recoveryCode === inMemory ? inMemory : undefined;
     },

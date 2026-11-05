@@ -132,6 +132,15 @@ describe("syncFacts: refused deletes and odd ids", () => {
     expect([...sm.docs(NS).keys()]).toEqual(["support_pref:p1"]);
   });
 
+  it("a long stray id is removed; one too long to send is set aside and does not fail the sync", async () => {
+    const { sm, sync } = setup();
+    sm.docs(NS).set("s".repeat(300), { content: "x", metadata: {} });
+    await expect(sync.syncFacts(NS, [p("p1")])).resolves.toMatchObject({ saved: 1, removed: 1 });
+    sm.docs(NS).set("t".repeat(2001), { content: "x", metadata: {} });
+    await expect(sync.syncFacts(NS, [p("p1")])).resolves.toMatchObject({ saved: 1 });
+    expect(sm.docs(NS).has("t".repeat(2001))).toBe(true);
+  });
+
   it("150 stale documents are all removed even when the listing has no pagination field", async () => {
     const sm = fakeSupermemory();
     const drifted = (async (input: RequestInfo | URL, init?: RequestInit) => {

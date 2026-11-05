@@ -11,7 +11,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { RumiState } from '@/features/shared/types';
 import { browserStorage, type SaveResult } from '@/lib/storage';
-import { createStateStore, type Draft, type StateStore, type UpdateResult } from './stateStore';
+import { createStateStore, type DropReason, type Draft, type StateStore, type UpdateResult } from './stateStore';
 
 const StoreContext = createContext<StateStore | null>(null);
 
@@ -51,6 +51,8 @@ export interface RumiContext {
   readOnly: boolean;
   /** Updates that arrived too early with a full queue and were not kept. */
   droppedUpdates: number;
+  /** Why the latest dropped update was dropped, or null. */
+  dropReason: DropReason | null;
 }
 
 export function useRumi(): RumiContext {
@@ -63,6 +65,7 @@ export function useRumi(): RumiContext {
       lastSave: snap.lastSave,
       readOnly: snap.readOnly,
       droppedUpdates: snap.droppedUpdates,
+      dropReason: snap.dropReason,
       update: store.update,
       reset: store.reset,
     }),

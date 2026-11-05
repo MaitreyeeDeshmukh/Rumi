@@ -93,7 +93,7 @@ describe("smClient delete", () => {
     const { sm, client } = make();
     const ids = Array.from({ length: 250 }, (_, i) => `id_${i}`);
     for (const id of ids) sm.docs(NS).set(id, { content: "c", metadata: {} });
-    expect(await client.del(NS, ids)).toEqual({ failed: [] });
+    expect(await client.del(NS, ids)).toEqual({ failed: [], skipped: [] });
     const sizes = sm.calls.filter((c) => c.method === "DELETE").map((c) => (c.body as { ids: string[] }).ids.length);
     expect(sizes).toEqual([100, 100, 50]);
     expect(sm.docs(NS).size).toBe(0);
@@ -101,7 +101,7 @@ describe("smClient delete", () => {
 
   it("makes no request for an empty list", async () => {
     const { sm, client } = make();
-    expect(await client.del(NS, [])).toEqual({ failed: [] });
+    expect(await client.del(NS, [])).toEqual({ failed: [], skipped: [] });
     expect(sm.calls).toHaveLength(0);
   });
 
@@ -109,15 +109,28 @@ describe("smClient delete", () => {
     const { sm, client } = make();
     sm.docs(NS).set("stray.v1", { content: "c", metadata: {} });
     sm.docs(NS).set("a b/c", { content: "c", metadata: {} });
-    expect(await client.del(NS, ["stray.v1", "a b/c"])).toEqual({ failed: [] });
+    expect(await client.del(NS, ["stray.v1", "a b/c"])).toEqual({ failed: [], skipped: [] });
     expect(sm.docs(NS).size).toBe(0);
   });
 
-  it("an id that is not a sensible string is reported failed without a request", async () => {
+  it("an id that cannot be sent is skipped and reported separately, without a request", async () => {
     const { sm, client } = make();
-    const r = await client.del(NS, ["", "x".repeat(201)]);
-    expect(r.failed).toHaveLength(2);
+    const r = await client.del(NS, ["", "x".repeat(2001)]);
+    expect(r.skipped).toHaveLength(2);
+    expect(r.failed).toEqual([]);
     expect(sm.calls).toHaveLength(0);
+  });
+
+  it("a long id (over 200 characters) is still sent in the body and deleted, never put in a path", async () => {
+    const { sm, client } = make();
+    const long = "s".repeat(300);
+    sm.docs(NS).set(long, { content: "c", metadata: {} });
+    expect(await client.del(NS, [long])).toEqual({ failed: [], skipped: [] });
+    expect(sm.docs(NS).size).toBe(0);
+    expect(sm.calls.every((c) => !c.path.includes("sssss"))).toBe(true);
+    const boundary = "b".repeat(2000);
+    sm.docs(NS).set(boundary, { content: "c", metadata: {} });
+    expect((await client.del(NS, [boundary])).skipped).toEqual([]);
   });
 
   it("ids the server refuses inside a 200 come back as failed", async () => {
@@ -125,15 +138,31 @@ describe("smClient delete", () => {
     sm.docs(NS).set("a", { content: "c", metadata: {} });
     sm.docs(NS).set("b", { content: "c", metadata: {} });
     sm.deleteReport = () => ({ count: 1, errors: [{ id: "a", error: "locked" }] });
-    expect(await client.del(NS, ["a", "b"])).toEqual({ failed: ["a"] });
+    expect(await client.del(NS, ["a", "b"])).toEqual({ failed: ["a"], skipped: [] });
   });
 
-  it("fewer deleted than asked, with no ids named, marks the whole batch as failed", async () => {
+  it("a lower count with no ids named is not a failure (the server may count only ids that still existed)", async () => {
     const { sm, client } = make();
     sm.deleteReport = () => ({ count: 1, errors: [] });
-    expect((await client.del(NS, ["a", "b", "c"])).failed).toEqual(["a", "b", "c"]);
-    sm.deleteReport = () => ({ count: 3, errors: [] });
     expect((await client.del(NS, ["a", "b", "c"])).failed).toEqual([]);
+  });
+
+  it("only the named refusals fail, even when other ids in the batch were not counted", async () => {
+    const { sm, client } = make();
+    sm.deleteReport = () => ({ count: 0, errors: [{ id: "b", error: "locked" }] });
+    expect((await client.del(NS, ["a", "b", "c"])).failed).toEqual(["b"]);
+  });
+
+  it("a 200 whose body cannot be read fails the whole batch; 204 and an empty object are done", async () => {
+    const { sm, client } = make();
+    sm.deleteReport = () => null;
+    expect((await client.del(NS, ["a", "b"])).failed).toEqual(["a", "b"]);
+    sm.deleteReport = () => "done";
+    expect((await client.del(NS, ["a"])).failed).toEqual(["a"]);
+    const garbage = createSmClient({ fetchFn: (async () => new Response("<html>ok</html>", { status: 200 })) as typeof fetch, apiKey: KEY });
+    expect((await garbage.del(NS, ["a"])).failed).toEqual(["a"]);
+    const noContent = createSmClient({ fetchFn: (async () => new Response(null, { status: 204 })) as typeof fetch, apiKey: KEY });
+    expect((await noContent.del(NS, ["a"])).failed).toEqual([]);
   });
 
   it("an answer without count or errors is treated as done (the erase re-lists to check)", async () => {

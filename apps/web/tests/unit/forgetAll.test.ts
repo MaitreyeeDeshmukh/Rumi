@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { forgetNamespace, type ForgetDeps } from "@/features/memory/forgetAll";
 import { createNamespaceQueue, createRemoteSync } from "@/features/memory/remoteSync";
 import { createSmClient, type SmClient, type SmDoc } from "@/features/memory/smClient";
@@ -40,7 +40,7 @@ function scripted(lists: (SmDoc[] | Error)[], tk = clock()) {
     },
     del: async (_ns, ids) => {
       dels.push([...ids]);
-      return { failed: [] };
+      return { failed: [], skipped: [] };
     },
     add: nope,
     patch: nope,
@@ -245,6 +245,19 @@ describe("forgetNamespace: failure and the time budget", () => {
     expect(tk.c.sleeps).toEqual([]);
   });
 
+  it("a 300-character stray id is deleted too, so the erase can finish", async () => {
+    const sm = fakeSupermemory();
+    sm.docs(NS).set("s".repeat(300), { content: "x", metadata: {} });
+    expect(await run(NS, real(sm), clock())).toBe("ok");
+    expect(sm.docs(NS).size).toBe(0);
+  });
+
+  it("an id too long to send that the list still returns is never reported as erased", async () => {
+    const sm = fakeSupermemory();
+    sm.docs(NS).set("t".repeat(2001), { content: "x", metadata: {} });
+    expect(await run(NS, real(sm), clock())).toBe("failed");
+  });
+
   it("an odd remote id is still deleted, so one stray never blocks the erase", async () => {
     const sm = fakeSupermemory();
     sm.docs(NS).set("support_pref:p1", { content: "x", metadata: {} });
@@ -302,5 +315,64 @@ describe("forgetNamespace: one queue per process", () => {
     const methods = sm.calls.map((c) => c.method + (c.path.endsWith("/list/documents") ? ":list" : ""));
     expect(methods.slice(0, 4)).toEqual(["PATCH", "POST", "PATCH", "POST:list"]);
     expect(methods.slice(4, 6)).toEqual(["POST:list", "DELETE"]);
+  });
+});
+
+describe("forgetNamespace: options and clock", () => {
+  /** A sleep that fails the test instead of spinning when a bad option makes the loop hot. */
+  function guardedClock() {
+    const tk = clock();
+    const sleep = async (ms: number) => {
+      if (tk.c.sleeps.length > 500) throw new Error("hot loop");
+      await tk.sleep(ms);
+    };
+    return { ...tk, sleep };
+  }
+  const BAD = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1, -5000];
+
+  it("a bad maxMs, settleMs, lagMs, intervalMs or emptyStreak falls back to the defaults and still finishes", async () => {
+    for (const option of ["maxMs", "settleMs", "lagMs", "intervalMs", "emptyStreak"] as const) {
+      for (const bad of BAD) {
+        const s = scripted([[]], guardedClock());
+        expect(await run(NS, s.client, s.tk, { [option]: bad, sleep: s.tk.sleep })).toBe("ok");
+        expect(s.tk.c.sleeps[0], `${option}=${bad}`).toBe(4000);
+        expect(s.listCalls(), `${option}=${bad}`).toBe(3);
+      }
+    }
+  });
+
+  it("zero is a valid wait and gap only where it cannot hot-loop", async () => {
+    const s = scripted([[]], guardedClock());
+    expect(await run(NS, s.client, s.tk, { settleMs: 0, lagMs: 0, sinceSyncMs: 0, sleep: s.tk.sleep })).toBe("ok");
+    expect(s.tk.c.sleeps[0]).toBe(0);
+    const zeroGap = scripted([[]], guardedClock());
+    await run(NS, zeroGap.client, zeroGap.tk, { intervalMs: 0, sleep: zeroGap.tk.sleep });
+    expect(zeroGap.tk.c.sleeps.slice(1).every((ms) => ms === 1500)).toBe(true);
+  });
+
+  it("with a stuck document and a bad maxMs it still gives up inside the default budget", async () => {
+    for (const bad of BAD) {
+      const s = scripted([[doc("a")]], guardedClock());
+      expect(await run(NS, s.client, s.tk, { maxMs: bad, sleep: s.tk.sleep })).toBe("failed");
+      expect(s.tk.c.t).toBeLessThanOrEqual(21_500);
+    }
+  });
+
+  it("emptyStreak is a whole number: 2.7 means 2", async () => {
+    const s = scripted([[]]);
+    await run(NS, s.client, s.tk, { emptyStreak: 2.7 });
+    expect(s.listCalls()).toBe(2);
+  });
+
+  it("the default clock ignores the wall clock: a huge forward jump of Date.now does not end the erase", async () => {
+    let wall = 1_700_000_000_000;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => (wall += 1e12));
+    try {
+      const s = scripted([[]]);
+      const result = await forgetNamespace(NS, { client: s.client, queue: createNamespaceQueue(), sleep: async () => undefined });
+      expect(result).toBe("ok");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -493,3 +493,95 @@ describe("hostile state and two people", () => {
     expect(state()).toEqual(defaultState());
   });
 });
+
+describe("delete everything with data from a newer app version", () => {
+  const CODE_F = "ABCDE-FGHJK-LMNPQ-RSTUV";
+  const blob = (code: unknown) => JSON.stringify({ version: 2, persona: { recoveryCode: code }, plan: { keep: "me" } });
+
+  async function remoteWithDocs() {
+    const api = fakeMemoryApi();
+    const ns = tagFromCode(CODE_F, TEST_SECRET);
+    api.sm.docs(ns).set("support_pref:p1", { content: "Please speak slowly.", metadata: { kind: "support_pref", key: "p1", v: 1 } });
+    return { api, ns };
+  }
+
+  it("erases the remote copy first, then removes the blob", async () => {
+    const { api, ns } = await remoteWithDocs();
+    const storage = fakeStorage({ [KEY]: blob(CODE_F) });
+    const store = createStateStore({ storage });
+    store.hydrate();
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
+    expect(await actions.deleteEverything()).toEqual({ status: "ok" });
+    expect(api.calls.map((c) => c.path)).toEqual(["/api/memory/forget"]);
+    expect(api.calls[0].headers["x-rumi-key"]).toBe(CODE_F);
+    expect(api.sm.docs(ns).size).toBe(0);
+    expect(storage.data.has(KEY)).toBe(false);
+    expect(store.getSnapshot().readOnly).toBe(false);
+  });
+
+  it("if the remote erase fails, the blob (and so the code) stays", async () => {
+    const { api } = await remoteWithDocs();
+    api.sm.stuckIds.add("support_pref:p1");
+    const storage = fakeStorage({ [KEY]: blob(CODE_F) });
+    const store = createStateStore({ storage });
+    store.hydrate();
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
+    expect(await actions.deleteEverything()).toEqual({ status: "failed" });
+    expect(storage.data.get(KEY)).toBe(blob(CODE_F));
+  });
+
+  it("with no valid code in the blob it deletes locally and calls nothing", async () => {
+    const api = fakeMemoryApi();
+    const storage = fakeStorage({ [KEY]: blob("not-a-code") });
+    const store = createStateStore({ storage });
+    store.hydrate();
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
+    expect(await actions.deleteEverything()).toEqual({ status: "ok" });
+    expect(api.calls).toHaveLength(0);
+    expect(storage.data.has(KEY)).toBe(false);
+  });
+
+  it("enabling memory in read-only mode sends nothing", async () => {
+    const api = fakeMemoryApi();
+    const store = createStateStore({ storage: fakeStorage({ [KEY]: blob(CODE_F) }) });
+    store.hydrate();
+    const actions = createMemoryActions({ store, fetchFn: api.fetchFn });
+    expect((await actions.enableMemory()).ok).toBe(false);
+    expect(api.calls).toHaveLength(0);
+  });
+});
+
+describe("forget clears only the code it erased", () => {
+  const NEWER = "KKKKK-MMMMM-NNNNN-PPPPP";
+
+  it("a newer code that appears while the request runs is kept, with its switch and facts", async () => {
+    const { store, state } = setup(ok({ status: "ok" }));
+    store.update((d) => {
+      d.persona.recoveryCode = CODE;
+      d.settings.memoryOptIn = true;
+    });
+    const swapping = (async () => {
+      store.update((d) => {
+        d.persona.recoveryCode = NEWER;
+        d.persona.facts = [{ id: "support_pref:p1", kind: "support_pref", key: "p1", createdAt: "t" }];
+      });
+      return Response.json({ status: "ok" });
+    }) as typeof fetch;
+    const racing = createMemoryActions({ store, fetchFn: swapping });
+    expect(await racing.forgetAll()).toEqual({ remote: "ok" });
+    expect(state().persona.recoveryCode).toBe(NEWER);
+    expect(state().settings.memoryOptIn).toBe(true);
+    expect(state().persona.facts.map((f) => f.id)).toEqual(["support_pref:p1"]);
+  });
+
+  it("when the code is unchanged everything is cleared as before", async () => {
+    const { store, actions, state } = setup(ok({ status: "ok" }));
+    store.update((d) => {
+      d.persona.recoveryCode = CODE;
+      d.settings.memoryOptIn = true;
+    });
+    expect(await actions.forgetAll()).toEqual({ remote: "ok" });
+    expect(state().persona).toEqual({ facts: [] });
+    expect(state().settings.memoryOptIn).toBe(false);
+  });
+});

@@ -11,7 +11,9 @@
  *     nothing runs past the deadline. Delete and list errors are retried inside the budget and never read as success;
  *     a 429 backs off (doubling) instead of hammering.
  * `lagMs`, `settleMs` and `emptyStreak` are the knobs for the measured indexing lag (Phase 4 spike). The defaults
- * are an assumption: they only prove what they cover. Two instances cannot be serialised; a sync that starts on
+ * are an assumption: they only prove what they cover. MEMORY_ENABLED must stay off until the Phase 4 spike has set
+ * lagMs, settleMs and emptyStreak from the measured indexing lag. A successful erase takes about 7.5 s or more
+ * (settle + two gaps), so the UI needs a busy state for it. Two instances cannot be serialised; a sync that starts on
  * another instance after the last empty list can still leave a document behind (documented limit).
  */
 import type { NamespaceQueue } from './remoteSync';
@@ -42,18 +44,22 @@ export interface ForgetDeps {
 const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_BACKOFF_MS = 8000;
 
+/** A finite number at or above `min`, else the default. NaN, Infinity and negatives must never reach the loop. */
+const finiteOr = (v: number | undefined, fallback: number, min: number): number => (v !== undefined && Number.isFinite(v) && v >= min ? v : fallback);
+
 export function forgetNamespace(ns: string, deps: ForgetDeps): Promise<ForgetResult> {
   const {
     client,
     queue,
     sleep = realSleep,
-    now = Date.now,
-    maxMs = 20_000,
-    settleMs = 4000,
-    lagMs = 5000,
-    emptyStreak = 3,
-    intervalMs = 1500,
+    // Monotonic: a wall-clock jump backwards must not extend the deadline.
+    now = () => performance.now(),
   } = deps;
+  const maxMs = finiteOr(deps.maxMs, 20_000, 1);
+  const settleMs = finiteOr(deps.settleMs, 4000, 0);
+  const lagMs = finiteOr(deps.lagMs, 5000, 0);
+  const emptyStreak = Math.floor(finiteOr(deps.emptyStreak, 3, 1));
+  const intervalMs = finiteOr(deps.intervalMs, 1500, 1);
   if (!NS_RE.test(ns)) return Promise.resolve('failed');
   // A bad value must not shorten the wait: negative, NaN or missing counts as "long ago".
   const since = deps.sinceSyncMs !== undefined && Number.isFinite(deps.sinceSyncMs) && deps.sinceSyncMs >= 0 ? deps.sinceSyncMs : Number.POSITIVE_INFINITY;

@@ -68,7 +68,9 @@ export function createRemoteSync(client: SmClient, queue: NamespaceQueue) {
     try {
       await client.patch(ns, id, doc);
     } catch (e) {
-      // A just-created document may not be patchable yet; the next sync repairs it. Anything else is a real failure.
+      // A just-created document may not be patchable yet; the next sync repairs it. Until then a duplicated line can
+      // stay in the stored content. That is harmless: reads never use stored content, only metadata kind and key.
+      // Anything other than a 404 is a real failure.
       if (!(e instanceof SmError) || e.status !== 404) throw e;
     }
   }

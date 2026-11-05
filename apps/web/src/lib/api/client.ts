@@ -54,6 +54,8 @@ const STATUS_CODE = new Map<number, ApiErrorCode>([
 const fail = (code: ApiErrorCode): ApiResult<never> => ({ ok: false, error: { code, message: MESSAGES[code] } });
 
 /** Every string in the body. `tooDeep` is set when something nests below MAX_DEPTH. */
+// Known limit: only own enumerable string values are seen. Text produced by a toJSON() is not, so the server
+// check (the real gate) is what catches it.
 function collectStrings(v: unknown, acc = { strings: [] as string[], tooDeep: false }, seen = new WeakSet<object>(), depth = 0) {
   if (typeof v === 'string') acc.strings.push(v);
   else if (typeof v === 'object' && v !== null && !seen.has(v)) {

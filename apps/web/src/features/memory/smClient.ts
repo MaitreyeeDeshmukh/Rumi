@@ -6,7 +6,9 @@
  *  - upsert is PATCH, and POST only on 404 (re-POST of an existing id appends, PATCH replaces);
  *  - metadata is flat and always sent in full (PATCH replaces metadata wholesale);
  *  - delete is done in batches of 100 and the documented `{count, errors}` answer is checked: ids the server
- *    refused, or a batch it did not fully delete, are returned as `failed`, never silently counted as removed;
+ *    NAMES as refused are returned as `failed`, and so is a whole batch whose answer cannot be read. A lower
+ *    `count` alone is not a failure (the server may count only ids that still existed); the erase re-lists to check;
+ *    ids that cannot be sent at all (empty, or longer than 2000 characters) are returned as `skipped`;
  *  - every call can be capped by a remaining-time budget, so a caller with a deadline cannot hang past it;
  *  - errors carry a status number and a fixed phrase, never the response body, the key or the inner message.
  * Behaviour is from the Content OS probes (2026-10-21) and must be re-verified in the Phase 4 spike.
@@ -23,7 +25,7 @@ const LIST_PAGE_LIMIT = 100;
 const MAX_DOCS_PER_PAGE = 1000;
 const MAX_LIST_PAGES = 50;
 const MAX_CONTENT_CHARS = 500;
-const MAX_BODY_ID_CHARS = 200;
+const MAX_BODY_ID_CHARS = 2000;
 const DEFAULT_TIMEOUT_MS = 8000;
 
 export type Flat = Record<string, string | number | boolean | string[]>;
@@ -61,8 +63,8 @@ export interface SmClient {
   patch(ns: string, id: string, doc: { content: string; metadata: Flat }, budget?: Budget): Promise<void>;
   /** Resolves 'created' when it had to POST (the document did not exist), so callers can re-check for a race. */
   upsert(ns: string, id: string, doc: { content: string; metadata: Flat }, budget?: Budget): Promise<'patched' | 'created'>;
-  /** `failed` lists ids the server refused or did not confirm. An empty list means every id was deleted. */
-  del(ns: string, ids: readonly string[], budget?: Budget): Promise<{ failed: string[] }>;
+  /** `failed`: ids the server refused, or a batch whose answer could not be read. `skipped`: ids that cannot be sent. */
+  del(ns: string, ids: readonly string[], budget?: Budget): Promise<{ failed: string[]; skipped: string[] }>;
   listPage(ns: string, page: number, budget?: Budget): Promise<SmListPage>;
   listAll(ns: string, budget?: Budget): Promise<SmDoc[]>;
 }
@@ -72,7 +74,6 @@ const ListResponse = z.object({
   pagination: z.object({ totalPages: z.number().int().min(0) }).optional(),
 });
 const DeleteResponse = z.object({
-  count: z.number().int().min(0).optional(),
   errors: z.array(z.object({ id: z.string() })).optional(),
 });
 
@@ -118,7 +119,7 @@ export function createSmClient({ fetchFn, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       if (!res.ok) throw new SmError('Supermemory request failed', res.status);
-      return res.status === 204 ? null : await res.json().catch(() => null);
+      return res.status === 204 ? {} : await res.json().catch(() => null);
     } catch (e) {
       if (e instanceof SmError) throw e;
       throw new SmError(timedOut ? 'Supermemory timeout' : 'Supermemory network error', 0);
@@ -155,26 +156,25 @@ export function createSmClient({ fetchFn, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS
     }
   }
 
-  async function del(ns: string, ids: readonly string[], budget?: Budget): Promise<{ failed: string[] }> {
+  async function del(ns: string, ids: readonly string[], budget?: Budget): Promise<{ failed: string[]; skipped: string[] }> {
     const path = docPath(ns);
     const failed: string[] = [];
-    // Ids come from a listing and travel in the JSON body, so an odd id (dots, any characters) is still deletable.
-    // Only an id that is not a sensible string is refused without a request.
+    const skipped: string[] = [];
+    // Ids come from a listing and travel in the JSON body, so an odd or long id is still deletable.
+    // Only an id that is not a sensible string is set aside without a request (never put in a path).
     const sendable = ids.filter((id) => {
       const ok = typeof id === 'string' && id.length >= 1 && id.length <= MAX_BODY_ID_CHARS;
-      if (!ok) failed.push(String(id).slice(0, 40));
+      if (!ok) skipped.push(String(id).slice(0, 40));
       return ok;
     });
     for (let i = 0; i < sendable.length; i += DELETE_BATCH) {
       const batch = sendable.slice(i, i + DELETE_BATCH);
       const parsed = DeleteResponse.safeParse(await call(path, 'DELETE', { ids: batch }, budget));
-      const refused = parsed.success ? (parsed.data.errors ?? []).map((e) => e.id) : [];
-      const count = parsed.success ? parsed.data.count : undefined;
-      if (refused.length > 0) failed.push(...refused);
-      // The server says how many it deleted. Fewer than asked, with no ids named, means we cannot tell which.
-      if (refused.length === 0 && count !== undefined && count < batch.length) failed.push(...batch);
+      // An answer we cannot read is not "all deleted". Only ids the server names count as refused.
+      if (!parsed.success) failed.push(...batch);
+      else failed.push(...(parsed.data.errors ?? []).map((e) => e.id));
     }
-    return { failed };
+    return { failed, skipped };
   }
 
   async function listPage(ns: string, page: number, budget?: Budget): Promise<SmListPage> {
