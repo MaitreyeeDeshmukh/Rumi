@@ -49,6 +49,7 @@ const result = (text: string): ProviderResult => ({ text, modelUsed: "model-qual
 const tiers = (p: { calls: Array<{ tier: string }> }): string[] => p.calls.map((c) => c.tier);
 
 beforeEach(() => {
+  vi.stubEnv("VERCEL", "1"); // address headers are trusted only on Vercel
   records.length = 0;
   lines.length = 0;
   replyCache.clear();
@@ -773,23 +774,17 @@ describe("request id and headers (08 section 3, 4)", () => {
 
   it("an unexpected crash is logged once with a fingerprint, not the message, and the user still gets the fallback", async () => {
     const { spec } = fakeTask({ buildLedger: () => { throw new Error("secret internal detail"); } });
-    const out: string[] = [];
-    const log = vi.spyOn(console, "log").mockImplementation((l: string) => void out.push(l));
     const res = await runTask(spec, post(okBody()), base(fakeProvider([say("ok")])));
-    log.mockRestore();
     expect(await bodyOf(res)).toMatchObject({ degraded: true });
-    expect(out.join("\n")).toContain("ai_request_crashed");
-    expect(out.join("\n")).not.toContain("secret internal detail");
+    expect(lines.filter((l) => l.includes("ai_request_crashed"))).toHaveLength(1); // lib/log.ts writes through the log sink
+    expect(lines.join("\n")).not.toContain("secret internal detail");
   });
 
   it("a caller fault (4xx) writes no error log line", async () => {
     const { spec } = fakeTask();
-    const out: string[] = [];
-    const log = vi.spyOn(console, "log").mockImplementation((l: string) => void out.push(l));
     await runTask(spec, post(okBody(), { "sec-fetch-site": "cross-site" }), base(fakeProvider([])));
     await runTask(spec, post({ nope: true }), base(fakeProvider([])));
-    log.mockRestore();
-    expect(out.filter((l) => l.includes('"level":"error"'))).toEqual([]);
+    expect(lines.filter((l) => l.includes('"level":"error"'))).toEqual([]);
   });
 });
 

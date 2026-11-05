@@ -45,6 +45,7 @@ function reachable(entries: string[], read: (file: string) => string = (f) => re
     if (files.has(file)) continue;
     files.add(file);
     for (const m of read(file).matchAll(IMPORT_RE)) {
+      if (/^(?:import|export)\s+type\s/.test(m[0])) continue; // type-only imports are erased by the compiler
       const spec = m[1] ?? m[2] ?? m[3];
       const target = resolveSpecifier(spec, file);
       if (target) queue.push(target);

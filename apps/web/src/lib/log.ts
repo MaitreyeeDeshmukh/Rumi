@@ -49,6 +49,18 @@ const FIELDS: Record<string, Shape> = {
   bytes: "number",
   ok: "boolean",
   suppressed: "boolean",
+  // Added at integration for the AI harness and the memory routes: codes, counts and model names only, never text.
+  kind: WORD,
+  stage: WORD,
+  pgcode: WORD,
+  model: /^[a-z0-9_.:/-]{1,80}$/,
+  tables: /^[a-z0-9_,]{1,120}$/,
+  capUsd: "number",
+  saved: "number",
+  removed: "number",
+  stored: "number",
+  rejected: "number",
+  granted: "boolean",
 };
 const MAX_STRING = 120;
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;

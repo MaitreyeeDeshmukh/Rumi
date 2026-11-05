@@ -63,7 +63,7 @@ describe("the secret key and the admin client never reach the browser", () => {
   it("the secret key is named in exactly one source file, and that file starts with server-only", () => {
     const named = ALL.filter((f) => readFileSync(f, "utf8").includes("SUPABASE_SECRET_KEY")).map(rel);
     expect(named).toEqual(["lib/supabase/admin.ts"]);
-    expect(readFileSync(resolve(SRC, "lib/supabase/admin.ts"), "utf8").split("\n").find((l) => l.trim() !== "" && !l.startsWith("//") && !l.startsWith("/*") && !l.startsWith(" *"))).toBe('import "server-only";');
+    expect(readFileSync(resolve(SRC, "lib/supabase/admin.ts"), "utf8").split(/\r?\n/).find((l) => l.trim() !== "" && !l.startsWith("//") && !l.startsWith("/*") && !l.startsWith(" *"))).toBe('import "server-only";');
   });
 
   it("only route handlers and server libraries import the admin client", () => {

@@ -21,3 +21,6 @@ export function getAdminClient(): SupabaseClient {
   });
   return cached;
 }
+
+/** Names only, for /api/ready: this file is the only one that names the secret variable. */
+export const adminConfigProblems = (): string[] => (secretKey() === undefined ? ["SUPABASE_SECRET_KEY"] : []);

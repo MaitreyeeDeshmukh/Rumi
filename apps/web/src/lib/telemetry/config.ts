@@ -4,6 +4,7 @@
  */
 import { timingSafeEqual, createHash } from "node:crypto";
 import { assertRuntimeEnv, ConfigError } from "@/lib/env";
+import { adminConfigProblems } from "@/lib/supabase/admin";
 
 const present = (name: string): boolean => (process.env[name] ?? "").trim() !== "";
 
@@ -39,7 +40,7 @@ export function readyTokenOk(sent: string | null): boolean {
  * request needs (Groq keys and models, SESSION_SECRET in production). The AI rules are env.ts's, not copied here.
  */
 export function missingEnvNames(): string[] {
-  const names = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY"].filter((n) => !present(n));
+  const names = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"].filter((n) => !present(n)).concat(adminConfigProblems());
   try {
     assertRuntimeEnv();
   } catch (e) {

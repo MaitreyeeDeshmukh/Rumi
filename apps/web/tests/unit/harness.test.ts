@@ -33,11 +33,12 @@ const deps = (provider?: HarnessDeps["provider"], extra: Partial<HarnessDeps> = 
 const order = (log: string[]): string[] => log.filter((s, i) => s !== log[i - 1]);
 
 beforeEach(() => {
+  vi.stubEnv("VERCEL", "1"); // address headers are trusted only on Vercel
   replyCache.clear();
   sharedCache.clear();
   logs.length = 0;
   counter = 0;
-  setLogSink((l) => logs.push(l));
+  setLogSink((l) => void (l.includes('"type":"ai_task"') && logs.push(l))); // AI events only; app events and error lines are checked where they matter
 });
 afterEach(() => {
   setLogSink(null);
@@ -81,11 +82,10 @@ describe("runTask: security guard comes first", () => {
     expect(log.filter((s) => s === "request")).toHaveLength(4); // two requests, each parsed twice; the third never reached the schema
   });
 
-  it("rejects a malformed recovery key header with 400 before reading the body", async () => {
-    const { spec, log } = fakeTask();
-    const res = await runTask(spec, post(okBody(), { "x-rumi-key": "not-a-key" }), deps(fakeProvider([])));
-    expect(res.status).toBe(400);
-    expect(log).toEqual([]);
+  it("ignores the retired recovery key header: identity comes from Supabase Auth only", async () => {
+    const { spec } = fakeTask();
+    const res = await runTask(spec, post(okBody(), { "x-rumi-key": "not-a-key" }), deps(fakeProvider([say("a")])));
+    expect(res.status).toBe(200);
   });
 
   it("rejects a declared body size over the cap with 413 before parsing", async () => {
@@ -201,7 +201,7 @@ describe("runTask: crisis check (07 D2, D43, D5)", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const { spec } = fakeTask();
-    const res = await runTask(spec, post(okBody("I want to kill myself")), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody("I want to kill myself")), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(await bodyOf(res)).toEqual({ crisis: true });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -292,7 +292,7 @@ describe("runTask: crisis check (07 D2, D43, D5)", () => {
   it("tier 2 with no provider at all (MOCK_AI without a fake provider) also fails safe", async () => {
     vi.stubEnv("MOCK_AI", "1");
     const { spec, log } = fakeTask();
-    const res = await runTask(spec, post(okBody("I hate myself.")), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody("I hate myself.")), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(await bodyOf(res)).toEqual({ crisis: true });
     expect(log).not.toContain("mock");
   });
@@ -358,7 +358,7 @@ describe("runTask: mock mode (07 D19)", () => {
     const { spec } = fakeTask();
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(await bodyOf(res)).toEqual({ say: "mock reply", degraded: false });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -383,18 +383,18 @@ describe("runTask: mock mode (07 D19)", () => {
     vi.stubEnv("MOCK_AI", "1");
     vi.stubEnv("NODE_ENV", "production");
     const { spec } = fakeTask();
-    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(res.status).toBe(200);
     expect(await bodyOf(res)).toEqual({ say: "fallback for 25 characters", degraded: true });
     expect(event()).toMatchObject({ outcome: "fallback", degraded: true, errorCode: "config" });
     vi.stubEnv("SESSION_SECRET", "s".repeat(40));
-    expect(await bodyOf(await runTask(spec, post(okBody()), { limiter: createRateLimiter() }))).toEqual({ say: "mock reply", degraded: false });
+    expect(await bodyOf(await runTask(spec, post(okBody()), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) }))).toEqual({ say: "mock reply", degraded: false });
   });
 
   it("only the exact value 1 turns mock on: MOCK_AI=true is off and, with no keys, degrades with a config error", async () => {
     vi.stubEnv("MOCK_AI", "true");
     const { spec, log } = fakeTask();
-    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(await bodyOf(res)).toEqual({ say: "fallback for 25 characters", degraded: true });
     expect(log).not.toContain("mock");
     expect(event().errorCode).toBe("config");
@@ -406,7 +406,7 @@ describe("runTask: configuration (07 D19)", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const { spec, log } = fakeTask();
-    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(res.status).toBe(200);
     expect(await bodyOf(res)).toEqual({ say: "fallback for 25 characters", degraded: true });
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -422,7 +422,7 @@ describe("runTask: configuration (07 D19)", () => {
     const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: say("from groq") } }], usage: { prompt_tokens: 7, completion_tokens: 3 } })));
     vi.stubGlobal("fetch", fetchSpy);
     const { spec } = fakeTask();
-    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter() });
+    const res = await runTask(spec, post(okBody()), { limiter: createRateLimiter(), requireUser: () => Promise.reject(new Error("signed out")) });
     expect(await bodyOf(res)).toEqual({ say: "from groq", degraded: false });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(event()).toMatchObject({ outcome: "ok", inTokens: 7, outTokens: 3, tier: "quality" });
@@ -1058,19 +1058,15 @@ describe("runTask: provider failures, tier swap, deadline, breaker (07 D18)", ()
 });
 
 describe("runTask: cookie, headers and telemetry", () => {
-  it("issues the session cookie on every kind of answer except a guard rejection, and not again when a valid cookie is sent", async () => {
+  it("never sets a cookie of its own: the session lives in Supabase Auth cookies written by proxy.ts", async () => {
     const { spec } = fakeTask();
-    const first = await runTask(spec, post(okBody()), deps(fakeProvider([say("a")])));
-    const cookie = first.headers.get("set-cookie") ?? "";
-    expect(cookie).toMatch(/^rumi_sid=[0-9a-f-]{36}\.\d+\.[\w-]+; Path=\/api; HttpOnly; Secure; SameSite=Strict; Max-Age=86400$/);
-    const second = await runTask(spec, post(okBody(), { cookie: cookie.split(";")[0] }), deps(fakeProvider([say("b")])));
-    expect(second.headers.get("set-cookie")).toBeNull();
-    const crisis = await runTask(spec, post(okBody("I want to kill myself")), deps());
-    expect(crisis.headers.get("set-cookie")).toMatch(/^rumi_sid=/);
-    const bad = await runTask(spec, post(null, {}, "{oops"), deps());
-    expect(bad.headers.get("set-cookie")).toMatch(/^rumi_sid=/);
-    const fallback = await runTask(spec, post(okBody()), deps(fakeProvider([providerError("http"), providerError("http")])));
-    expect(fallback.headers.get("set-cookie")).toMatch(/^rumi_sid=/);
+    const answers = [
+      await runTask(spec, post(okBody()), deps(fakeProvider([say("a")]))),
+      await runTask(spec, post(okBody("I want to kill myself")), deps()),
+      await runTask(spec, post(null, {}, "{oops"), deps()),
+      await runTask(spec, post(okBody()), deps(fakeProvider([providerError("http"), providerError("http")]))),
+    ];
+    for (const r of answers) expect(r.headers.get("set-cookie")).toBeNull();
   });
 
   it("every response, including errors, is JSON and no-store", async () => {

@@ -6,5 +6,6 @@ import { fileURLToPath } from "node:url";
 // config, which copies this file and changes `include`: pnpm vitest run --config <that file>.
 export default defineConfig({
   test: { include: ["tests/unit/**/*.test.ts"], environment: "node" },
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  // `server-only` is resolved by Next at build time; under vitest it is an empty module.
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)), "server-only": fileURLToPath(new URL("./tests/unit/helpers/serverOnly.ts", import.meta.url)) } },
 });

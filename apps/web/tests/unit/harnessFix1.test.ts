@@ -54,6 +54,7 @@ const eventAt = (i = 0): Record<string, unknown> => ({ ...records[i].e });
 const tiers = (p: { calls: Array<{ tier: string }> }): string[] => p.calls.map((c) => c.tier);
 
 beforeEach(() => {
+  vi.stubEnv("VERCEL", "1"); // address headers are trusted only on Vercel
   records.length = 0;
   appEvents.length = 0;
   logLines.length = 0;
@@ -399,13 +400,10 @@ describe("(a) a failed provider call leaves a trail: kind, status, finish reason
 
   it("opening the breaker is logged once with the failure kind", async () => {
     const { spec } = fakeTask();
-    const out: string[] = [];
-    const log = vi.spyOn(console, "log").mockImplementation((l: string) => void out.push(l));
     const p = fakeProvider([new ProviderError("timeout"), new ProviderError("timeout"), new ProviderError("timeout")]);
     await runTask(spec, post(okBody("one")), base(p));
     await runTask(spec, post(okBody("two")), base(p));
-    log.mockRestore();
-    const opened = out.filter((l) => l.includes("breaker_opened"));
+    const opened = logLines.filter((l) => l.includes("breaker_opened")); // lib/log.ts writes through the log sink
     expect(opened).toHaveLength(1);
     expect(opened[0]).toContain('"kind":"timeout"');
   });

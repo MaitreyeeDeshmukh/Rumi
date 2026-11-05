@@ -531,7 +531,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       limiter: deps.limiter,
       maxBytes: LIMITS.bodyBytesMax,
       requireAuth: deps.auth === "required",
-      authenticate: mock ? null : (r) => within(lookup(r), AUTH_MS).catch((e: unknown) => Promise.reject(e instanceof AppError ? e : new AppError("store_unavailable"))),
+      authenticate: mock ? null : (r) => within(lookup(r), AUTH_MS).catch((e: unknown) => Promise.reject(e instanceof AppError ? e : new AppError("unauthorized"))),
     });
     user = guard.user;
     ipHash = guard.ipHash;

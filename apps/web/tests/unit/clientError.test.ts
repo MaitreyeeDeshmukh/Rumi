@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,10 @@ import { KNOWN_ROUTES } from "@/lib/telemetry/routes";
 
 const lines: string[] = [];
 setLogSink((l) => lines.push(l));
+// The address headers are trusted only on Vercel (lib/security/rateLimit.ts clientIp).
+beforeEach(() => vi.stubEnv("VERCEL", "1"));
 afterEach(() => {
+  vi.unstubAllEnvs();
   resetSeenFingerprints();
   h.events.length = 0;
   lines.length = 0;

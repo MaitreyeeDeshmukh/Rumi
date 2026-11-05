@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ mode: "ok" as "ok" | "error" | "hang" | "throw", calls: 0, adminTouched: 0 }));
-vi.mock("@/lib/supabase/admin", () => ({
+vi.mock("@/lib/supabase/admin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/admin")>()),
   getAdminClient: () => {
     h.adminTouched++;
     return {
