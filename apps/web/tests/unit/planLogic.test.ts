@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keepSupportedSymptoms, mainConcernCodes } from "@/features/plan/keepSupportedSymptoms";
+import { keepSupportedSymptoms, mainConcernCodes, planItemCodes } from "@/features/plan/keepSupportedSymptoms";
 
 describe("keepSupportedSymptoms", () => {
   it("keeps only symptoms that share a content word with what the user wrote", () => {
@@ -36,5 +36,43 @@ describe("mainConcernCodes (D10)", () => {
     for (const raw of ["ok", "hi", "123", "🙂🙂", "   ", "?!", "a b"]) {
       expect(mainConcernCodes(raw, "anything at all")).toEqual([]);
     }
+  });
+});
+
+describe("planItemCodes", () => {
+  const user = (text: string) => ({ text, source: "user" as const });
+  const suggested = (text: string) => ({ text, source: "suggested" as const });
+
+  it("needs at least one item that comes from the user", () => {
+    expect(planItemCodes([user("I want to tell you about my headaches.")])).toEqual([]);
+    expect(planItemCodes([suggested("I want to ask what I should do next.")])).toEqual(["no_user_items"]);
+    expect(planItemCodes([])).toEqual(["no_user_items"]);
+  });
+
+  it("the two generic suggestions are fine", () => {
+    expect(planItemCodes([user("x"), suggested("I want to ask what I should do next."), suggested("I want to ask if I can have instructions in writing.")])).toEqual([]);
+  });
+
+  it.each([
+    "I want to ask about a blood test.",
+    "I want to ask about my pain.",
+    "I want to ask about ibuprofen.",
+    "I want to ask for a scan.",
+    "I want to ask what dose to take.",
+    "I want to ask about the 3 pills.",
+    "I want to ask about Dr. Patel.",
+    "I want to ask about my diagnosis.",
+    "Come back in two weeks.",
+    "I want to ask about Monday.",
+  ])("a suggested item that is specific is rejected: %s", (text) => {
+    expect(planItemCodes([user("x"), suggested(text)])).toEqual(["specific_suggestion"]);
+  });
+
+  it("the same words from the user are not judged here", () => {
+    expect(planItemCodes([user("I want to ask about a blood test.")])).toEqual([]);
+  });
+
+  it("reports both codes when both apply", () => {
+    expect(planItemCodes([suggested("I want to ask about my pain.")])).toEqual(["no_user_items", "specific_suggestion"]);
   });
 });
