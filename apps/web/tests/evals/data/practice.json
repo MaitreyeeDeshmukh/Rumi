@@ -1,0 +1,387 @@
+{
+  "cases": [
+    {
+      "id": "pr01",
+      "focus": "problem",
+      "plan": {
+        "id": "plan-knee",
+        "title": "Knee visit",
+        "createdAt": "2026-11-01T09:00:00.000Z",
+        "mainConcern": "My knee hurts when I climb stairs",
+        "symptomsInMyWords": [
+          "knee pain",
+          "stairs"
+        ],
+        "items": [
+          {
+            "id": "q1",
+            "text": "I want to tell you my knee hurts on stairs.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q2",
+            "text": "What could be causing the pain in my knee?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q3",
+            "text": "Please explain things one step at a time.",
+            "kind": "accommodation",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q4",
+            "text": "Can you write down what happens next?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "bring",
+            "problem",
+            "concern",
+            "knee",
+            "pain",
+            "hurt",
+            "stairs",
+            "today",
+            "going on",
+            "tell me about"
+          ]
+        }
+      ],
+      "turns": []
+    },
+    {
+      "id": "pr02",
+      "focus": "questions",
+      "plan": {
+        "id": "plan-ear",
+        "title": "Ear visit",
+        "createdAt": "2026-11-02T09:00:00.000Z",
+        "mainConcern": "My left ear hurts",
+        "symptomsInMyWords": [
+          "left ear pain"
+        ],
+        "items": [
+          {
+            "id": "q1",
+            "text": "My left ear hurts and I want to tell you about it.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q2",
+            "text": "Will the pain go away by itself?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q3",
+            "text": "I need a quiet room to think.",
+            "kind": "accommodation",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "question",
+            "ask",
+            "wonder",
+            "want to know",
+            "curious"
+          ]
+        }
+      ],
+      "turns": [
+        {
+          "role": "clinician",
+          "text": "Good morning. What would you like to talk about today?"
+        },
+        {
+          "role": "me",
+          "text": "My left ear hurts and I have a few questions."
+        }
+      ]
+    },
+    {
+      "id": "pr03",
+      "focus": "needs",
+      "plan": {
+        "id": "plan-sleep",
+        "title": "Sleep visit",
+        "createdAt": "2026-11-03T09:00:00.000Z",
+        "mainConcern": "I sleep badly and feel tired all day",
+        "symptomsInMyWords": [
+          "bad sleep",
+          "tired"
+        ],
+        "items": [
+          {
+            "id": "q1",
+            "text": "I sleep badly and feel tired all day.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q2",
+            "text": "Who can help me with my sleep?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q3",
+            "text": "Please do not rush me when I answer.",
+            "kind": "accommodation",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "need",
+            "help",
+            "easier",
+            "comfort",
+            "support",
+            "quiet",
+            "slow",
+            "prefer",
+            "rush",
+            "loud"
+          ]
+        }
+      ],
+      "turns": [
+        {
+          "role": "clinician",
+          "text": "Good morning. What would you like to talk about today?"
+        },
+        {
+          "role": "me",
+          "text": "Loud rooms make it hard for me to think."
+        }
+      ]
+    },
+    {
+      "id": "pr04",
+      "focus": "next_steps",
+      "plan": {
+        "id": "plan-knee",
+        "title": "Knee visit",
+        "createdAt": "2026-11-01T09:00:00.000Z",
+        "mainConcern": "My knee hurts when I climb stairs",
+        "symptomsInMyWords": [
+          "knee pain",
+          "stairs"
+        ],
+        "items": [
+          {
+            "id": "q1",
+            "text": "I want to tell you my knee hurts on stairs.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q2",
+            "text": "What could be causing the pain in my knee?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q3",
+            "text": "Please explain things one step at a time.",
+            "kind": "accommodation",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q4",
+            "text": "Can you write down what happens next?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      },
+      "holds": [
+        {
+          "type": "contains_any",
+          "anyOf": [
+            "next",
+            "step",
+            "plan",
+            "follow",
+            "after today",
+            "what happens",
+            "instructions",
+            "written",
+            "write",
+            "appointment"
+          ]
+        }
+      ],
+      "turns": [
+        {
+          "role": "clinician",
+          "text": "We talked about your knee. What else is on your mind?"
+        },
+        {
+          "role": "me",
+          "text": "I do not know what happens after today."
+        }
+      ]
+    },
+    {
+      "id": "pr05",
+      "focus": "whole",
+      "plan": {
+        "id": "plan-ear",
+        "title": "Ear visit",
+        "createdAt": "2026-11-02T09:00:00.000Z",
+        "mainConcern": "My left ear hurts",
+        "symptomsInMyWords": [
+          "left ear pain"
+        ],
+        "items": [
+          {
+            "id": "q1",
+            "text": "My left ear hurts and I want to tell you about it.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q2",
+            "text": "Will the pain go away by itself?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q3",
+            "text": "I need a quiet room to think.",
+            "kind": "accommodation",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      },
+      "holds": [],
+      "turns": []
+    }
+  ],
+  "probes": [
+    {
+      "id": "pb01",
+      "focus": "whole",
+      "plan": {
+        "id": "plan-ear",
+        "title": "Ear visit",
+        "createdAt": "2026-11-02T09:00:00.000Z",
+        "mainConcern": "My left ear hurts",
+        "symptomsInMyWords": [
+          "left ear pain"
+        ],
+        "items": [
+          {
+            "id": "q1",
+            "text": "My left ear hurts and I want to tell you about it.",
+            "kind": "concern",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q2",
+            "text": "Will the pain go away by itself?",
+            "kind": "question",
+            "source": "user",
+            "enabled": true
+          },
+          {
+            "id": "q3",
+            "text": "I need a quiet room to think.",
+            "kind": "accommodation",
+            "source": "user",
+            "enabled": true
+          }
+        ]
+      },
+      "distinctReplies": 3,
+      "opener": "Hello. Please sit down. What would you like to talk about first?",
+      "steps": [
+        {
+          "me": "My left ear has been hurting for two weeks.",
+          "holds": [
+            {
+              "type": "valid_reply"
+            }
+          ]
+        },
+        {
+          "me": "I am lost. I cannot think of what else to say.",
+          "holds": [
+            {
+              "type": "contains_any",
+              "anyOf": [
+                "take your time",
+                "no rush",
+                "when you are ready",
+                "whenever you are ready",
+                "help me say it",
+                "that is okay",
+                "that is fine",
+                "it is okay"
+              ]
+            }
+          ]
+        },
+        {
+          "me": "Sorry, I made a mistake. It is three weeks, not two.",
+          "holds": [
+            {
+              "type": "no_text_matches",
+              "pattern": "\\b(two|2) weeks?\\b"
+            }
+          ]
+        },
+        {
+          "me": "I want to stop now.",
+          "holds": [
+            {
+              "type": "field_equals",
+              "path": "isLastTurn",
+              "value": true
+            },
+            {
+              "type": "no_question_marks"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
