@@ -38,6 +38,8 @@ export interface AiEvent {
   stage?: Stage;
   /** The kind of the last failed provider call ("none" when no call failed). A fixed list, so outages are visible. */
   providerKind?: ProviderKind;
+  /** Set only when the crisis classifier ran on text the regex layer let through (tier none): it answered, or it failed and the request went on. */
+  classifier?: "none_ok" | "none_failed";
 }
 
 const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap"];
@@ -48,6 +50,7 @@ const GUARD_CODES: readonly string[] = ALL_GUARD_CODES;
 const REQUEST_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12})$/;
 const STAGES: readonly string[] = ["mock_prod", "guard", "body", "request", "sanitize", "crisis", "redact", "config", "ledger", "prompt", "provider", "output", "reply"];
 const PROVIDER_KINDS: readonly string[] = ["timeout", "http", "config", "empty", "aborted", "none"];
+const CLASSIFIER_RESULTS: readonly string[] = ["none_ok", "none_failed"];
 const PROMPT_VERSION = /^[a-z]+@[0-9]{1,3}$/;
 
 const count = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
@@ -85,6 +88,7 @@ export function logEvent(event: AiEvent): void {
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
     providerKind: oneOf(e.providerKind, PROVIDER_KINDS, "none"),
     ...(e.stage === undefined ? {} : { stage: oneOf(e.stage, STAGES, "unknown") }),
+    ...(e.classifier === undefined ? {} : { classifier: oneOf(e.classifier, CLASSIFIER_RESULTS, "unknown") }),
   };
   sink(JSON.stringify(record));
 }

@@ -142,7 +142,7 @@ const NEGATION = /(?:^|\s)(?:no|not|dont|doesnt|didnt|havent|hasnt|never|without
 
 const PEOPLE =
   "(?:he|she|they|someone|somebody|my (?:boyfriend|girlfriend|partner|husband|wife|ex|dad|mom|mum|mother|father|brother|sister|uncle|aunt|stepdad|stepmom|stepfather|stepmother|roommate|caregiver|carer|boss|teacher|coach|son|daughter|parent|parents|grandfather|grandmother|grandpa|grandma|cousin|neighbor|landlord))";
-const AUX = "(?:(?:is|are|keeps|keep|has been|have been|was|started|just|always|sometimes|often|also|will|would|gonna|going to|wants to|threatened to|threatens to) )*";
+const AUX = "(?:(?:is|are|keeps|keep|has been|have been|was|started|always|sometimes|often|also|will|would|gonna|going to|wants to|threatened to|threatens to) ){0,4}";
 const PRE_VERB = "(?:(?:shouts|yells|screams|swears)(?: at me)? and )?";
 const SELF = "(?:myself|my self|himself|herself|themselves|themself)";
 
@@ -193,7 +193,7 @@ const RULES: readonly Rule[] = [
   rule("(?:want(?:ed)? to|wanna|going to|gonna|about to|ready to|thinking (?:of|about)) jump(?:ing)?(?: (?:off|from|out of|down))?", { veto: jumpVeto }),
   rule("jump(?:ing|ed)? (?:off|from|out of) (?:a |the |my )?(?:bridge|building|roof|balcony|cliff|window|overpass|tower)"),
   rule("(?:jump|jumping|step|stepping) (?:out )?in front of (?:a |the )?(?:train|bus|car|truck|traffic|subway)"),
-  rule("(?:i|im|ive) (?:(?:just|probably|maybe|accidentally|actually|definitely|really|think|might|may|will|could|would|have|had|am|already|almost|nearly|want to|wanna|gonna|going to|about to|need to|thinking of|thinking about|planning to|trying to|tried to|ready to|decided to|dont know if|not sure if|believe i) )*(?:overdose|overdosed|overdosing)"),
+  rule("(?:i|im|ive) (?:(?:probably|accidentally|definitely|think|might|may|will|could|would|have|had|am|already|almost|nearly|want to|wanna|gonna|going to|about to|need to|thinking of|thinking about|planning to|trying to|tried to|ready to|decided to|dont know if|not sure if|believe i) ){0,4}(?:overdose|overdosed|overdosing)"),
   rule("(?:is|are|was) overdosing|just overdosed|overdosing right now|overdosed right now"),
   rule("(?:took|taken|swallowed) (?:way )?too many (?:pills|tablets|meds|medications|medicine|painkillers|capsules)"),
   rule("(?:took|swallowed|swallowing) (?:a |the )?(?:whole|entire) bottle of"),

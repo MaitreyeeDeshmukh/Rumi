@@ -8,6 +8,7 @@ import { COMPANION_RE } from "@/features/shared/constants";
 import type { GuardCode } from "@/features/shared/guards";
 import type { TaskName, TaskSpec } from "@/features/shared/task";
 import { buildLedger } from "@/lib/ai/ledger";
+import { crisisTier } from "@/lib/crisis";
 import { ProviderError, type Provider, type ProviderCall, type ProviderResult } from "@/lib/ai/provider";
 
 export interface FakeReq {
@@ -108,8 +109,33 @@ export function post(body: unknown, headers: Record<string, string> = {}, rawBod
   });
 }
 
-export const okBody = (text = "I keep getting headaches.", extra: Record<string, unknown> = {}): Record<string, unknown> => ({ text, companionName: "Rumi", ...extra });
+/** Under 12 characters on purpose: longer text is also sent to the crisis classifier (tier none), which pipeline tests are not about. */
+export const okBody = (text = "Headaches.", extra: Record<string, unknown> = {}): Record<string, unknown> => ({ text, companionName: "Rumi", ...extra });
 
 export async function bodyOf(res: Response): Promise<unknown> {
   return JSON.parse(await res.text());
+}
+
+const quiet = new WeakMap<Provider, Provider>();
+/**
+ * For pipeline tests that use text of 12 characters or more but are not about crisis: the harness also asks the classifier about
+ * ordinary text (tier none). This wrapper answers that one question with "no", off the record (not in `calls`, no tokens), and
+ * passes every other call through, including the question about tier check text, which a test scripts itself.
+ * The same wrapper comes back for the same provider, so the circuit breaker still belongs to one provider.
+ */
+export function quietClassifier(provider: Provider): Provider {
+  let wrapped = quiet.get(provider);
+  if (wrapped === undefined) {
+    wrapped = {
+      async complete(call: ProviderCall): Promise<ProviderResult> {
+        const text = /field=text>>>([\s\S]*?)<<<END/.exec(call.user)?.[1];
+        if (call.system.includes("safety classifier") && text !== undefined && crisisTier(text) === "none") {
+          return { text: '{"crisis":false}', modelUsed: "classifier", inTokens: 0, outTokens: 0 };
+        }
+        return provider.complete(call);
+      },
+    };
+    quiet.set(provider, wrapped);
+  }
+  return wrapped;
 }

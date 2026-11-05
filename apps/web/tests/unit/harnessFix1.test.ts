@@ -3,13 +3,13 @@ import { z } from "zod";
 import { runTask, type HarnessDeps } from "@/lib/ai/harness";
 import { setLogSink } from "@/lib/ai/telemetry";
 import { createRateLimiter } from "@/lib/security/rateLimit";
-import { bodyOf, fakeProvider, fakeTask, okBody, post, providerError, say, type FakeSpec, type Scripted } from "./helpers/fakeTask";
+import { bodyOf, fakeProvider, fakeTask, okBody, post, providerError, quietClassifier, say, type FakeSpec, type Scripted } from "./helpers/fakeTask";
 
 const logs: string[] = [];
 const event = (i = 0): Record<string, unknown> => JSON.parse(logs[i]) as Record<string, unknown>;
 const HEX = "0123456789ab";
 const deps = (provider?: HarnessDeps["provider"], extra: Partial<HarnessDeps> = {}): HarnessDeps => ({
-  ...(provider === undefined ? {} : { provider }),
+  ...(provider === undefined ? {} : { provider: quietClassifier(provider) }),
   limiter: createRateLimiter(),
   rand: () => HEX,
   ...extra,
