@@ -78,6 +78,12 @@ do $$ declare n int; begin
   n := public.persona_upsert_facts(jsonb_build_array(jsonb_build_object('kind','pacing','key','slow','client_updated_at', now() + interval '1 minute')));
   if n <> 1 or not exists (select 1 from public.persona_facts where key = 'slow') then raise exception 'FAIL: newer re-add refused'; end if;
   if exists (select 1 from public.persona_removed where key = 'slow') then raise exception 'FAIL: tombstone kept after re-add'; end if;
+  -- the export carries the tombstone (kind, key, removed_at only)
+  delete from public.persona_facts where key = 'slow';
+  if public.core_export_my_data() -> 'persona_removed' <> (select jsonb_agg(jsonb_build_object('kind', kind, 'key', key, 'removed_at', removed_at)) from public.persona_removed) then
+    raise exception 'FAIL: export does not carry the tombstones (or carries more than kind, key, removed_at)'; end if;
+  if jsonb_array_length(public.core_export_my_data() -> 'persona_removed') <> 1 then raise exception 'FAIL: export tombstone count'; end if;
+  perform public.persona_upsert_facts(jsonb_build_array(jsonb_build_object('kind','pacing','key','slow','client_updated_at', now() + interval '1 minute')));
   -- users cannot forge a tombstone
   begin insert into public.persona_removed (kind, key) values ('pacing', 'forged'); raise exception 'FAIL: user inserted a tombstone';
   exception when insufficient_privilege then null; end;

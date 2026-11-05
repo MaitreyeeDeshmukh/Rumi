@@ -147,3 +147,35 @@ begin
   delete from public.core_settings where owner_id = v_uid;
   insert into public.core_settings (owner_id) values (v_uid);
 end $$;
+
+-- ---------------------------------------------------------------------------------------------
+-- 4. Export of everything the caller owns: ONE definition, listing every table with an owner_id column
+--    (a test checks the list against the migrations). Security invoker: RLS applies on top of the
+--    owner filter. The tombstones are exported without owner_id: kind, key, removed_at only.
+-- ---------------------------------------------------------------------------------------------
+create or replace function public.core_export_my_data()
+returns jsonb language plpgsql stable security invoker set search_path = '' as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_out jsonb := '{}'::jsonb;
+  v_rows jsonb;
+  t text;
+begin
+  if v_uid is null then raise exception 'not signed in' using errcode = '28000'; end if;
+  for t in select unnest(array[
+    'core_profiles', 'core_settings', 'core_consents',
+    'plan_visit_plans', 'plan_items', 'plan_support_cards', 'plan_support_items', 'plan_support_top_questions',
+    'practice_sessions', 'practice_turns', 'practice_item_outcomes',
+    'recap_recaps', 'recap_transcript_lines', 'recap_items', 'recap_unconfirmed_items', 'recap_plan_status',
+    'persona_facts', 'persona_removed'
+  ]) loop
+    -- t comes from the fixed list above, never from the caller
+    execute format('select coalesce(jsonb_agg(case when %L = ''persona_removed'' then to_jsonb(r) - ''owner_id'' else to_jsonb(r) end), ''[]''::jsonb) from public.%I r where r.owner_id = $1', t, t)
+      into v_rows using v_uid;
+    v_out := v_out || jsonb_build_object(t, v_rows);
+  end loop;
+  return v_out;
+end $$;
+revoke execute on function public.core_export_my_data() from public, anon;
+grant  execute on function public.core_export_my_data() to authenticated;
+comment on function public.core_export_my_data() is '[CORE] All of the caller''s rows from every owner table as one JSON object keyed by table name (tombstones without owner_id).';

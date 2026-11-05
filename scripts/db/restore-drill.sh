@@ -6,7 +6,9 @@
 #   1. create the project; apply all migrations:    npx supabase link --project-ref <new>; npx supabase db push
 #      (here: npx supabase db reset = migrations only, no data)
 #   2. verify checksums:                            ( cd <dump dir> && sha256sum -c sha256-<stamp>.txt )
-#   3. load the data (public + auth):               gunzip -c data-<stamp>.sql.gz | psql "$NEW_DB_URL" -v ON_ERROR_STOP=1
+#   3. empty the rows the migrations seeded (the dump holds the real flag values), then load the data (public + auth):
+#        psql "$NEW_DB_URL" -c 'truncate public.ops_feature_flags'
+#        gunzip -c data-<stamp>.sql.gz | psql "$NEW_DB_URL" -v ON_ERROR_STOP=1
 #   4. check counts and sign in as a test user; flip flags back on if you turned them off.
 # The data file already disables triggers while loading, so the sign-up trigger does not fire again.
 set -euo pipefail
@@ -53,6 +55,7 @@ npx supabase db reset --yes >/dev/null 2>&1
 expect "drill users are gone" "$(q "select count(*) from auth.users where id::text like 'd0000000-%'")" "0"
 
 echo "== 4. restore data from the dump"
+echo "truncate public.ops_feature_flags;" | psql_            # rows seeded by migration 2; the dump carries the real values
 gunzip -c "$dumpdir"/data-*.sql.gz | psql_ >/dev/null
 after="$(fingerprint)"; echo "fingerprint after:  $after"
 expect "restored data is identical" "$after" "$before"

@@ -28,8 +28,9 @@ expect "v1 has no ops_feature_flags" "$(q "select to_regclass('public.ops_featur
 echo "== 2. failing migration (v2 + one bad statement), single transaction"
 bad="$(mktemp)"; trap 'rm -f "$bad"' EXIT
 { cat "$v2"; echo "alter table public.core_settings add constraint drill_bad check (theme = 'never');"; } > "$bad"
-if psql_ --single-transaction -f "$bad" >/dev/null 2>&1; then echo "DRILL FAILED: the bad migration was accepted" >&2; exit 1; fi
-echo "ok: bad migration was rejected"
+if err="$(psql_ --single-transaction -f - < "$bad" 2>&1)"; then echo "DRILL FAILED: the bad migration was accepted" >&2; exit 1; fi
+echo "$err" | grep -q "drill_bad" || { echo "DRILL FAILED: rejected for the wrong reason: $err" >&2; exit 1; }
+echo "ok: bad migration was rejected by the failing statement (drill_bad)"
 expect "no ops_feature_flags after failure" "$(q "select to_regclass('public.ops_feature_flags') is null")" "t"
 expect "no ops_app_events after failure" "$(q "select to_regclass('public.ops_app_events') is null")" "t"
 expect "no client_updated_at column after failure" "$(q "select count(*) from information_schema.columns where table_name='persona_facts' and column_name='client_updated_at'")" "0"
@@ -41,14 +42,14 @@ expect "retired-kind row still there (delete rolled back)" "$(q "select count(*)
 expect "sign-up trigger is still the v1 one" "$(q "select position('exception' in pg_get_functiondef('private.handle_new_user()'::regprocedure))")" "0"
 
 echo "== 3. real migration on the populated v1 database"
-psql_ --single-transaction -f "$v2" >/dev/null
+psql_ --single-transaction -f - < "$v2" >/dev/null
 expect "flags seeded" "$(q "select count(*) from public.ops_feature_flags where enabled")" "3"
 expect "retired kind removed" "$(q "select count(*) from public.persona_facts where kind='focus_pref'")" "0"
 expect "valid kind kept" "$(q "select count(*) from public.persona_facts where kind='support_pref' and key='quiet_room'")" "1"
 expect "existing rows got client_updated_at" "$(q "select count(*) from public.persona_facts where client_updated_at is not null")" "1"
 expect "all constraints validated" "$(q "select count(*) from pg_constraint where conrelid in ('public.persona_facts'::regclass,'public.ops_ai_events'::regclass) and not convalidated")" "0"
 expect "cron job scheduled" "$(q "select count(*) from cron.job where jobname='rumi-ops-maintenance-daily'")" "1"
-psql_ --single-transaction -f supabase/migrations/20261105130000_rumi_metric_views.sql >/dev/null
-psql_ --single-transaction -f supabase/migrations/20261105140000_rumi_quota_and_tombstones.sql >/dev/null
+psql_ --single-transaction -f - < supabase/migrations/20261105130000_rumi_metric_views.sql >/dev/null
+psql_ --single-transaction -f - < supabase/migrations/20261105140000_rumi_quota_and_tombstones.sql >/dev/null
 expect "later migrations apply on top (quota function, tombstone table)" "$(q "select (to_regprocedure('public.ops_take_ai_quota(text[],integer[])') is not null and to_regclass('public.persona_removed') is not null and to_regclass('public.ops_v_ai_daily') is not null)::text")" "true"
 echo "ROLLBACK DRILL PASSED"

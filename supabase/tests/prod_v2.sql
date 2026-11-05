@@ -241,9 +241,15 @@ set local "request.jwt.claims" = '{"sub":"aaaaaaaa-0000-0000-0000-00000000000a",
 set local role authenticated;
 do $$ declare e jsonb; k text; own int; total int; begin
   e := public.core_export_my_data();
-  if (select count(*) from jsonb_object_keys(e)) <> 17 then
-    raise exception 'FAIL: export has % tables, expected 17', (select count(*) from jsonb_object_keys(e)); end if;
-  for k in select jsonb_object_keys(e) loop
+  if (select count(*) from jsonb_object_keys(e)) <> 18 then
+    raise exception 'FAIL: export has % tables, expected 18', (select count(*) from jsonb_object_keys(e)); end if;
+  -- every table with an owner_id column is exported (catches a new owner table the export forgot)
+  if exists (select 1 from information_schema.columns c join information_schema.tables tb using (table_schema, table_name)
+             where c.table_schema = 'public' and c.column_name = 'owner_id' and tb.table_type = 'BASE TABLE'
+               and not (e ? c.table_name)) then
+    raise exception 'FAIL: export misses an owner table: %', (select string_agg(c.table_name, ', ')
+      from information_schema.columns c where c.table_schema = 'public' and c.column_name = 'owner_id' and not (e ? c.table_name)); end if;
+  for k in select k2 from jsonb_object_keys(e) k2 where k2 <> 'persona_removed' loop
     select count(*) into total from jsonb_array_elements(e -> k);
     select count(*) into own from jsonb_array_elements(e -> k) r where r ->> 'owner_id' = 'aaaaaaaa-0000-0000-0000-00000000000a';
     if total <> own then raise exception 'FAIL: export of % has rows of other users', k; end if;

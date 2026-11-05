@@ -6,7 +6,7 @@
 --   2. ops_app_events             app/db error events, monthly partitions, service_role only
 --   3. ops_ai_events              wider outcome list, cache_status, cached_tokens
 --   4. persona_facts              3 kinds, client_updated_at, batch upsert, total erase
---   5. core_ensure_my_rows / core_export_my_data
+--   5. core_ensure_my_rows (core_export_my_data lives in migration 3, with the last owner table)
 --   6. handle_new_user            can never block a sign-up
 --   7. role timeouts              anon, authenticated
 --   8. ops_maintenance_daily      partitions, retention, anonymous-user purge, pg_cron schedule
@@ -178,7 +178,8 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
--- 5. Self-heal and export (security invoker: RLS applies, the caller only ever sees own rows)
+-- 5. Self-heal (security invoker: RLS applies, the caller only ever sees own rows). The export is in migration 3,
+--    next to the last owner table it has to list.
 -- ---------------------------------------------------------------------------------------------
 create or replace function public.core_ensure_my_rows()
 returns void language plpgsql security invoker set search_path = '' as $$
@@ -187,30 +188,6 @@ begin
   if v_uid is null then raise exception 'not signed in' using errcode = '28000'; end if;
   insert into public.core_profiles (owner_id) values (v_uid) on conflict do nothing;
   insert into public.core_settings (owner_id) values (v_uid) on conflict do nothing;
-end $$;
-
-create or replace function public.core_export_my_data()
-returns jsonb language plpgsql stable security invoker set search_path = '' as $$
-declare
-  v_uid uuid := (select auth.uid());
-  v_out jsonb := '{}'::jsonb;
-  v_rows jsonb;
-  t text;
-begin
-  if v_uid is null then raise exception 'not signed in' using errcode = '28000'; end if;
-  for t in select unnest(array[
-    'core_profiles', 'core_settings', 'core_consents',
-    'plan_visit_plans', 'plan_items', 'plan_support_cards', 'plan_support_items', 'plan_support_top_questions',
-    'practice_sessions', 'practice_turns', 'practice_item_outcomes',
-    'recap_recaps', 'recap_transcript_lines', 'recap_items', 'recap_unconfirmed_items', 'recap_plan_status',
-    'persona_facts'
-  ]) loop
-    -- t comes from the fixed list above, never from the caller
-    execute format('select coalesce(jsonb_agg(to_jsonb(r)), ''[]''::jsonb) from public.%I r where r.owner_id = $1', t)
-      into v_rows using v_uid;
-    v_out := v_out || jsonb_build_object(t, v_rows);
-  end loop;
-  return v_out;
 end $$;
 
 -- ---------------------------------------------------------------------------------------------
@@ -341,14 +318,11 @@ grant  execute on function public.ops_maintenance_daily()                to serv
 revoke execute on function public.persona_upsert_facts(jsonb) from public, anon;
 revoke execute on function public.persona_forget_all()        from public, anon;
 revoke execute on function public.core_ensure_my_rows()       from public, anon;
-revoke execute on function public.core_export_my_data()       from public, anon;
 grant  execute on function public.persona_upsert_facts(jsonb) to authenticated;
 grant  execute on function public.persona_forget_all()        to authenticated;
 grant  execute on function public.core_ensure_my_rows()       to authenticated;
-grant  execute on function public.core_export_my_data()       to authenticated;
 
 comment on function public.persona_upsert_facts(jsonb) is '[PERSONA] Batch upsert of up to 100 facts, last write wins by client_updated_at. Needs persona_memory consent (RLS). Returns rows written.';
 comment on function public.persona_forget_all() is '[PERSONA] Erase all of the caller''s facts. Returns facts remaining (must be 0).';
 comment on function public.core_ensure_my_rows() is '[CORE] Create the caller''s missing profile and settings rows (self-heal if the sign-up trigger failed).';
-comment on function public.core_export_my_data() is '[CORE] All of the caller''s rows from every owner table as one JSON object keyed by table name.';
 comment on function public.ops_maintenance_daily() is '[OPS] Daily job (pg_cron 03:17 UTC): partitions ahead, 90-day event retention, usage prune, anonymous-user purge. Returns a summary.';
