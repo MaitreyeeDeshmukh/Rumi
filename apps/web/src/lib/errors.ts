@@ -41,7 +41,7 @@ export const MESSAGES: Record<AppErrorCode, string> = {
   forbidden: "This request was blocked. Reload the page and try again.",
   not_found: "I could not find that.",
   conflict: "That changed while you were working. Reload and try again.",
-  rate_limited: "That was too many tries. Wait one minute and try again.",
+  rate_limited: "That was too many tries. Please try again later or tomorrow.",
   ai_invalid: "I could not make a safe answer. Your work is saved. Try again.",
   ai_unavailable: "I could not reach the AI. Your work is saved. Try again.",
   store_unavailable: "Saving is paused. Your work is on this device.",

@@ -85,8 +85,8 @@ describe("readJson", () => {
 });
 
 describe("07 P3 and H-17 details", () => {
-  it("Retry-After is a whole number between 1 and 3600 even for NaN, Infinity or negative input", () => {
-    for (const [input, expected] of [[Number.NaN, "60"], [Number.POSITIVE_INFINITY, "60"], [-5, "1"], [999_999, "3600"], [0.2, "1"]] as const) {
+  it("Retry-After is a whole number between 1 and 86400 (a day) even for NaN, Infinity or negative input", () => {
+    for (const [input, expected] of [[Number.NaN, "60"], [Number.POSITIVE_INFINITY, "60"], [-5, "1"], [999_999, "86400"], [7_200, "7200"], [0.2, "1"]] as const) {
       expect(errorResponse(new HttpError(429, "rate_limited", input)).headers.get("Retry-After")).toBe(expected);
     }
   });

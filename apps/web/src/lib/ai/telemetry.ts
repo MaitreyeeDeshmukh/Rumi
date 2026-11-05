@@ -7,7 +7,9 @@ import type { TaskName, Tier } from "@/features/shared/task";
 import type { ApiErrorCode } from "@/features/shared/types";
 
 export type Outcome = "ok" | "mock" | "crisis" | "fallback" | "error";
-export type EventErrorCode = ApiErrorCode | "config" | "timeout";
+export type EventErrorCode = ApiErrorCode | "config" | "unauthorized" | "timeout";
+/** Where in the pipeline a request stopped or an unexpected error happened. A fixed list, never text. */
+export type Stage = "guard" | "body" | "request" | "sanitize" | "crisis" | "redact" | "config" | "ledger" | "prompt" | "provider" | "output" | "reply" | "auth" | "flags" | "cache" | "limits";
 
 export interface AiEvent {
   /** A random request id (uuid). */
@@ -31,14 +33,28 @@ export interface AiEvent {
   outTokens: number;
   ms: number;
   errorCode?: EventErrorCode;
+  /** The pipeline stage that failed, set when a request ended with an error or an unexpected exception. */
+  stage?: Stage;
+  /** Why the crisis card was shown. A fixed list, never text: tier1 regex, the model said yes, the model's own flag, or a fail-safe. */
+  crisisSource?: CrisisSource;
+  /** The kind of the last provider failure, its HTTP status and the last answer's finish reason. Codes only, never a body. */
+  providerError?: string;
+  providerStatus?: number;
+  finishReason?: string;
 }
+
+export type CrisisSource = "tier1" | "model_yes" | "model_flag" | "failsafe_error" | "failsafe_off" | "failsafe_quota";
+const CRISIS_SOURCES: readonly string[] = ["tier1", "model_yes", "model_flag", "failsafe_error", "failsafe_off", "failsafe_quota"];
+const PROVIDER_ERRORS: readonly string[] = ["timeout", "http", "rate_limited", "rejected", "config", "empty", "aborted", "skipped"];
+const FINISH_REASONS: readonly string[] = ["stop", "length", "other"];
 
 const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap"];
 const OUTCOMES: readonly string[] = ["ok", "mock", "crisis", "fallback", "error"];
 const TIERS: readonly string[] = ["quality", "fast", "none"];
-const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "timeout"];
+const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout"];
 const GUARD_CODES: readonly string[] = ALL_GUARD_CODES;
 const REQUEST_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12})$/;
+const STAGES: readonly string[] = ["guard", "body", "request", "sanitize", "crisis", "redact", "config", "ledger", "prompt", "provider", "output", "reply", "auth", "flags", "cache", "limits"];
 const PROMPT_VERSION = /^[a-z]+@[0-9]{1,3}$/;
 
 const count = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
@@ -83,10 +99,57 @@ export function aiRecord(event: AiEvent) {
     outTokens: count(e.outTokens),
     ms: count(e.ms),
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
+    ...(e.stage === undefined ? {} : { stage: oneOf(e.stage, STAGES, "unknown") }),
+    ...(e.crisisSource === undefined ? {} : { crisisSource: oneOf(e.crisisSource, CRISIS_SOURCES, "unknown") }),
+    ...(e.providerError === undefined ? {} : { providerError: oneOf(e.providerError, PROVIDER_ERRORS, "unknown") }),
+    ...(typeof e.providerStatus === "number" && e.providerStatus >= 100 && e.providerStatus <= 599 ? { providerStatus: Math.floor(e.providerStatus) } : {}),
+    ...(e.finishReason === undefined ? {} : { finishReason: oneOf(e.finishReason, FINISH_REASONS, "other") }),
   };
   return record;
 }
 
 export function logEvent(event: AiEvent): void {
   emitLine(JSON.stringify(aiRecord(event)));
+}
+
+/** The values `ops_ai_events.outcome` accepts (08 section 2). */
+export type DbOutcome = "ok" | "degraded" | "crisis" | "rate_limited" | "invalid_input" | "provider_error" | "guard_blocked" | "unauthorized" | "timeout" | "config_error";
+
+/**
+ * The one mapping from the harness outcome to the stored outcome, or null when nothing is stored (mock).
+ * ok->ok, crisis->crisis, fallback->degraded (a fallback caused by timeouts or by missing configuration is stored as
+ * timeout or config_error, because those are the causes an operator needs to see), error by its code:
+ * forbidden->unauthorized, unauthorized->unauthorized, rate_limited->rate_limited, bad_input and too_large->invalid_input,
+ * ai_unavailable->provider_error, ai_invalid->guard_blocked, config->config_error, timeout->timeout.
+ */
+export function toDbOutcome(outcome: Outcome, errorCode?: EventErrorCode): DbOutcome | null {
+  switch (outcome) {
+    case "ok":
+      return "ok";
+    case "crisis":
+      return "crisis";
+    case "mock":
+      return null;
+    case "fallback":
+      return errorCode === "timeout" ? "timeout" : errorCode === "config" ? "config_error" : "degraded";
+    case "error":
+      switch (errorCode) {
+        case "forbidden":
+        case "unauthorized":
+          return "unauthorized";
+        case "rate_limited":
+          return "rate_limited";
+        case "bad_input":
+        case "too_large":
+          return "invalid_input";
+        case "ai_invalid":
+          return "guard_blocked";
+        case "config":
+          return "config_error";
+        case "timeout":
+          return "timeout";
+        default:
+          return "provider_error";
+      }
+  }
 }
