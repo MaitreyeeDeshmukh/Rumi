@@ -137,6 +137,20 @@ describe("logger redaction", () => {
     expect([o.requestId, o.route, o.event]).toEqual(["invalid", "/api/plan", "invalid_event"]);
   });
 
+  it("work with no request names itself with system, process or none, and those print as they are", () => {
+    for (const word of ["system", "process", "none"]) {
+      createLogger({ requestId: word, route: "ai/limits" }).warn("ai_unknown_model_price", {});
+    }
+    expect(out().map((o) => o.requestId)).toEqual(["system", "process", "none"]);
+  });
+
+  it("only those three words pass: near misses, other case and padding are still invalid", () => {
+    for (const bad of ["System", "SYSTEM", "systems", " system", "system ", "no", "NONE", "proc", "system" + String.fromCharCode(10)]) {
+      createLogger({ requestId: bad, route: "/api/plan" }).info("x", {});
+    }
+    expect(new Set(out().map((o) => o.requestId))).toEqual(new Set(["invalid"]));
+  });
+
   it("never throws on odd fields: NaN, undefined, nested objects, thousands of keys", () => {
     const many: Record<string, string> = {};
     for (let i = 0; i < 5000; i++) many[`k${i}`] = "v";

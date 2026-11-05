@@ -580,7 +580,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     let memoryRead: Promise<string[]> = Promise.resolve([]);
     if (!mock) {
       stage = "flags";
-      memoryRead = memoryStrings(spec.useMemory, user === null ? null : user.userId, deps.getMemoryFacts ?? getMemoryFacts);
+      memoryRead = memoryStrings(spec.useMemory, user === null ? null : user.userId, deps.getMemoryFacts ?? ((id) => getMemoryFacts(id, { log })));
       aiOff = aiForceOff() || !(await (deps.getFlag ?? getFlag)("ai_enabled")) || (await (deps.spendCapReached ?? spendCapReached)());
     }
     const nonce = rand();

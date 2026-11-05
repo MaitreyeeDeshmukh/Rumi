@@ -68,6 +68,8 @@ const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const TOKENISH = /eyJ[\w-]{5,}\.|\b[sS][kK][-_][\w-]{8,}|\b[Bb][Ee][Aa][Rr][Ee][Rr]\s+\S|(?=[\w+/=-]*[0-9A-Z])[\w+/=-]{24,}/;
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EVENT_NAME = /^[a-z0-9_.:-]{1,60}$/;
+/** Work that belongs to no request (a startup read, a cached price lookup) names itself with one of these fixed words. They hold no data. */
+const NO_REQUEST = new Set(["system", "process", "none"]);
 
 /** Keyed (HMAC), so a marker cannot be matched against a dictionary of likely texts. Stable inside one deployment. */
 const hashMarker = (s: string): string => `h:${createHmac("sha256", hashingKey()).update(s).digest("hex").slice(0, 12)}`;
@@ -102,7 +104,7 @@ export const cleanRoute = (route: unknown): string => {
 };
 
 export function createLogger(ctx: { requestId: string; route: string }): Logger {
-  const requestId = REQUEST_ID.test(ctx.requestId) ? ctx.requestId : "invalid";
+  const requestId = REQUEST_ID.test(ctx.requestId) || NO_REQUEST.has(ctx.requestId) ? ctx.requestId : "invalid";
   const route = cleanRoute(ctx.route);
 
   function write(level: LogLevel, event: string, fields: Record<string, string | number | boolean>): void {
