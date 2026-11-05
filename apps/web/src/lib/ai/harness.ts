@@ -24,7 +24,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/requireUser";
 import { AppError, toResponse } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
-import { REQUEST_ID_HEADER, newRequestId } from "@/lib/requestContext";
+import { REQUEST_ID_HEADER, requestIdOf } from "@/lib/requestContext";
 import { recordAiEvent, recordAppEvent } from "@/lib/telemetry/sinks";
 import { getMemoryFacts } from "@/features/memory/supabaseStore";
 import { COMPANION_RE, LIMITS } from "@/features/shared/constants";
@@ -97,7 +97,6 @@ const MEMORY_MS = 1_500;
 /** The auth lookup is an outbound call, so it has its own deadline. Past it the caller counts as signed out. */
 const AUTH_MS = 2_000;
 const IDEMPOTENCY_RE = /^[A-Za-z0-9_-]{8,64}$/;
-const REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Keys whose values are ids or enum values (checked by Zod): never redacted, scanned or stripped as free text. */
 const ID_KEYS = new Set(["id", "itemId", "planId", "evidence", "coveredItemIds", "createdAt", "companionName", "kind", "source", "role", "focus", "speaker", "mySpeaker", "scenario", "section", "status"]);
@@ -417,8 +416,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   const now = deps.now ?? Date.now;
   const rand = deps.rand ?? newNonce;
   const sleep = deps.sleep ?? defaultSleep;
-  const headerId = req.headers.get(REQUEST_ID_HEADER);
-  const requestId = headerId !== null && REQUEST_ID_RE.test(headerId) ? headerId : newRequestId();
+  const requestId = requestIdOf(req);
   const log = createLogger({ requestId, route: `/api/${spec.name}` });
   const defer = deps.defer ?? deferToAfter;
   const run: Run = {

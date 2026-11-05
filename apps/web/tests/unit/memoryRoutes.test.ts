@@ -5,13 +5,14 @@ import { AppError } from "@/lib/errors";
 import { fakeMemoryDb } from "./helpers/fakeMemoryDb";
 
 const T1 = "2026-11-05T10:00:00.000Z";
+const SENT_ID = "3f2b8c1e-5d4a-4b7e-9a10-2c3d4e5f6a7b";
 const NOW = Date.parse("2026-11-05T12:00:00.000Z");
 const facts = [
   { kind: "support_pref", key: "p1", client_updated_at: T1 },
   { kind: "help_level", key: "question", level: 2, client_updated_at: T1 },
 ];
 
-/** An AppError the way requireUser would throw it, without depending on the constructor's argument list. */
+/** An AppError the way the guard (requireUser behind it) would throw it, without depending on the constructor's argument list. */
 const appError = (code: string, status: number): AppError =>
   Object.assign(Object.create(AppError.prototype) as AppError, { code, status, expose: true, message: code });
 
@@ -19,8 +20,7 @@ function setup(over: Partial<RouteDeps> = {}) {
   const db = fakeMemoryDb();
   db.consent = true;
   const deps: RouteDeps = {
-    guard: () => undefined,
-    requireUser: async () => ({ userId: "u1" }),
+    guard: async () => ({ userId: "u1" }),
     getDb: async () => db,
     getFlag: async () => true,
     readJson,
@@ -37,12 +37,12 @@ const answerOf = async (res: Response) => ({ status: res.status, body: (await re
 describe("POST /api/memory/facts", () => {
   it("writes the batch and answers with what is stored, plus the request id", async () => {
     const { db, deps } = setup();
-    const { status, body, res } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }, { "x-request-id": "req-12345678" }), deps));
+    const { status, body, res } = await answerOf(await handleFacts(post("/api/memory/facts", { facts }, { "x-request-id": SENT_ID }), deps));
     expect(status).toBe(200);
     expect(body).toMatchObject({ saved: 2, rejected: 0 });
     expect((body.facts as unknown[]).length).toBe(2);
     expect(db.rows.size).toBe(2);
-    expect(res.headers.get("x-request-id")).toBe("req-12345678");
+    expect(res.headers.get("x-request-id")).toBe(SENT_ID);
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -63,7 +63,7 @@ describe("POST /api/memory/facts", () => {
 
   it("not signed in: 401 with the AppError answer, and the database is never touched", async () => {
     const { db, deps } = setup({
-      requireUser: async () => {
+      guard: async () => {
         throw appError("unauthorized", 401);
       },
     });
@@ -96,7 +96,7 @@ describe("POST /api/memory/facts", () => {
 
   it("the guard receives the body limit", async () => {
     let seen = 0;
-    const { deps } = setup({ guard: (_r, max) => void (seen = max) });
+    const { deps } = setup({ guard: async (_r, max) => ((seen = max), { userId: "u1" }) });
     await handleFacts(post("/api/memory/facts", { facts }), deps);
     expect(seen).toBe(MAX_BODY_BYTES);
   });
@@ -226,7 +226,7 @@ describe("POST /api/memory/forget", () => {
 
   it("needs a user and the guard", async () => {
     const { db, deps } = setup({
-      requireUser: async () => {
+      guard: async () => {
         throw appError("unauthorized", 401);
       },
     });

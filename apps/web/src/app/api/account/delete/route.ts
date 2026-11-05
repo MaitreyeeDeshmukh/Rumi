@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { OWNER_TABLES } from "@/lib/auth/ownerTables";
-import { AppError, toResponse } from "@/lib/errors";
+import { AppError, asAppError, fingerprintOf, toResponse } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
 import { requestIdOf, REQUEST_ID_HEADER } from "@/lib/requestContext";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { recordAppEvent } from "@/lib/telemetry/sinks";
 
 const ROUTE = "/api/account/delete";
 
@@ -41,8 +42,10 @@ export async function POST(req: Request): Promise<Response> {
   const requestId = requestIdOf(req);
   const log = createLogger({ requestId, route: ROUTE });
   let removed = false;
+  let guarded = false;
   try {
     const { user } = await guardRequest(req, { requireAuth: true });
+    guarded = true;
     const admin = getAdminClient();
 
     const { error } = await admin.auth.admin.deleteUser(user.userId);
@@ -61,7 +64,12 @@ export async function POST(req: Request): Promise<Response> {
     log.info("account_deleted");
     return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
   } catch (e) {
-    if (e instanceof AppError && e.status >= 500) log.error("account_delete_failed", e);
+    const fault = asAppError(e);
+    if (fault.status >= 500) {
+      log.error("account_delete_failed", e);
+      // guardRequest counts its own faults; this counts the ones after it. Codes only.
+      if (guarded) recordAppEvent({ source: "server", area: "auth", code: fault.code, fingerprint: fingerprintOf(e), route: ROUTE, status: fault.status });
+    }
     const res = toResponse(e, requestId);
     if (removed || (e instanceof AppError && e.code === "unauthorized")) {
       for (const cookie of expiredSessionCookies(req)) res.headers.append("Set-Cookie", cookie);

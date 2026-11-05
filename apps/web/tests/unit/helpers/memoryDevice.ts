@@ -41,8 +41,7 @@ export function memoryDevice(db: FakeMemoryDb, options: DeviceOptions = {}) {
 
   const flag = { on: true };
   const deps: RouteDeps = {
-    guard: () => undefined,
-    requireUser: async () => ({ userId: "u1" }),
+    guard: async () => ({ userId: "u1" }),
     getDb: async () => db,
     getFlag: async () => flag.on,
     readJson,

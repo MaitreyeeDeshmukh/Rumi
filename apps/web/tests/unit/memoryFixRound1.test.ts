@@ -32,8 +32,7 @@ function setup(over: Partial<RouteDeps> = {}) {
   const db = fakeMemoryDb();
   db.consent = true;
   const deps: RouteDeps = {
-    guard: () => undefined,
-    requireUser: async () => ({ userId: "u1" }),
+    guard: async () => ({ userId: "u1" }),
     getDb: async () => db,
     getFlag: async () => true,
     readJson,
@@ -178,7 +177,7 @@ describe("fix 4: a limit per signed-in user on every memory route", () => {
   it("not signed in is answered 401 before the user limit is touched", async () => {
     let called = false;
     const { deps } = setup({
-      requireUser: async () => {
+      guard: async () => {
         throw new HttpError(403, "forbidden");
       },
       userLimit: () => void (called = true),
@@ -228,13 +227,12 @@ describe("fix 5: the request id from the browser", () => {
     return res.headers.get("x-request-id");
   };
 
-  it("a well-formed id is kept", async () => {
-    expect(await idOf("abcd-1234")).toBe("abcd-1234");
-    expect(await idOf("a".repeat(64))).toBe("a".repeat(64));
+  it("an id shaped like a uuid is kept (the one rule every route shares: requestIdOf)", async () => {
+    expect(await idOf("3f2b8c1e-5d4a-4b7e-9a10-2c3d4e5f6a7b")).toBe("3f2b8c1e-5d4a-4b7e-9a10-2c3d4e5f6a7b");
   });
 
   it("anything else is replaced by a fresh uuid", async () => {
-    for (const bad of ["short", "a".repeat(65), "has space in it", "../../etc/passwd", "id;DROP", "café-1234567", "a".repeat(8) + "\u0007"]) {
+    for (const bad of ["abcd-1234", "a".repeat(64), "short", "a".repeat(65), "has space in it", "../../etc/passwd", "id;DROP", "café-1234567", "a".repeat(8) + "\u0007"]) {
       expect(await idOf(bad), bad).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     }
     expect(await idOf(undefined)).toMatch(/^[0-9a-f-]{36}$/);

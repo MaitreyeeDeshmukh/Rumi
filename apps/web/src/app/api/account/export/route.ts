@@ -1,8 +1,9 @@
-import { AppError, toResponse } from "@/lib/errors";
+import { AppError, asAppError, fingerprintOf, toResponse } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
 import { requestIdOf, REQUEST_ID_HEADER } from "@/lib/requestContext";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { getServerClient } from "@/lib/supabase/server";
+import { recordAppEvent } from "@/lib/telemetry/sinks";
 import { mapSupabaseError } from "@/features/auth/mapError";
 
 const ROUTE = "/api/account/export";
@@ -14,8 +15,10 @@ const ROUTE = "/api/account/export";
 export async function GET(req: Request): Promise<Response> {
   const requestId = requestIdOf(req);
   const log = createLogger({ requestId, route: ROUTE });
+  let guarded = false;
   try {
     await guardRequest(req, { requireAuth: true });
+    guarded = true;
     const client = await getServerClient(req);
     const { data, error } = await client.rpc("core_export_my_data");
     if (error) {
@@ -32,7 +35,12 @@ export async function GET(req: Request): Promise<Response> {
       },
     });
   } catch (e) {
-    if (e instanceof AppError && e.status >= 500) log.error("account_export_failed", e);
+    const fault = asAppError(e);
+    if (fault.status >= 500) {
+      log.error("account_export_failed", e);
+      // guardRequest counts its own faults; this counts the ones after it. Codes only.
+      if (guarded) recordAppEvent({ source: "server", area: "auth", code: fault.code, fingerprint: fingerprintOf(e), route: ROUTE, status: fault.status });
+    }
     return toResponse(e, requestId);
   }
 }

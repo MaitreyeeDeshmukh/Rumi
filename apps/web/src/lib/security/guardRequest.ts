@@ -1,8 +1,9 @@
 import { requireUser, type AuthedUser } from "@/lib/auth/requireUser";
 import { LIMITS } from "@/features/shared/constants";
-import { AppError } from "@/lib/errors";
+import { AppError, fingerprintOf } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
 import { requestIdOf } from "@/lib/requestContext";
+import { recordAppEvent } from "@/lib/telemetry/sinks";
 import { assertSameOrigin } from "./origin";
 import { clientIp, hashClientIp, rateLimiter, type RateLimiter } from "./rateLimit";
 
@@ -53,6 +54,9 @@ export async function guardRequest(req: Request, options: GuardOptions = {}): Pr
       if (authenticate !== null) user = await authenticate(req);
     } catch (e) {
       if (!(e instanceof AppError)) throw e;
+      // An auth fault of ours (outage, configuration) is counted once, here, whether the route needs a user or not: the
+      // app_errors alert reads app events, and a stdout line alone never reaches it. A caller fault (4xx) is not an alert.
+      if (e.status >= 500) recordAppEvent({ source: "server", area: "auth", code: e.code, fingerprint: fingerprintOf(e), route: new URL(req.url).pathname, status: e.status });
       if (options.requireAuth) throw e;
       // Signed out is a normal state (first visit, auth down). An outage leaves one warning; a configuration fault is an error.
       if (e.code !== "unauthorized") {
@@ -70,6 +74,8 @@ export async function guardRequest(req: Request, options: GuardOptions = {}): Pr
   } catch (e) {
     if (e instanceof AppError) throw e;
     // Anything unexpected becomes a fixed, generic error with the original kept only as the cause.
-    throw new AppError("internal", { cause: e });
+    const fault = new AppError("internal", { cause: e });
+    recordAppEvent({ source: "server", area: "app", code: fault.code, fingerprint: fingerprintOf(e), route: new URL(req.url).pathname, status: fault.status });
+    throw fault;
   }
 }

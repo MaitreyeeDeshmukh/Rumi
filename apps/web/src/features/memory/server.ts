@@ -1,6 +1,6 @@
 /**
  * The three memory routes, as plain functions over injected dependencies (the route files wire the real ones).
- * Every route: same-origin and size checks (guard), then a verified user (requireUser), then the work.
+ * Every route: same-origin and size checks and a verified user (guard), then the work.
  * Answers carry a code, one plain sentence and the request id. They never carry the database's message.
  *  - facts:   writes a batch (and any removals) as the signed-in user, answers with what is stored.
  *             Off when the `memory_sync_enabled` flag is off (cloud writes fail safe).
@@ -14,9 +14,10 @@
  */
 import { z } from 'zod';
 import { HttpError, json } from '@/lib/ai/http';
-import { AppError, toResponse } from '@/lib/errors';
+import { AppError, fingerprintOf, toResponse } from '@/lib/errors';
 import { createLogger, type Logger } from '@/lib/log';
-import { REQUEST_ID_HEADER, newRequestId } from '@/lib/requestContext';
+import { REQUEST_ID_HEADER, requestIdOf } from '@/lib/requestContext';
+import { recordAppEvent } from '@/lib/telemetry/sinks';
 import { parseFactBatch } from './sanitize';
 import { createSupabaseStore } from './supabaseStore';
 import { MemoryStoreError, type MemoryDb } from './types';
@@ -25,11 +26,10 @@ export const MAX_BODY_BYTES = 32_000;
 
 export interface RouteDeps {
   /**
-   * Same origin, declared size, address limit and (when it can) the verified caller. Async: it asks Supabase Auth. Throws AppError or HttpError.
-   * It may return the user it already verified, so the route does not ask Auth a second time.
+   * Same origin, declared size, address limit and the verified caller. Async: it asks Supabase Auth. Throws AppError or HttpError.
+   * It returns the user it verified, so the route does not ask Auth a second time.
    */
-  guard: (req: Request, maxBytes: number) => void | Promise<void | { userId: string }>;
-  requireUser: (req: Request) => Promise<{ userId: string }>;
+  guard: (req: Request, maxBytes: number) => Promise<{ userId: string }>;
   /** A database client that acts as the signed-in user (cookie-bound, publishable key). */
   getDb: (req: Request) => Promise<MemoryDb>;
   getFlag: (key: 'memory_sync_enabled') => Promise<boolean>;
@@ -53,16 +53,26 @@ const MESSAGE: Record<Code, string> = {
   permission_denied: 'Saving is paused. Your work is on this device.',
 };
 
-/** A request id from the browser is used only if it looks like one; anything else (log forging, huge values) is replaced. */
-const REQUEST_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
-
 function fail(status: number, code: Code, requestId: string, headers: Record<string, string> = {}): Response {
   return json({ error: { code, message: MESSAGE[code], requestId } }, status, { [REQUEST_ID_HEADER]: requestId, ...headers });
 }
 const ok = (body: unknown, requestId: string): Response => json(body, 200, { [REQUEST_ID_HEADER]: requestId });
 
-/** One place that turns any failure into an answer and decides what is logged. Caller faults are not ERROR. */
-function answer(e: unknown, requestId: string, log: Logger): Response {
+/**
+ * One place that turns any failure into an answer and decides what is logged. Caller faults are not ERROR.
+ * A 5xx answer also leaves one app event (codes only), which is what the app_errors alert counts. A fault that
+ * guardRequest raised (`phase` auth) was already recorded there, so it is not counted a second time.
+ */
+function answer(e: unknown, requestId: string, log: Logger, route: string, phase: 'auth' | 'work'): Response {
+  const res = answerBody(e, requestId, log);
+  if (res.status >= 500 && phase === 'work') {
+    const code = e instanceof AppError ? e.code : e instanceof MemoryStoreError ? `memory_${e.reason}` : 'memory_route_failed';
+    recordAppEvent({ source: 'server', area: 'memory', code, fingerprint: fingerprintOf(e), route, status: res.status });
+  }
+  return res;
+}
+
+function answerBody(e: unknown, requestId: string, log: Logger): Response {
   if (e instanceof AppError) return toResponse(e, requestId);
   if (e instanceof HttpError) {
     if (e.code === 'ai_unavailable' || e.code === 'ai_invalid') {
@@ -93,16 +103,16 @@ function answer(e: unknown, requestId: string, log: Logger): Response {
 }
 
 async function run(req: Request, route: string, work: (log: Logger, requestId: string, userId: string) => Promise<Response>, deps: RouteDeps): Promise<Response> {
-  const sent = req.headers.get(REQUEST_ID_HEADER);
-  const requestId = sent !== null && REQUEST_ID_RE.test(sent) ? sent : newRequestId();
+  const requestId = requestIdOf(req);
   const log = (deps.createLog ?? createLogger)({ requestId, route });
+  let phase: 'auth' | 'work' = 'auth';
   try {
-    const verified = await deps.guard(req, MAX_BODY_BYTES);
-    const { userId } = verified ?? (await deps.requireUser(req));
+    const { userId } = await deps.guard(req, MAX_BODY_BYTES);
     deps.userLimit(userId);
+    phase = 'work';
     return await work(log, requestId, userId);
   } catch (e) {
-    return answer(e, requestId, log);
+    return answer(e, requestId, log, route, phase);
   }
 }
 

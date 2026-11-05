@@ -2,7 +2,6 @@
 import { createHash } from 'node:crypto';
 import { HttpError, readJson } from '@/lib/ai/http';
 import { getFlag } from '@/lib/ai/flags';
-import { requireUser } from '@/lib/auth/requireUser';
 import { guardRequest } from '@/lib/security/guardRequest';
 import { createRateLimiter, type RateLimiter } from '@/lib/security/rateLimit';
 import { getServerClient } from '@/lib/supabase/server';
@@ -29,7 +28,6 @@ export const routeDeps: RouteDeps = {
     const { user } = await guardRequest(req, { maxBytes, requireAuth: true });
     return { userId: user.userId };
   },
-  requireUser,
   getDb: async (req) => (await getServerClient(req)) as unknown as MemoryDb,
   getFlag,
   readJson,
