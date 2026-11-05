@@ -42,7 +42,7 @@ export const sayitSpec: TaskSpec<SayItRequestT, SayItModelOutT, SayItReplyT> = {
     const allowed = [...ledger.items.map((i) => i.text), ...(r.level === 1 && r.clinicianQuestion !== undefined ? [r.clinicianQuestion] : [])];
     const codes: GuardCode[] = [
       ...validateGrounding(o.script, ledger),
-      ...inventedClaimCodes(o.script, allowed),
+      ...inventedClaimCodes(o.script, allowed, r.level === 1 || r.clinicianQuestion === undefined ? [] : [r.clinicianQuestion]),
       // Nothing but blanks ("[what] [how]") says nothing at all.
       ...(o.script.normalize("NFKC").replace(/\[[^\]]*\]/g, " ").match(/\p{L}/u) === null ? (["empty"] as const) : []),
       ...(r.level === 1 ? level1Codes(o.script, ledger) : []),

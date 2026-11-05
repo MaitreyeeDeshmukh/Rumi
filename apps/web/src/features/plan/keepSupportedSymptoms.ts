@@ -1,28 +1,28 @@
 import { claimKeys, harmWording } from "@/features/shared/claims";
 import type { GuardCode } from "@/features/shared/guards";
 import { ledgerFromTexts, ungroundedSpecifics } from "@/lib/text/specifics";
-import { contentWords } from "@/lib/text/tokens";
+import { allStems, contentStems } from "@/lib/text/stems";
 
-/** Plural tolerance only: headaches and headache are the same word. */
-const stem = (w: string): string => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
-const stems = (text: string): Set<string> => new Set(contentWords(text).map(stem));
+/** What a text needs to be backed (its content words, plural and tense folded) and what a text says (every word, plus the words that mean the same: head and headache, angry and anger, swollen and swelling). */
+const needs = (text: string): string[] => contentStems(text);
+const says = (text: string): Set<string> => allStems(text);
 
 /**
  * Symptoms the user actually wrote: EVERY content word of the symptom must be in their own text, so "headaches and
  * nausea" is dropped when only headaches was written. A symptom with no content word is dropped too.
  */
 export function keepSupportedSymptoms(rawText: string, symptoms: readonly string[]): string[] {
-  const have = stems(rawText);
+  const have = says(rawText);
   return symptoms.filter((s) => {
-    const own = [...stems(s)];
+    const own = needs(s);
     return own.length > 0 && own.every((w) => have.has(w));
   });
 }
 
 /** True when the text shares at least one content stem with the user's words. The words of a user item must come from there. */
 export function sharesStem(rawText: string, text: string): boolean {
-  const have = stems(rawText);
-  return [...stems(text)].some((w) => have.has(w));
+  const have = says(rawText);
+  return needs(text).some((w) => have.has(w));
 }
 
 /**
@@ -31,9 +31,9 @@ export function sharesStem(rawText: string, text: string): boolean {
  * skipped and the plan uses the fixed prompt.
  */
 export function mainConcernCodes(rawText: string, mainConcern: string): GuardCode[] {
-  const have = stems(rawText);
-  if (have.size === 0) return [];
-  const concern = [...stems(mainConcern)];
+  if (needs(rawText).length === 0) return [];
+  const have = says(rawText);
+  const concern = needs(mainConcern);
   return concern.length > 0 && concern.filter((w) => have.has(w)).length * 2 >= concern.length ? [] : ["main_concern_not_from_user"];
 }
 

@@ -365,8 +365,8 @@ describe("level1Codes (D13)", () => {
     expect(level1Codes("How long? You can start with: one two three four five six seven eight nine ten eleven twelve thirteen ...")).toEqual(["level1_statement"]);
   });
 
-  it("no question mark is a soft code, and both can happen together", () => {
-    expect(level1Codes("Say more about it. You can start with: it ...")).toEqual(["level1_no_question"]);
+  it("no question mark is a soft code, and both can happen together; a hint that is not one question is a statement (P2-9)", () => {
+    expect(level1Codes("Say more about it. You can start with: it ...")).toEqual(["level1_statement", "level1_no_question"]);
     expect(level1Codes("I have a headache.")).toEqual(["level1_statement", "level1_no_question"]);
   });
 });

@@ -57,14 +57,14 @@ const SAFE_ABSENT = new Set([
 const NEGATORS = new Set([
   "not", "never", "no", "nor", "none", "cannot", "can't", "cant", "don't", "dont", "doesn't", "didn't", "won't", "wont", "shouldn't",
   "mustn't", "isn't", "aren't", "wasn't", "avoid", "stop", "skip", "without", "discontinue", "quit", "refrain", "unless", "except", "unable",
-  "fail", "forget", "hesitate",
+  "fail", "forget", "hesitate", "against", "off", "rarely", "seldom", "hardly", "barely", "scarcely", "few", "neither",
 ]);
 /** The content words of a sentence that the cited lines must back: no measure units (the amount check covers those), no safe words, no negators. */
 const needed = (sentence: string): string[] => [
   ...new Set(contentWords(sentence).filter((w) => !SAFE_ABSENT.has(w) && !NEGATORS.has(w) && measureUnit(w) === undefined).map(stem)),
 ];
 /** How many content words of a sentence the lines may leave unsaid: none in a short sentence, one per six words in a long one. */
-const allowedMissing = (count: number): number => (count < 8 ? 0 : Math.floor(count / 6));
+export const allowedMissing = (count: number): number => (count < 8 ? 0 : Math.floor(count / 6));
 /** Clauses that follow these words are judged on their own: every content word of them must be backed. */
 const CLAUSE_SPLIT = /\s+(?:and|but|because|caused by|due to|so)\s+/i;
 /** Sections that say what the clinician told the user: the user's own words can not be their source. */
@@ -80,7 +80,14 @@ export const recapEmptyCodes = (r: { items: readonly unknown[]; unconfirmed: rea
 
 /** Shown when the text of a demoted item is itself advice, a diagnosis, an order or a safety statement: the text is not repeated. */
 export const GENERIC_UNCONFIRMED = `${PREFIX}one point from the visit text.`;
-const IMPERATIVE = /^(?:please\s+)?(?:[\p{L}-]+:\s*)?(?:take|stop|start|increase|decrease|skip|use|try|avoid|drink|eat|call|go|do not|don't|keep|continue|quit|apply|inject|swallow|double|reduce)\b|\byou (?:should|must|need to|have to|ought to)\b/u;
+const IMPERATIVE =
+  /^(?:please\s+)?(?:[\p{L}-]+:\s*)?(?:take|stop|start|increase|decrease|skip|use|try|avoid|drink|eat|call|go|do not|don't|keep|continue|quit|apply|inject|swallow|double|reduce|rest|see|seek|visit|phone|get|stay|limit|exercise|sleep|relax|lie|sit|make sure)\b|\byou (?:should|must|need to|have to|ought to)\b/u;
+/** A scan, test or result that "was clear / normal", or "everything is fine": a finding nobody confirmed. */
+const REASSURANCE =
+  /\b(?:scans?|tests?|results?|x-?rays?|bloodwork|exam|bloods?)\b[^.]*\b(?:clear|normal|abnormal|fine|negative|positive)\b|\b(?:everything|all) (?:is|was|looks|seems|were)\b/u;
+/** Classes that say something private or medical about a person. A plain symptom, sleep or illness word is not one: visits are about those. */
+const PLAIN_CLASSES = new Set(["sleep", "illness"]);
+const sensitiveClaim = (text: string): boolean => [...claimKeys(text)].some((k) => !k.startsWith("symptom:") && !PLAIN_CLASSES.has(k));
 const NO_ITEMS = ledgerFromTexts([]);
 
 /**
@@ -90,7 +97,7 @@ const NO_ITEMS = ledgerFromTexts([]);
  */
 function risky(text: string): boolean {
   const t = lower(text);
-  return adviceCodes(text, NO_ITEMS).length > 0 || harmWording(text) || [...claimKeys(text)].some((k) => k.startsWith("condition:")) || IMPERATIVE.test(t);
+  return adviceCodes(text, NO_ITEMS).length > 0 || harmWording(text) || sensitiveClaim(text) || IMPERATIVE.test(t) || REASSURANCE.test(t);
 }
 const fixedLine = (text: string): string => (risky(text) ? GENERIC_UNCONFIRMED : PREFIX + truncateAtWord(text, MAX_UNCONFIRMED_CHARS - PREFIX.length));
 const lower = (s: string): string => normalizeText(s).replace(/\p{Cf}/gu, "").replace(/[’‘]/g, "'").toLowerCase();
@@ -113,7 +120,12 @@ function containsPhrase(haystack: string, phrase: string): boolean {
  * said by the item. ("Do not forget to X" needs no rule: not + forget cancel in the negator count.)
  * Applied to the item and to the lines alike, before counting negators.
  */
-const meaning = (s: string): string => lower(s).replace(/\b(?:do not|don't|dont|never)\s+(?:skip|miss)\b/g, "take");
+const meaning = (s: string): string =>
+  lower(s)
+    .replace(/\b(?:do not|don't|dont|never)\s+(?:skip|miss)\b/g, "take")
+    // "no longer than three days" is a limit, not a negation; "a few days" is not the negator "few".
+    .replace(/\b(?:no|not) (?:longer|more|less|greater|higher|lower|fewer|later|earlier) than\b/g, "limit")
+    .replace(/\ba few\b/g, "several");
 const NEGATOR_PHRASES = /\b(hold off|stay away from|give up)\b/g;
 const negationCount = (sentence: string): number => words(sentence).filter((w) => NEGATORS.has(w)).length + (sentence.match(NEGATOR_PHRASES) ?? []).length;
 const OPPOSITES: readonly (readonly [string, string])[] = [
@@ -128,9 +140,10 @@ const modality = (s: string): "must" | "may" | undefined => {
   return must === may ? undefined : must ? "must" : "may";
 };
 const REPORTING = /\b(asked|asks|asking|wondered|wonders|wants? to know|whether|question)\b/;
+const PRONOUN = /\b(?:it|them|they|this|that|these|those|he|she|him|her)\b/;
 
 /** Where a sentence changes direction: "can drive today but not tomorrow". Each clause is judged on its own negation. */
-const CLAUSE_BREAK = /;|,\s*(?:and|but|so|then|or)\b|\s+(?:but|and|while|although|though|yet|then)\s+/;
+const CLAUSE_BREAK = /;|,|\s+(?:but|and|while|although|though|yet|then)\s+|\s[-–—]\s|[()]/;
 
 /**
  * For every content stem of a sentence, whether it sits in a negated clause (true) or a plain one (false), or both.
@@ -162,12 +175,55 @@ function polarityFlipped(item: string, cited: string): boolean {
   return false;
 }
 
-/** Does the item sentence say something else than the cited sentence: yes/no, opposite word, must/may, question/statement? */
-function flipped(itemSentence: string, citedSentence: string): boolean {
+/** Words whose position in a sentence decides who or what gets what: "instead of", "from X to Y", "before", "more X, less Y". */
+const ORDER_MARKERS = new Set(["instead", "rather", "from", "before", "after", "then", "first", "more", "less", "fewer", "than"]);
+
+/** The content stems and order markers of a sentence in the order they first appear. */
+function sequence(sentence: string): string[] {
+  const content = new Set(contentWords(sentence).filter((w) => !NEGATORS.has(w)).map(stem));
+  const out: string[] = [];
+  for (const w of words(sentence)) {
+    const key = ORDER_MARKERS.has(w) ? w : content.has(stem(w)) ? stem(w) : undefined;
+    if (key !== undefined && !out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
+/**
+ * Same words, other order. Where the cited sentence has a swap-sensitive marker or more than one clause, the shared
+ * stems must come in the same order: "use the inhaler instead of the tablets" is not "use the tablets instead of the inhaler",
+ * and "Mom will call and Sam will bring" is not "Sam will call and Mom will bring". A harmless reordering of a plain
+ * one-clause sentence is not checked.
+ */
+function orderSwapped(itemText: string, cited: string): boolean {
+  const sensitive = cited.split(CLAUSE_BREAK).length > 1 || words(cited).some((w) => ORDER_MARKERS.has(w));
+  if (!sensitive) return false;
+  // A medication item starts with its name and a colon ("Ibuprofen: take it ..."); the name is not part of the sentence order.
+  const item = itemText.replace(/^[^:]{1,40}:\s*/, "");
+  const a = sequence(item);
+  const b = sequence(cited);
+  return a.filter((x) => b.includes(x)).join(" ") !== b.filter((x) => a.includes(x)).join(" ");
+}
+
+/** Quantifiers and restrictors. An item may not add "only", "all", "every", "always"; it may not drop "only"; "some" is not "all". */
+const UNIVERSAL = new Set(["only", "all", "every", "always", "everything", "everyone"]);
+const QUANTIFIERS = new Set([...UNIVERSAL, "some", "many", "most", "several", "any"]);
+function quantifierFlipped(item: string, cited: string): boolean {
+  const a = words(item);
+  const b = words(cited);
+  if (a.some((w) => UNIVERSAL.has(w) && !b.includes(w))) return true;
+  if (b.includes("only") && !a.includes("only")) return true;
+  const qa = a.filter((w) => QUANTIFIERS.has(w));
+  const qb = b.filter((w) => QUANTIFIERS.has(w));
+  return qa.length > 0 && qb.length > 0 && !qa.every((w) => qb.includes(w));
+}
+
+/** Does the item sentence say something else than the cited sentence: yes/no, opposite word, must/may, question/statement, order? */
+export function flipped(itemSentence: string, citedSentence: string): boolean {
   const item = meaning(itemSentence);
   const cited = meaning(citedSentence);
   if (negationCount(item) % 2 !== negationCount(cited) % 2) return true;
-  if (polarityFlipped(item, cited)) return true;
+  if (polarityFlipped(item, cited) || orderSwapped(item, cited) || quantifierFlipped(item, cited)) return true;
   const a = new Set(words(item));
   const b = new Set(words(cited));
   if (OPPOSITES.some(([x, y]) => (a.has(x) && b.has(y) && !b.has(x)) || (a.has(y) && b.has(x) && !b.has(y)))) return true;
@@ -178,9 +234,11 @@ function flipped(itemSentence: string, citedSentence: string): boolean {
   return asks ? !(itemSentence.trim().endsWith("?") || REPORTING.test(item)) : itemSentence.trim().endsWith("?");
 }
 
+/** How many content words of `a` (not counting negators: those are judged by polarity, not by overlap) the sentence `b` says. */
 const overlap = (a: string, b: string): number => {
   const have = allStems(b);
-  return contentStems(a).filter((w) => have.has(w)).length;
+  const skip = new Set(contentWords(a).filter((w) => NEGATORS.has(w)).map(stem));
+  return contentStems(a).filter((w) => !skip.has(w) && have.has(w)).length;
 };
 
 function supported(item: RecapItem, byId: Map<string, TranscriptLine>, mySpeaker: Speaker): boolean {
@@ -203,13 +261,25 @@ function supported(item: RecapItem, byId: Map<string, TranscriptLine>, mySpeaker
     if (need.filter((w) => !have.has(w)).length > allowedMissing(need.length)) return false;
     // A clause added with and/but/because/caused by must be backed word for word.
     if (sentence.split(CLAUSE_SPLIT).slice(1).some((clause) => needed(meaning(clause)).some((w) => !have.has(w)))) return false;
-    let best = citedSentences[0];
-    let bestScore = -1;
-    for (const c of citedSentences) {
-      const score = overlap(sentence, c);
-      if (score > bestScore) [best, bestScore] = [c, score];
+    // Each clause must come from ONE cited sentence: "Take the blue pill in the morning" is not backed by "Take the blue pill at night"
+    // and "Take the red pill in the morning" read together.
+    // A sentence with a pronoun ("It has been about three weeks", "I will print them") may lean on the sentence before it.
+    for (const clause of meaning(sentence).split(CLAUSE_BREAK)) {
+      const need = needed(clause);
+      const room = allowedMissing(need.length);
+      const covers = citedSentences.some((c, n) => {
+        // A pronoun may point at anything said earlier in the cited lines; an answer ("About three times a week.") belongs to the question before it.
+        const lean = n > 0 && PRONOUN.test(lower(c)) ? citedSentences.slice(0, n + 1) : n > 0 && citedSentences[n - 1].trim().endsWith("?") ? [citedSentences[n - 1], c] : [c];
+        const said = allStems(meaning(lean.join(" ")));
+        return need.filter((w) => !said.has(w)).length <= room;
+      });
+      if (need.length > 0 && !covers) return false;
     }
-    if (best !== undefined && bestScore > 0 && flipped(sentence, best)) return false;
+    // Judge the sentence against EVERY cited sentence that covers the most of it (words that carry no negation), not just one:
+    // it is faithful if at least one of them says the same thing.
+    const scores = citedSentences.map((c) => overlap(sentence, c));
+    const top = Math.max(0, ...scores);
+    if (top > 0 && citedSentences.filter((_, n) => scores[n] === top).every((c) => flipped(sentence, c))) return false;
   }
 
   // A diagnosis the lines never said, even inside an otherwise matching sentence.

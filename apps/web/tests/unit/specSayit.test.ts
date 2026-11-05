@@ -15,7 +15,7 @@ const out = (script: string, blanks: string[] = []): SayItModelOutT => ({ script
 
 describe("sayitSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap", () => {
-    expect(sayitSpec).toMatchObject({ name: "sayit", promptVersion: "sayit@4", tier: "fast", temperature: 0.3, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
+    expect(sayitSpec).toMatchObject({ name: "sayit", promptVersion: "sayit@5", tier: "fast", temperature: 0.3, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
   });
 
   it("accepts a question or a scenario, and mock and fallback satisfy the reply schema at every level", () => {

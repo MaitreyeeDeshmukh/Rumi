@@ -321,11 +321,11 @@ describe("P2-6 sayit level 1", () => {
   const codes = (s: string) => level1Codes(s, ledger);
 
   it.each([
-    "Can you tell me when it started?",
-    "Can you tell me how long you have had the headaches?",
+    "Can you tell me when it started? You can start with: It started ...",
+    "Can you tell me how long you have had the headaches? You can start with: It started ...",
     "What detail do you want to add? You can start with: I am not sure ...",
-    "What do you want to say about me?",
-    "Could you tell me what you want to add?",
+    "What do you want to say about me? You can start with: I am not sure ...",
+    "Could you tell me what you want to add? You can start with: I am not sure ...",
   ])("a question to you is allowed even with me or I as the helper: %s", (s) => {
     expect(codes(s)).not.toContain("level1_statement");
   });
@@ -344,7 +344,7 @@ describe("P2-6 sayit level 1", () => {
   });
 
   it("a hint with no question mark is still only soft", () => {
-    expect(codes("Say when it started.")).toEqual(["level1_no_question"]);
+    expect(codes("Say when it started.")).toEqual(["level1_statement", "level1_no_question"]);
   });
 });
 
