@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f8f7f4;
+  --surface: #ffffff;
+  --ink: #343345;
+  --muted: #5e5c70;
+  --line: #e6e2eb;
+  --primary: #66558d;
+  --primary-ink: #ffffff;
+  --lav: #eae5f3;
+  --lav-strong: #c9bce6;
+  --focus: #2f5fa8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17161e;
+    --surface: #22212c;
+    --ink: #eceaf2;
+    --muted: #b8b5c8;
+    --line: #34323f;
+    --primary: #bbaae8;
+    --primary-ink: #1b1726;
+    --lav: #2f2a44;
+    --lav-strong: #bbaae8;
+    --focus: #9cc3ff;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  overflow-wrap: anywhere;
+}
+h1, h2, h3 { font-family: var(--font-display), var(--font-body), sans-serif; line-height: 1.15; margin: 0 0 .5rem; text-wrap: balance; }
+h1 { font-size: clamp(1.7rem, 6vw, 2.6rem); }
+h2 { font-size: 1.3rem; margin-top: 1.5rem; }
+h3 { font-size: 1.05rem; }
+p { margin: 0 0 1rem; }
+img, svg, video { max-width: 100%; }
+a { color: var(--primary); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+main { flex: 1; width: 100%; max-width: 44rem; margin: 0 auto; padding: 1.25rem 1rem 2rem; min-width: 0; }
+main:focus { outline: none; }
+
+.skip-link { position: absolute; left: -999px; top: 0; background: var(--primary); color: var(--primary-ink); padding: .75rem 1rem; z-index: 10; }
+.skip-link:focus { left: 0; }
+
+.site-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; padding: .5rem 1rem; padding-top: max(.5rem, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); }
+.logo { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; font-family: var(--font-display), sans-serif; font-weight: 700; font-size: 1.4rem; color: var(--ink); text-decoration: none; }
+.main-nav { display: flex; gap: .25rem; flex-wrap: wrap; }
+.main-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .75rem; color: var(--ink); font-weight: 700; text-decoration: none; border-radius: 10px; }
+.main-nav a:hover { background: var(--lav); }
+
+.site-footer { border-top: 1px solid var(--line); padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom)); color: var(--muted); font-size: .9rem; max-width: 44rem; width: 100%; margin: 0 auto; }
+.site-footer ul { list-style: none; display: flex; flex-wrap: wrap; gap: .25rem 1rem; padding: 0; margin: 0 0 1rem; }
+.site-footer a { display: inline-flex; align-items: center; min-height: 44px; }
+
+.eyebrow { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; color: var(--muted); }
+.intro { color: var(--muted); font-size: 1.08rem; }
+.note { color: var(--muted); font-size: .9rem; }
+.hero { padding: 1rem 0 1.5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.25rem 0; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .6rem 1.2rem; border-radius: 14px; border: 2px solid transparent; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; text-align: center; transition: transform .2s ease, opacity .2s ease; }
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--primary); color: var(--primary-ink); }
+.btn-secondary { background: transparent; color: var(--primary); border-color: var(--primary); }
+.cards, .list { padding: 0; margin: 0 0 1rem; display: grid; gap: .75rem; }
+.cards { list-style: none; grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr)); }
+.list { padding-left: 1.25rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; min-width: 0; }
+.card h2, .card h3 { margin-top: 0; }
+.card p:last-child { margin-bottom: 0; }
+.center { text-align: center; padding-top: 2rem; }
+.center .actions { justify-content: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

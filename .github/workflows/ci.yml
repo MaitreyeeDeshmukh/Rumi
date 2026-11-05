@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  repo-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No stray Markdown files
+        run: bash scripts/check-no-stray-md.sh
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  prototype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install, typecheck, build
+        working-directory: prototype
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm run build
+      - name: Committed dist matches source
+        run: git diff --exit-code -- prototype/dist/index.html
+
+  web:
+    runs-on: ubuntu-latest
+    needs: prototype
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Build prototype for the preview page
+        working-directory: prototype
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Lint, typecheck, unit tests
+        working-directory: apps/web
+        run: pnpm check
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+      - name: Dependency audit
+        working-directory: apps/web
+        run: pnpm audit --audit-level=high
+      - name: Browser tests (phone and desktop, axe)
+        working-directory: apps/web
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm test:e2e

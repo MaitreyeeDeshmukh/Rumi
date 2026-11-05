@@ -1,25 +1,50 @@
 # Rumi
 North American AI Challenge
 
-Your world. Your pace. Your way. An interactive prototype of an independence and community companion for neurodivergent young adults.
+Your world. Your pace. Your way. An independence and community companion for neurodivergent young adults: healthcare visit preparation, practice conversations, calm help when plans change, and finding your people.
 
-Open `dist/index.html` in a browser to try it.
+Rumi is a **mobile-first web app**: it is designed to run in a phone browser, with no native app to install. It also works on tablet and desktop.
 
+## Try it
+Open `prototype/dist/index.html` in a browser. No install needed (React and fonts load from a CDN, so it needs internet).
 
-React 18 + TypeScript (TSX), bundled with esbuild into one HTML file. React loads from cdnjs as a UMD global.
+## What is real and what is simulated
+| Area | Today |
+| --- | --- |
+| Screens, flows, accessibility, three themes | Real, in `prototype/` |
+| AI replies, practice calls, summaries, circles chat, bookings, sharing | **Simulated** on-device with sample data |
+| Voice (Cartesia), AI (OpenAI), accounts and database (Supabase) | **Planned** (see "Planned architecture" below) |
 
-    npm i esbuild@0.21.5
-    node build.mjs        # writes dist/index.html
+All sample data is fictional. Rumi is not medical advice and cannot contact emergency services.
 
-## Files
-- src/core.tsx      state model, localStorage, icons, mascot, shared UI
-- src/data.tsx      sample data and simulated logic (practice scenarios, organizer, summary, rescue flows, circles)
-- src/app.tsx       shell, navigation, onboarding, Home
-- src/health.tsx    appointments, prep, practice call, recording, summaries, sharing
-- src/rescue.tsx    Rescue Mode flows
-- src/circles.tsx   discovery, group chat, meetups, safety
-- src/day.tsx       My Day, Start With Me, Money Mirror
-- src/you.tsx       profile, accessibility, themes, contacts, privacy, data, My Growth
-- src/template.html CSS design tokens (three themes) and page shell
+## Repository map
+| Path | What it is |
+| --- | --- |
+| `prototype/` | Frozen interactive demo (React 18 + TypeScript, esbuild to one HTML file) |
+| `apps/web/` | Next.js site and app shell (mobile-first): home, safety, help, privacy, accessibility, custom 404 and error pages, security headers, tests. Product features are still being built. |
+| `scripts/` | Repo tooling, e.g. `check-no-stray-md.sh` |
+| `.githooks/` | Pre-commit checks (secrets, stray Markdown) |
+| `.github/` | CI and dependency updates |
 
-Types are light (many `any`), so a strict tsc pass is a good first cleanup task.
+## Planned architecture
+Next.js + TypeScript, Supabase (Postgres, Auth, Row Level Security), server-side OpenAI with structured outputs, Cartesia for streaming speech (Sonic text-to-speech, Ink speech-to-text), deployed on Vercel. Every AI path runs a crisis check before any model call, then moderation, schema validation and a manual-edit fallback. Testing: Vitest, Playwright, axe accessibility checks and fixed synthetic AI evals. Demos use synthetic data only; real health data requires vendor agreements and a compliance review first.
+
+## Security
+No secrets are committed (`.env*` is ignored, `.env.example` holds placeholders), a pre-commit hook and CI run secret scanning (gitleaks), and only this README is tracked as Markdown.
+
+## Build the prototype
+Requires Node (version in `.nvmrc`).
+
+```bash
+cd prototype
+npm install
+npm run build   # writes prototype/dist/index.html
+```
+
+Prototype source map: `core.tsx` state, icons and shared UI; `data.tsx` sample data and simulated logic; `app.tsx` shell, onboarding, Home; `health.tsx` appointments, prep, practice, recording, summaries; `rescue.tsx` Rescue Mode; `circles.tsx` groups and meetups; `day.tsx` My Day and Money Mirror; `you.tsx` profile, accessibility, privacy, data; `template.html` CSS tokens and page shell.
+
+## Contributing
+```bash
+git config core.hooksPath .githooks   # once per clone
+```
+Never commit secrets or real health data. Only this README is committed as Markdown.

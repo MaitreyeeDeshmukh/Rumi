@@ -1,2 +1,42 @@
+# Markdown: only README.md is committed. Other .md files (AGENTS, CLAUDE, SECURITY, TECH_STACK, notes) stay local.
+*.md
+!/README.md
+
+# dependencies
 node_modules/
+.pnpm-store/
+
+# build output (prototype/dist is committed on purpose: it is the demo)
+.next/
+out/
+build/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# secrets and local config: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.keystore
+secrets/
+credentials*.json
+service-account*.json
+.vercel/
+.supabase/
+
+# editor, OS, tool-local
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.claude/settings.local.json
+.handoff/
+*.log

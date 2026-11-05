@@ -1,0 +1,14 @@
+﻿{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "jsx": "react",
+    "allowUmdGlobalAccess": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*.tsx"]
+}
