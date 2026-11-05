@@ -154,6 +154,7 @@ function parseSupportCard(raw: unknown): SupportCard | undefined {
     id: Id.catch('support-card').parse(raw.id),
     items: uniqueBy(items, (i) => i.id).slice(0, MAX_SUPPORT_ITEMS),
     topQuestionIds: validItems(Id, raw.topQuestionIds).slice(0, 2),
+    ...(Number.isSafeInteger(raw.nextCustomId) && (raw.nextCustomId as number) >= 1 && (raw.nextCustomId as number) <= 1_000_000_000 ? { nextCustomId: raw.nextCustomId as number } : {}),
   };
 }
 

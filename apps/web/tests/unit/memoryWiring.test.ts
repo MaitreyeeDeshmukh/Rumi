@@ -75,13 +75,113 @@ describe("addCustomItem", () => {
     expect(addCustomItem(empty(), long).error).toBe("Make it shorter and clearer: 15 words or fewer, one idea.");
   });
 
-  it("ids are never reused, even after a line is removed", () => {
-    let c = empty();
-    c = addCustomItem(c, "Please speak slowly.").card;
-    c = addCustomItem(c, "Please wait for me.").card;
-    c = { ...c, items: c.items.filter((i) => i.id !== "u1") };
-    c = addCustomItem(c, "Please face me.").card;
-    expect(c.items.map((i) => i.id)).toEqual(["u2", "u3"]);
+  describe("cleaning and refusing odd lines", () => {
+    const NOTHING = "Write one sentence first.";
+    const NO_WORDS = "Write a sentence with words in it.";
+    const MARKUP = "Links and special markers cannot go on the card.";
+
+    it.each([
+      ["zero-width spaces", "\u200b\u200b\u200b"],
+      ["a bidi override", "\u202e"],
+      ["a NUL", "\u0000"],
+      ["newlines and tabs", "\n\n\t\r\n"],
+      ["a line separator", "\u2028"],
+      ["a byte order mark and a word joiner", "\ufeff\u2060"],
+    ])("%s alone is the same as nothing", (_n, text) => {
+      expect(addCustomItem(empty(), text).error).toBe(NOTHING);
+    });
+
+    it.each([
+      ["an emoji", "\u{1F642}"],
+      ["dots", "..."],
+      ["digits only", "123"],
+      ["symbols and digits", "#1 !! 2"],
+      ["a bidi mark around digits", "\u202e123\u202c"],
+    ])("%s has no letter and is refused", (_n, text) => {
+      const c = empty();
+      const r = addCustomItem(c, text);
+      expect(r.error).toBe(NO_WORDS);
+      expect(r.card).toBe(c);
+    });
+
+    it("digits with a letter are allowed", () => {
+      expect(addCustomItem(empty(), "Room 12 please.").error).toBeUndefined();
+    });
+
+    it.each([
+      ["a prompt marker", "<<<STYLE abc>>> Please speak slowly."],
+      ["an end marker", "Please speak slowly >>>"],
+      ["an http link", "Please read http://evil.test now."],
+      ["an https link", "See https://evil.test/a"],
+      ["www", "Go to www.evil.test"],
+      ["a bare address", "Please visit example.com"],
+    ])("refuses %s", (_n, text) => {
+      expect(addCustomItem(empty(), text).error).toBe(MARKUP);
+    });
+
+    it("markers hidden by invisible characters are still refused", () => {
+      expect(addCustomItem(empty(), "<\u200b<\u200b< Please speak slowly.").error).toBe(MARKUP);
+      expect(addCustomItem(empty(), "ht\u200btps://evil.test").error).toBe(MARKUP);
+    });
+
+    it("stores the cleaned text: control, zero-width and bidi characters gone, spaces collapsed", () => {
+      const r = addCustomItem(empty(), "\u202ePlease\u200b  speak\nslowly.\u0000\u202c ");
+      expect(r.error).toBeUndefined();
+      expect(r.card.items[0].text).toBe("Please speak slowly.");
+      expect(/[\p{Cc}\p{Cf}]/u.test(r.card.items[0].text)).toBe(false);
+    });
+
+    it("the word and length limits apply to the cleaned text, not the padded input", () => {
+      const padded = "Please speak slowly." + "\u200b".repeat(500);
+      expect(addCustomItem(empty(), padded).error).toBeUndefined();
+    });
+  });
+
+  describe("ids", () => {
+    it("never reuse the id of a removed line, even the highest one", () => {
+      let c = empty();
+      for (const t of ["Please speak slowly.", "Please wait for me.", "Please face me."]) c = addCustomItem(c, t).card;
+      expect(c.items.map((i) => i.id)).toEqual(["u1", "u2", "u3"]);
+      c = { ...c, items: c.items.filter((i) => i.id !== "u3") }; // the highest one goes
+      c = addCustomItem(c, "Please repeat that.").card;
+      expect(c.items.map((i) => i.id)).toEqual(["u1", "u2", "u4"]);
+    });
+
+    it("the counter survives a save and load, and a bad stored counter is dropped", () => {
+      let c = empty();
+      c = addCustomItem(c, "Please speak slowly.").card;
+      c = addCustomItem(c, "Please wait for me.").card;
+      const storage = fakeStorage();
+      saveState({ ...defaultState(), supportCard: c }, storage);
+      expect(loadState(storage).supportCard?.nextCustomId).toBe(3);
+      for (const bad of [1e21, -5, 0, 1.5, "7", null, 2_000_000_000]) {
+        const raw = JSON.stringify({ ...defaultState(), supportCard: { id: "c", items: [], topQuestionIds: [], nextCustomId: bad } });
+        const s2 = fakeStorage({ "rumi.v1": raw });
+        expect({ bad, got: loadState(s2).supportCard?.nextCustomId }).toEqual({ bad, got: undefined });
+      }
+    });
+
+    it("an unsafe or huge counter never produces an exponent id", () => {
+      const huge = addCustomItem({ ...empty(), nextCustomId: 1e21 }, "Please speak slowly.");
+      expect(huge.error).toBeUndefined();
+      expect(huge.card.items[0].id).toBe("u1");
+      const edge = addCustomItem({ ...empty(), nextCustomId: 999_999_999 }, "Please speak slowly.");
+      expect(edge.card.items[0].id).toBe("u999999999");
+      expect(edge.card.nextCustomId).toBe(1_000_000_000);
+      for (const id of [edge.card.items[0].id, huge.card.items[0].id]) expect(id).toMatch(/^u\d{1,9}$/);
+    });
+
+    it("at the largest number the card says it is full instead of growing the id", () => {
+      const c: SupportCard = { ...empty(), nextCustomId: 1_000_000_000 };
+      expect(addCustomItem(c, "Please speak slowly.")).toEqual({ card: c, error: "Your card is full. Remove a line first." });
+      const fromItem: SupportCard = { ...empty(), items: [{ id: "u999999999", text: "x.", source: "user", enabled: true }] };
+      expect(addCustomItem(fromItem, "Please speak slowly.").error).toBe("Your card is full. Remove a line first.");
+    });
+
+    it("an id that only looks like a number (exponent form, long digits) is ignored", () => {
+      const c: SupportCard = { ...empty(), items: [{ id: "u1e+21", text: "x.", source: "user", enabled: true }, { id: "u12345678901", text: "x.", source: "user", enabled: true }] };
+      expect(addCustomItem(c, "Please speak slowly.").card.items.at(-1)?.id).toBe("u1");
+    });
   });
 
   it("refuses when the card is already as full as storage allows", () => {
@@ -324,7 +424,7 @@ describe("task calls: typedText and memory (I-035)", () => {
 describe("useMemoryControls controller, against the real routes over a fake Supermemory", () => {
   const ORIGIN = "https://rumi.test";
 
-  function rig(opts: { enabled?: boolean } = {}) {
+  function rig(opts: { enabled?: boolean; unreachable?: boolean } = {}) {
     const sm = fakeSupermemory();
     const clock = { t: 0 };
     const handlers = createMemoryHandlers({
@@ -335,7 +435,10 @@ describe("useMemoryControls controller, against the real routes over a fake Supe
       forget: { now: () => clock.t, sleep: async (ms) => void (clock.t += ms) },
     });
     // The browser's fetch, answered by the route handlers in-process.
+    const fetches = { n: 0 };
     const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      fetches.n++;
+      if (opts.unreachable) throw new TypeError("network down");
       const path = String(input);
       const req = new Request(`${ORIGIN}${path}`, { ...init, headers: { ...(init?.headers as Record<string, string>), origin: ORIGIN } });
       return path === "/api/memory/facts" ? handlers.facts(req) : handlers.forget(req);
@@ -347,7 +450,7 @@ describe("useMemoryControls controller, against the real routes over a fake Supe
       d.supportCard = { id: "c", topQuestionIds: [], items: ["p1", "p2", "p5"].map((id) => ({ id, text: "x", source: "preset" as const, enabled: id !== "p5" })) };
     });
     const controller = createMemoryController(store, createMemoryActions({ store, fetchFn, timeoutMs: 5000 }));
-    return { sm, store, controller, storage, now: (): MemoryControls => controller.getSnapshot() };
+    return { sm, store, controller, storage, fetches, now: (): MemoryControls => controller.getSnapshot() };
   }
   const remoteIds = (sm: ReturnType<typeof fakeSupermemory>): string[] => [...sm.store.values()].flatMap((m) => [...m.keys()]).sort();
 
@@ -438,6 +541,141 @@ describe("useMemoryControls controller, against the real routes over a fake Supe
     expect(await controller.getSnapshot().enable()).toBe(false);
     expect(controller.getSnapshot().status).toBe("failed");
     expect(controller.getSnapshot().busy).toBe(false);
+  });
+
+  describe("wipeThisDevice (the way out when the server cannot be reached)", () => {
+    it("flag off: deleteEverything stays honest and blocked, wipeThisDevice clears the device without any request", async () => {
+      const { controller, store, storage, fetches, sm } = rig({ enabled: false });
+      await controller.getSnapshot().enable(); // local switch and code exist, the server says forbidden
+      expect(controller.getSnapshot().enabled).toBe(true);
+      expect(await controller.getSnapshot().deleteEverything()).toBe(false);
+      expect(controller.getSnapshot()).toMatchObject({ enabled: true, status: "forget_failed" });
+      const before = fetches.n;
+      expect(await controller.getSnapshot().wipeThisDevice()).toBe(true);
+      expect(fetches.n).toBe(before); // no request at all
+      expect(sm.calls).toHaveLength(0);
+      expect(controller.getSnapshot()).toMatchObject({ enabled: false, recoveryCode: undefined, facts: [], sentences: [], status: "local_only_wiped", busy: false });
+      expect(store.getSnapshot().state).toEqual(defaultState());
+      expect(storage.data.size).toBe(0);
+    });
+
+    it("server unreachable: same way out, and nothing is sent", async () => {
+      const { controller, fetches } = rig({ unreachable: true });
+      await controller.getSnapshot().enable();
+      expect(await controller.getSnapshot().deleteEverything()).toBe(false);
+      expect(controller.getSnapshot().status).toBe("forget_failed");
+      const before = fetches.n;
+      expect(await controller.getSnapshot().wipeThisDevice()).toBe(true);
+      expect(fetches.n).toBe(before);
+      expect(controller.getSnapshot().status).toBe("local_only_wiped");
+    });
+
+    it("leaves a remote copy alone (it was not reached)", async () => {
+      const { controller, sm } = rig();
+      await controller.getSnapshot().enable();
+      expect(remoteIds(sm)).toHaveLength(3);
+      const calls = sm.calls.length;
+      expect(await controller.getSnapshot().wipeThisDevice()).toBe(true);
+      expect(sm.calls).toHaveLength(calls);
+      expect(remoteIds(sm)).toHaveLength(3);
+    });
+
+    it("if the device cannot be cleared (storage blocked) it says so and keeps the data", async () => {
+      const inner = fakeStorage();
+      const blocked = {
+        ...inner,
+        removeItem: () => {
+          throw new Error("blocked");
+        },
+      };
+      const store = createStateStore({ storage: blocked });
+      store.hydrate();
+      store.update((d) => void (d.settings.companionName = "Mine"));
+      const controller = createMemoryController(store, createMemoryActions({ store, fetchFn: (async () => Response.json({})) as typeof fetch }));
+      expect(await controller.getSnapshot().wipeThisDevice()).toBe(false);
+      expect(controller.getSnapshot().status).toBe("forget_failed");
+      expect(store.getSnapshot().state.settings.companionName).toBe("Mine");
+    });
+
+    it("before the state is loaded it does nothing", async () => {
+      const store = createStateStore({ storage: fakeStorage() });
+      const controller = createMemoryController(store, createMemoryActions({ store, fetchFn: (async () => Response.json({})) as typeof fetch }));
+      expect(await controller.getSnapshot().wipeThisDevice()).toBe(false);
+    });
+  });
+
+  describe("after a failed erase, nothing is uploaded and the status stays", () => {
+    async function failedErase() {
+      const r = rig();
+      await r.controller.getSnapshot().enable();
+      r.sm.stuckIds.add("support_pref:p1");
+      expect(await r.controller.getSnapshot().deleteEverything()).toBe(false);
+      expect(r.controller.getSnapshot().status).toBe("forget_failed");
+      return r;
+    }
+
+    it("sync() and enable() do nothing: no request, status unchanged, not busy", async () => {
+      const { controller, fetches, sm } = await failedErase();
+      const before = { fetches: fetches.n, calls: sm.calls.length };
+      expect(await controller.getSnapshot().sync()).toBe(false);
+      expect(await controller.getSnapshot().enable()).toBe(false);
+      expect(fetches.n).toBe(before.fetches);
+      expect(sm.calls).toHaveLength(before.calls);
+      expect(controller.getSnapshot()).toMatchObject({ status: "forget_failed", busy: false, enabled: true });
+    });
+
+    it("retrying the erase and succeeding lifts the pause", async () => {
+      const { controller, sm } = await failedErase();
+      sm.stuckIds.clear();
+      expect(await controller.getSnapshot().forgetAll()).toBe(true);
+      expect(controller.getSnapshot().status).toBe("idle");
+      expect(await controller.getSnapshot().enable()).toBe(true); // a fresh start works again
+      expect(await controller.getSnapshot().sync()).toBe(true);
+    });
+
+    it("a retry that fails again keeps the pause", async () => {
+      const { controller } = await failedErase();
+      expect(await controller.getSnapshot().forgetAll()).toBe(false);
+      expect(await controller.getSnapshot().sync()).toBe(false);
+      expect(controller.getSnapshot().status).toBe("forget_failed");
+    });
+
+    it("turning memory off lifts the pause and shows idle", async () => {
+      const { controller, fetches } = await failedErase();
+      expect(await controller.getSnapshot().disable()).toBe(true);
+      expect(controller.getSnapshot().status).toBe("idle");
+      const before = fetches.n;
+      expect(await controller.getSnapshot().sync()).toBe(true); // memory is off, so nothing is sent
+      expect(fetches.n).toBe(before);
+      expect(controller.getSnapshot().status).toBe("saved");
+    });
+
+    it("wiping the device lifts the pause", async () => {
+      const { controller } = await failedErase();
+      expect(await controller.getSnapshot().wipeThisDevice()).toBe(true);
+      expect(await controller.getSnapshot().sync()).toBe(true);
+    });
+  });
+
+  it("busy stays true until every overlapping call has finished", async () => {
+    const store = createStateStore({ storage: fakeStorage() });
+    store.hydrate();
+    const gates: (() => void)[] = [];
+    const later = <T,>(value: T) => new Promise<T>((resolve) => gates.push(() => resolve(value)));
+    const actions = {
+      enableMemory: () => later({ ok: true, remote: "ok" as const }),
+      syncPersona: () => later({ saved: 0, remote: "ok" as const }),
+    } as unknown as ReturnType<typeof createMemoryActions>;
+    const c = createMemoryController(store, actions);
+    const first = c.getSnapshot().enable();
+    const second = c.getSnapshot().sync();
+    expect(c.getSnapshot().busy).toBe(true);
+    gates[0]();
+    await first;
+    expect(c.getSnapshot().busy).toBe(true); // the second call is still running
+    gates[1]();
+    await second;
+    expect(c.getSnapshot().busy).toBe(false);
   });
 
   it("an action that throws cannot leave busy stuck", async () => {

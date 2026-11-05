@@ -12,8 +12,14 @@ import type { StateStore } from '@/features/state/stateStore';
 import { createMemoryActions, type MemoryActions } from './actions';
 import { factStrings } from './factText';
 
-/** `failed`: a save did not reach the server. `forget_failed`: an erase did not finish, so nothing was cleared on this device either. */
-export type MemoryStatus = 'idle' | 'saved' | 'failed' | 'forget_failed';
+/**
+ * `failed`: a save did not reach the server.
+ * `forget_failed`: an erase did not finish, so nothing was cleared on this device either. Saving stays paused until the
+ *   person retries the erase, turns memory off, or wipes this device.
+ * `local_only_wiped`: this device was cleared WITHOUT reaching the server, so a remote copy may still exist and the
+ *   recovery code that could erase it is gone. The screen must say so.
+ */
+export type MemoryStatus = 'idle' | 'saved' | 'failed' | 'forget_failed' | 'local_only_wiped';
 
 export interface MemoryControls {
   enabled: boolean;
@@ -33,6 +39,11 @@ export interface MemoryControls {
   forgetAll: () => Promise<boolean>;
   /** "Delete everything": erase remotely first, then reset this device. false (and nothing cleared) when the erase did not finish. */
   deleteEverything: () => Promise<boolean>;
+  /**
+   * The explicit way out when the server cannot be reached (routes off, offline): clears this device only, never
+   * contacts the server. true when the device was cleared; status then becomes `local_only_wiped`.
+   */
+  wipeThisDevice: () => Promise<boolean>;
 }
 
 export interface MemoryController {
@@ -69,12 +80,26 @@ export function createMemoryController(store: StateStore, actions: MemoryActions
     return done;
   }
 
-  const enable = () => track('saved', 'failed', async () => (await actions.enableMemory()).remote === 'ok');
-  const disable = () => track('idle', 'failed', async () => (await actions.disableMemory()).ok);
-  const sync = () => track('saved', 'failed', async () => (await actions.syncPersona()).remote !== 'failed');
-  const forgetAll = () => track('idle', 'forget_failed', async () => (await actions.forgetAll()).remote !== 'failed');
-  const deleteEverything = () => track('idle', 'forget_failed', async () => (await actions.deleteEverything()).status === 'ok');
-  const handlers = { enable, disable, sync, forgetAll, deleteEverything };
+  /** Set when an erase did not finish. While it is set nothing is uploaded and the `forget_failed` status stays. */
+  let eraseFailed = false;
+  /** Runs an erase-type job and keeps `eraseFailed` in step with its result. */
+  const erase = async (ok: MemoryStatus, job: () => Promise<boolean>): Promise<boolean> => {
+    const done = await track(ok, 'forget_failed', job);
+    eraseFailed = !done;
+    return done;
+  };
+
+  const enable = (): Promise<boolean> => (eraseFailed ? Promise.resolve(false) : track('saved', 'failed', async () => (await actions.enableMemory()).remote === 'ok'));
+  const disable = async (): Promise<boolean> => {
+    const done = await track('idle', 'failed', async () => (await actions.disableMemory()).ok);
+    if (done) eraseFailed = false;
+    return done;
+  };
+  const sync = (): Promise<boolean> => (eraseFailed ? Promise.resolve(false) : track('saved', 'failed', async () => (await actions.syncPersona()).remote !== 'failed'));
+  const forgetAll = () => erase('idle', async () => (await actions.forgetAll()).remote !== 'failed');
+  const deleteEverything = () => erase('idle', async () => (await actions.deleteEverything()).status === 'ok');
+  const wipeThisDevice = () => erase('local_only_wiped', async () => (await actions.wipeThisDevice()).status === 'ok');
+  const handlers = { enable, disable, sync, forgetAll, deleteEverything, wipeThisDevice };
 
   let cache: { from: ReturnType<StateStore['getSnapshot']>; busy: boolean; status: MemoryStatus; value: MemoryControls } | null = null;
   const getSnapshot = (): MemoryControls => {

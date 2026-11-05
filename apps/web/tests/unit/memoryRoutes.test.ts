@@ -8,7 +8,7 @@ import { ForgetReply, ForgetRequest } from "@/features/shared/schemas";
 import { getMemoryConfig, memoryEnabled, type MemoryConfig } from "@/lib/env";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { createRateLimiter } from "@/lib/security/rateLimit";
-import { POST as factsPost } from "@/app/api/memory/facts/route";
+import * as factsRoute from "@/app/api/memory/facts/route";
 import * as forgetRoute from "@/app/api/memory/forget/route";
 import { fakeSupermemory, type FakeSm } from "./helpers/fakeSupermemory";
 
@@ -92,7 +92,7 @@ describe("flag off: nothing is reachable", () => {
     vi.stubEnv("MEMORY_ENABLED", "");
     const spy = vi.fn(async () => new Response("{}"));
     vi.stubGlobal("fetch", spy);
-    for (const route of [factsPost, forgetRoute.POST]) {
+    for (const route of [factsRoute.POST, forgetRoute.POST]) {
       const r = await route(post("/api/memory/facts", facts(P1)));
       expect(r.status).toBe(404);
       expect(await errorCode(r)).toBe("forbidden");
@@ -111,10 +111,12 @@ describe("flag off: nothing is reachable", () => {
     expect(memoryEnabled()).toBe(true);
   });
 
-  it("route files declare the node runtime, no static caching, and a long erase time", () => {
-    expect(forgetRoute.runtime).toBe("nodejs");
-    expect(forgetRoute.dynamic).toBe("force-dynamic");
-    expect(forgetRoute.maxDuration).toBeGreaterThanOrEqual(30);
+  it("both route files declare the node runtime, no static caching, and a long run time", () => {
+    for (const route of [factsRoute, forgetRoute]) {
+      expect(route.runtime).toBe("nodejs");
+      expect(route.dynamic).toBe("force-dynamic");
+      expect(route.maxDuration).toBeGreaterThanOrEqual(30);
+    }
   });
 });
 
@@ -242,20 +244,45 @@ describe("request checks (every route)", () => {
 });
 
 describe("one recovery code format", () => {
-  it("guardRequest accepts exactly what isRecoveryCode accepts", () => {
-    const samples = [CODE, OTHER, newRecoveryCode(), newRecoveryCode(), "abcde-fghjk-lmnpq-rstuv", "ABCDE-FGHJK-LMNPQ-RSTU0", "ABCDE-FGHJK-LMNPQ-RSTUV\n", " ABCDE-FGHJK-LMNPQ-RSTUV", "ABCDE_FGHJK_LMNPQ_RSTUV", "ABCDEFGHJKLMNPQRSTUV"];
-    for (const s of samples) {
-      const r = new Request(`${ORIGIN}/api/memory/facts`, { method: "POST", headers: { origin: ORIGIN, "x-rumi-key": s }, body: "{}" });
-      let accepted = true;
-      try {
-        guardRequest(r, { limiter: createRateLimiter({ limits: { perIp: 1000, perSession: 1000, perInstance: 1000, perUnknownIp: 1000 } }) });
-      } catch {
-        accepted = false;
-      }
-      // Headers trims outer whitespace, so compare with the value the server actually sees.
-      const seen = r.headers.get("x-rumi-key") ?? "";
-      expect({ s, accepted }).toEqual({ s, accepted: isRecoveryCode(seen) });
+  // Written by hand from the rule (4 groups of 5, alphabet A-Z without I and O, digits 2-9, upper case, dashes),
+  // not produced by any function under test.
+  const VALID = ["ABCDE-FGHJK-LMNPQ-RSTUV", "23456-789AB-CDEFG-HJKLM", "ZZZZZ-99999-22222-NNNNN", "WXYZ2-34567-89ABC-DEFGH"];
+  const INVALID = [
+    "abcde-fghjk-lmnpq-rstuv", // lower case
+    "ABCDE-FGHJK-LMNPQ-RSTU", // short last group
+    "ABCDE-FGHJK-LMNPQ-RSTUVW", // long last group
+    "ABCDE-FGHJK-LMNPQ", // three groups
+    "ABCDE-FGHJK-LMNPQ-RSTUV-ABCDE", // five groups
+    "ABCDE-FGHJK-LMNPQ-RSTU0", // zero
+    "ABCDE-FGHJK-LMNPQ-RSTU1", // one
+    "ABCDE-FGHJK-LMNPQ-RSTUI", // letter I
+    "ABCDE-FGHJK-LMNPQ-RSTUO", // letter O
+    "ABCDEFGHJKLMNPQRSTUV", // no dashes
+    "ABCDE_FGHJK_LMNPQ_RSTUV", // wrong separator
+    "ABCDE--FGHJK-LMNPQ-RSTUV", // double dash
+    "ABCDE FGHJK LMNPQ RSTUV", // spaces
+    "ABCDE-FGHJK-LMNPQ-RSTUV%0A", // encoded newline stays literal text
+    "ÅBCDE-FGHJK-LMNPQ-RSTUV", // non-ASCII
+  ];
+  const limiter = () => createRateLimiter({ limits: { perIp: 1000, perSession: 1000, perInstance: 1000, perUnknownIp: 1000 } });
+  const guardAccepts = (key: string): boolean => {
+    try {
+      guardRequest(new Request(`${ORIGIN}/api/memory/facts`, { method: "POST", headers: { origin: ORIGIN, "x-rumi-key": key }, body: "{}" }), { limiter: limiter() });
+      return true;
+    } catch {
+      return false;
     }
+  };
+
+  it("guardRequest accepts every hand-written valid code and rejects every invalid one", () => {
+    for (const k of VALID) expect({ k, ok: guardAccepts(k) }).toEqual({ k, ok: true });
+    for (const k of INVALID) expect({ k, ok: guardAccepts(k) }).toEqual({ k, ok: false });
+  });
+
+  it("isRecoveryCode gives the same verdicts, and newRecoveryCode makes accepted codes", () => {
+    for (const k of VALID) expect(isRecoveryCode(k)).toBe(true);
+    for (const k of INVALID) expect(isRecoveryCode(k)).toBe(false);
+    for (let i = 0; i < 50; i++) expect(guardAccepts(newRecoveryCode())).toBe(true);
   });
 
   it("the shared regex is the one source", async () => {

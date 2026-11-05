@@ -144,6 +144,16 @@ export function createMemoryActions({ store, fetchFn, now = () => new Date().toI
         if ((await doForget()).remote === 'failed') return { status: 'failed' };
         return { status: store.reset().ok ? 'ok' : 'failed' };
       }),
+    /**
+     * Clears this device WITHOUT contacting the server. For a person who cannot reach the remote copy (routes off,
+     * offline) and still wants their data gone from here. The remote copy, if any, stays; the recovery code is lost
+     * with the device data, so the UI must say that the remote copy was not erased.
+     */
+    wipeThisDevice: () =>
+      inOrder(async (): Promise<{ status: 'ok' | 'failed' }> => {
+        if (!ready()) return { status: 'failed' };
+        return { status: store.reset().ok ? 'ok' : 'failed' };
+      }),
   };
 }
 

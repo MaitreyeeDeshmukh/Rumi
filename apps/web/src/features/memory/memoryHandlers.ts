@@ -5,8 +5,11 @@
  *  2. `guardRequest` (same origin, session, rate limits, declared size, format of x-rumi-key);
  *  3. the key must be present, the body is read with a byte cap and must match a strict schema (unknown fields fail);
  *  4. the namespace is the HMAC of the code (Supermemory never sees the code).
- * No key, namespace, fact or error text is ever logged. One namespace queue is shared by both routes, so an
- * erase waits for a running sync (I-058).
+ * No key, namespace, fact or error text is ever logged.
+ * The namespace queue is shared by both routes ONLY inside one process (one module instance). On Vercel the facts
+ * route and the forget route are separate functions, so a sync and an erase can run side by side. The queue is
+ * therefore a best-effort extra; what makes an erase honest is the settle wait plus the repeated list after the
+ * delete (see forgetAll.ts), and a document written after the last empty list can still survive (I-060, I-082).
  */
 import { FactsRequest, ForgetRequest } from '@/features/shared/schemas';
 import { HttpError, errorResponse, json, readJson } from '@/lib/ai/http';

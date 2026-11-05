@@ -54,6 +54,8 @@ export interface SupportCard {
   items: SupportItem[];
   /** At most two plan-question ids. */
   topQuestionIds: string[];
+  /** Next number for a custom line id (`u<n>`). Only grows, so a removed line's id is never reused. */
+  nextCustomId?: number;
 }
 
 export interface Turn {
