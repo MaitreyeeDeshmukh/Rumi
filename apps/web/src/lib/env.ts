@@ -12,6 +12,9 @@ const secret = z.string().trim().min(32);
 const flag = z.enum(["1", "0"]);
 const nonEmpty = z.string().trim().min(1);
 
+/** The Cartesia-Version this code was written against (docs.cartesia.ai/api-reference/tts/bytes, checked 2026-11-05: the only allowed value). */
+const CARTESIA_DEFAULT_VERSION = "2026-08-14";
+
 const schema = z.object({
   NODE_ENV: z.string().min(1).optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
@@ -169,4 +172,20 @@ export function getMemoryConfig(): MemoryConfig {
     throw new ConfigError([apiKey.success ? "" : "SUPERMEMORY_API_KEY", tagSecret.success ? "" : "MEMORY_TAG_SECRET"].filter(Boolean));
   }
   return { apiKey: apiKey.data, tagSecret: tagSecret.data };
+}
+
+export interface CartesiaConfig {
+  apiKey: string;
+  version: string;
+}
+
+/**
+ * The text-to-speech key. CARTESIA_VERSION empty means the version this code was written against, so only the key is
+ * needed. Throws ConfigError naming CARTESIA_API_KEY (never the value) when it is missing.
+ */
+export function getCartesiaConfig(): CartesiaConfig {
+  const apiKey = nonEmpty.safeParse(process.env.CARTESIA_API_KEY);
+  if (!apiKey.success) throw new ConfigError(["CARTESIA_API_KEY"]);
+  const version = nonEmpty.safeParse(process.env.CARTESIA_VERSION);
+  return { apiKey: apiKey.data, version: version.success ? version.data : CARTESIA_DEFAULT_VERSION };
 }

@@ -86,3 +86,30 @@ export const { planCall, practiceCall, sayItCall, recapCall } = calls(
     isOnline: () => typeof navigator === 'undefined' || navigator.onLine !== false,
   }),
 );
+
+/** Longer than the server's own 10 s limit plus a slow network; a voice that late is not worth waiting for. */
+const SPEAK_TIMEOUT_MS = 15_000;
+/** 600 characters of speech is well under 1 MB of mp3; anything larger is not our server's answer. */
+const SPEAK_MAX_BYTES = 5_000_000;
+
+/**
+ * Spoken audio for `text` from the server (Cartesia), or null on ANY failure so the screen falls back to the browser
+ * voice. Never throws. Play it with `const url = URL.createObjectURL(blob); new Audio(url).play()` and call
+ * `URL.revokeObjectURL(url)` when it ends. The text is spoken as given: the crisis check is not run here.
+ */
+export async function speakCall(text: string, { fetchFn = (input, init) => fetch(input, init) }: { fetchFn?: typeof fetch } = {}): Promise<Blob | null> {
+  try {
+    const res = await fetchFn('/api/voice/tts', {
+      method: 'POST',
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(SPEAK_TIMEOUT_MS),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok || !(res.headers.get('content-type') ?? '').startsWith('audio/')) return null;
+    const blob = await res.blob();
+    return blob.size > 0 && blob.size <= SPEAK_MAX_BYTES ? blob : null;
+  } catch {
+    return null;
+  }
+}
