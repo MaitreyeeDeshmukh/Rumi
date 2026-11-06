@@ -192,6 +192,7 @@ jobs:
     timeout-minutes: 30
     needs: prototype
     env:
+      NEXT_PUBLIC_CONTACT_EMAIL: team@rumi.test
       NEXT_PUBLIC_SUPABASE_URL: https://rumi-ci.supabase.test
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_value
       MOCK_AI: "1"
@@ -243,6 +244,7 @@ jobs:
     timeout-minutes: 20
     needs: prototype
     env:
+      NEXT_PUBLIC_CONTACT_EMAIL: team@rumi.test
       NEXT_PUBLIC_SUPABASE_URL: https://rumi-ci.supabase.test
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_value
     steps:
@@ -314,6 +316,7 @@ jobs:
     timeout-minutes: 25
     needs: prototype
     env:
+      NEXT_PUBLIC_CONTACT_EMAIL: team@rumi.test
       MOCK_AI: "1"
     steps:
       - uses: actions/checkout@v4.2.2

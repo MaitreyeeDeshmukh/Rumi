@@ -12,8 +12,8 @@ insert into auth.users (id) values
 -- 1. Ops tables are service_role only; event formats match what the app's sinks send
 -- =============================================================================================
 do $$ begin
-  if (select count(*) from public.ops_feature_flags where enabled) <> 3 then
-    raise exception 'FAIL: expected 3 enabled flags'; end if;
+  if (select count(*) from public.ops_feature_flags where enabled) <> 2 then
+    raise exception 'FAIL: expected 2 enabled flags (ai, memory_sync; cloud_sync and anon_purge seed off)'; end if;
   if (select count(*) from public.ops_feature_flags where key in ('ai_enabled','memory_sync_enabled','cloud_sync_enabled')) <> 3 then
     raise exception 'FAIL: wrong flag keys'; end if;
   if (select enabled from public.ops_feature_flags where key = 'anon_purge_enabled') is distinct from false then

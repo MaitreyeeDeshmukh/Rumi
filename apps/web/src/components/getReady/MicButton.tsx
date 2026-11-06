@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic } from "@/components/ui/icons";
 import { GET_READY } from "@/content/getReady";
 import { canRecord, recordAndTranscribe, type RecordEnd } from "@/lib/recordSpeech";
+
+const noSubscribe = () => () => {};
 
 type Phase = "idle" | "listening" | "working";
 
@@ -16,8 +18,7 @@ export function MicButton({ onText }: { onText: (text: string) => void }) {
   const [phase, setPhase] = useState("idle" as Phase);
   const [note, setNote] = useState("");
   const stop = useRef(null as (() => void) | null);
-  const [supported, setSupported] = useState(false);
-  useEffect(() => setSupported(canRecord()), []);
+  const supported = useSyncExternalStore(noSubscribe, canRecord, () => false); // false on the server and first paint, then the real answer
   useEffect(() => () => stop.current?.(), []);
   if (!supported) return null;
 
