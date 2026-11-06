@@ -47,7 +47,9 @@ describe("what leaves the device and what the database holds", () => {
   });
 });
 
-describe("Supermemory is gone", () => {
+describe("Supermemory stays in its own files", () => {
+  // Supermemory is back as the semantic recall layer (server only). Only these files may name it or its variables; the old recovery code stays gone everywhere.
+  const SUPERMEMORY_FILES = ["src/features/memory/", "src/lib/ai/harness.ts", "src/lib/env.ts", "tests/unit/supermemory.test.ts"];
   const needles = [["super", "memory"].join(""), ["SUPERMEMORY", "API_KEY"].join("_"), ["MEMORY", "TAG", "SECRET"].join("_"), ["recovery", "Code"].join("")];
 
   // These three tests prove that an old variable or an old stored code is ignored, so they have to name it.
@@ -60,7 +62,8 @@ describe("Supermemory is gone", () => {
       for (const file of filesUnder(join(ROOT, dir))) {
         if (file === here || PROVES_IGNORED.some((n) => file.endsWith(n)) || !/\.(ts|tsx|json|mjs)$/.test(file)) continue;
         const text = readFileSync(file, "utf8").toLowerCase();
-        for (const n of needles) if (text.includes(n.toLowerCase())) hits.push(`${file.slice(ROOT.length)}: ${n}`);
+        const allowed = SUPERMEMORY_FILES.some((p) => file.replaceAll("\\", "/").includes(p));
+        for (const [i, n] of needles.entries()) if (!(allowed && i < 3) && text.includes(n.toLowerCase())) hits.push(`${file.slice(ROOT.length)}: ${n}`);
       }
     }
     expect(hits).toEqual([]);
