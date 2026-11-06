@@ -15,10 +15,11 @@ export interface AuthState {
   identityReset: boolean;
 }
 
-export type UpgradeResult = { ok: true } | { ok: false; message: string };
+type UpgradeFailure = { ok: false; message: string };
+export type UpgradeResult = { ok: true } | UpgradeFailure;
 
 export type AuthClientLike = {
-  auth: Pick<SupabaseClient["auth"], "getSession" | "signInAnonymously" | "onAuthStateChange" | "updateUser">;
+  auth: Pick<SupabaseClient["auth"], "getSession" | "signInAnonymously" | "signInWithOtp" | "onAuthStateChange" | "updateUser">;
   /** Used once after a new sign-in for `core_ensure_my_rows`. Optional: without it that step is skipped. */
   rpc?: SupabaseClient["rpc"];
 };
@@ -41,6 +42,8 @@ export interface AuthDeps {
   getCaptchaToken?: () => Promise<string | undefined>;
   /** Where the email link returns to. */
   redirectTo?: () => string;
+  /** False when sign-up is required: nobody is ever signed in anonymously. Default true (the demo escape hatch). */
+  allowAnonymous?: () => boolean;
   /** Called when the one-time `core_ensure_my_rows` call after a new sign-in failed. It is counted and never shown. */
   onEnsureRowsFailed?: () => void;
 }
@@ -134,7 +137,7 @@ export function createAuthController(deps: AuthDeps) {
       // A session already in this browser (cookie) wins; it is read locally and refreshed by supabase-js when needed.
       const existing = await client.auth.getSession();
       if (existing.data.session) return applySession(existing.data.session);
-      if (!create) return set({ status: "signed_out" });
+      if (!create || deps.allowAnonymous?.() === false) return set({ status: "signed_out" });
       for (let attempt = 1; attempt <= MAX_SIGN_IN_TRIES; attempt++) {
         const captchaToken = await deps.getCaptchaToken?.();
         const { data, error } = await client.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined);
@@ -167,6 +170,19 @@ export function createAuthController(deps: AuthDeps) {
     });
     current = mine;
     return mine.done;
+  }
+
+  /** The checks before any email link is requested: the address, then the one-minute cooldown (recorded at once, so a double click cannot send two). */
+  function askForLink(email: string, otherChecks?: () => UpgradeFailure | null): string | UpgradeFailure {
+    const address = email.trim();
+    if (address.length > 254 || !EMAIL_RE.test(address)) return { ok: false, message: "That email address does not look right." };
+    const refused = otherChecks?.();
+    if (refused) return refused;
+    const t = deps.now();
+    const last = deps.emailSentAt.get();
+    if (last !== null && t >= last && t - last < EMAIL_COOLDOWN_MS) return { ok: false, message: "A link was just asked for, so wait one minute before asking again." };
+    deps.emailSentAt.set(t);
+    return address;
   }
 
   /** The manual-retry rule: only from degraded or offline, never while an attempt runs, at most one per RETRY_COOLDOWN_MS. */
@@ -230,6 +246,8 @@ export function createAuthController(deps: AuthDeps) {
      * after a failure it is held to the same cooldown as `retry()`. Never throws.
      */
     async ensureSignedIn(): Promise<AuthState> {
+      // Sign-up required: there is nothing to create here (the sign-in page does it), so answer at once and change nothing.
+      if (deps.allowAnonymous?.() === false) return state;
       wanted = true;
       if (state.status === "ready") return state;
       if (current !== null) await attempt(true);
@@ -240,16 +258,31 @@ export function createAuthController(deps: AuthDeps) {
     },
     /** How many one-time row checks failed after a sign-in. For tests and diagnostics; no user data. */
     ensureRowsFailures: (): number => ensureRowsFailures,
+    /**
+     * Sign up or sign in with one email link (no password). The reply is the same whether or not the address already has
+     * an account: the form cannot be used to find out who is a member. Works with no session; the link opens /auth/callback.
+     */
+    async signInWithEmail(email: string): Promise<UpgradeResult> {
+      const address = askForLink(email);
+      if (typeof address !== "string") return address;
+      try {
+        const base = deps.redirectTo?.();
+        const { error } = await deps.getClient().auth.signInWithOtp({
+          email: address,
+          options: { shouldCreateUser: true, ...(base ? { emailRedirectTo: `${base}/auth/callback` } : {}) },
+        });
+        return error ? { ok: false, message: mapSupabaseError(error).message } : { ok: true };
+      } catch (e) {
+        return { ok: false, message: mapSupabaseError(e).message };
+      }
+    },
     async upgradeWithEmail(email: string): Promise<UpgradeResult> {
-      const address = email.trim();
-      if (address.length > 254 || !EMAIL_RE.test(address)) return { ok: false, message: "That email address does not look right." };
-      if (state.status !== "ready" || state.userId === null) return { ok: false, message: "Saving is paused, so email sign-in is not available yet." };
-      if (!state.isAnonymous) return { ok: false, message: "This device already has an email." };
-      const t = deps.now();
-      const last = deps.emailSentAt.get();
-      if (last !== null && t >= last && t - last < EMAIL_COOLDOWN_MS) return { ok: false, message: "A link was just asked for, so wait one minute before asking again." };
-      // Recorded before the call, so a double click cannot send two.
-      deps.emailSentAt.set(t);
+      const address = askForLink(email, () => {
+        if (state.status !== "ready" || state.userId === null) return { ok: false, message: "Saving is paused, so email sign-in is not available yet." };
+        if (!state.isAnonymous) return { ok: false, message: "This device already has an email." };
+        return null;
+      });
+      if (typeof address !== "string") return address;
       try {
         const { error } = await deps.getClient().auth.updateUser({ email: address }, deps.redirectTo ? { emailRedirectTo: deps.redirectTo() } : undefined);
         if (!error) return { ok: true };

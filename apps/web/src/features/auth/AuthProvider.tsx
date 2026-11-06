@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getBrowserClient } from "@/lib/supabase/browser";
+import { authOptional } from "@/lib/supabase/config";
 import { reportClientError } from "@/lib/telemetry/reportClientError";
 import { LAST_USER_KEY, EMAIL_SENT_KEY } from "./afterAccountDeleted";
 import { createAuthController, INITIAL_AUTH_STATE, type AuthDeps, type AuthState, type UpgradeResult } from "./authController";
@@ -14,6 +15,8 @@ export interface AuthValue extends AuthState {
    * before a cloud feature needs a user (turning memory on, a sync). Safe to call again and again; never throws.
    */
   ensureSignedIn(): Promise<AuthState>;
+  /** Sign up or sign in with an emailed link. The reply is the same whether or not the address already has an account. */
+  signInWithEmail(email: string): Promise<UpgradeResult>;
   /** Adds an email to this anonymous identity. The reply is the same whether or not the address is already in use. */
   upgradeWithEmail(email: string): Promise<UpgradeResult>;
 }
@@ -84,6 +87,7 @@ const browserDeps = (): AuthDeps => ({
     },
   },
   redirectTo: () => window.location.origin,
+  allowAnonymous: authOptional,
   onEnsureRowsFailed: () => reportClientError("ensure_rows_failed"),
 });
 
@@ -93,6 +97,7 @@ const NO_PROVIDER: AuthValue = {
   status: "degraded",
   retry: () => undefined,
   ensureSignedIn: () => Promise.resolve({ ...INITIAL_AUTH_STATE, status: "degraded" }),
+  signInWithEmail: () => Promise.resolve({ ok: false, message: "Sign-in is not available right now." }),
   upgradeWithEmail: () => Promise.resolve({ ok: false, message: "Saving is paused, so email sign-in is not available yet." }),
 };
 
@@ -109,7 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(() => controller.retry(), [controller]);
   const ensureSignedIn = useCallback(() => controller.ensureSignedIn(), [controller]);
   const upgradeWithEmail = useCallback((email: string) => controller.upgradeWithEmail(email), [controller]);
-  const value = useMemo<AuthValue>(() => ({ ...state, retry, ensureSignedIn, upgradeWithEmail }), [state, retry, ensureSignedIn, upgradeWithEmail]);
+  const signInWithEmail = useCallback((email: string) => controller.signInWithEmail(email), [controller]);
+  const value = useMemo<AuthValue>(() => ({ ...state, retry, ensureSignedIn, signInWithEmail, upgradeWithEmail }), [state, retry, ensureSignedIn, signInWithEmail, upgradeWithEmail]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

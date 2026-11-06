@@ -4,7 +4,8 @@ import { classifyError, isRetryable } from "@/features/auth/mapError";
 import { noteAuthRateLimited } from "@/lib/auth/authFault";
 import { createLogger } from "@/lib/log";
 import { newRequestId, REQUEST_ID_HEADER } from "@/lib/requestContext";
-import { authProxyRefreshEnabled, publicSupabaseConfig } from "@/lib/supabase/config";
+import { isAppPath, signInUrl } from "@/lib/auth/gate";
+import { authOptional, authProxyRefreshEnabled, publicSupabaseConfig } from "@/lib/supabase/config";
 import { fetchWithTimeout } from "@/lib/supabase/fetch";
 
 /** Supabase stores its session in cookies named `sb-<project>-auth-token` (plus `.0`, `.1` chunks). */
@@ -19,7 +20,10 @@ const hasSessionCookie = (req: NextRequest): boolean => req.cookies.getAll().som
  *    margin of 90 seconds). A visitor with no session cookie costs no call at all. It is the pattern in the
  *    @supabase/ssr docs; the per-request authoritative check stays in requireUser (getUser) on API routes.
  *    Projects that still sign tokens with a shared secret (HS256) make getClaims fall back to one getUser call.
- * AUTH_PROXY_REFRESH=off skips all of step 2. An auth outage only means the session is not refreshed this time;
+ * 3. the sign-up gate: an app screen (see lib/auth/gate.ts) sends a visitor who is positively signed out, or only a guest
+ *    (anonymous), to /sign-in?next=<path>. A session it cannot check (refresh off, Auth unreachable) is let through; every API
+ *    route still verifies the caller itself. NEXT_PUBLIC_AUTH_OPTIONAL=1 turns the gate off.
+ * AUTH_PROXY_REFRESH=off skips the refresh in step 2. An auth outage only means the session is not refreshed this time;
  * the page still loads.
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
@@ -33,8 +37,18 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   };
   let response = forward();
 
+  const gated = !authOptional() && isAppPath(request.nextUrl.pathname);
+  const toSignIn = (): NextResponse => {
+    const redirect = NextResponse.redirect(new URL(signInUrl(`${request.nextUrl.pathname}${request.nextUrl.search}`), request.url));
+    redirect.headers.set(REQUEST_ID_HEADER, requestId);
+    // A session refreshed on the way keeps its new cookies.
+    for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+    return redirect;
+  };
+
   const config = publicSupabaseConfig();
-  if (!authProxyRefreshEnabled() || !config || !hasSessionCookie(request)) return response;
+  if (!hasSessionCookie(request)) return gated ? toSignIn() : response;
+  if (!authProxyRefreshEnabled() || !config) return response;
 
   const supabase = createServerClient(config.url, config.key, {
     global: { fetch: fetchWithTimeout },
@@ -52,11 +66,13 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   let outcome: "ok" | "unreachable" | "limited" = "ok";
   try {
     // Never getSession() or getUser() here. A rejected token (4xx) is the visitor's state, not a fault.
-    const { error } = await supabase.auth.getClaims();
+    const { data, error } = await supabase.auth.getClaims();
     if (error) {
       const kind = classifyError(error);
       outcome = kind === "rate_limited" ? "limited" : isRetryable(kind) ? "unreachable" : "ok";
-    }
+      // A rejected token (not an outage) means signed out.
+      if (gated && outcome === "ok") return toSignIn();
+    } else if (gated && (!data?.claims || data.claims.is_anonymous === true)) return toSignIn();
   } catch {
     // getClaims reports faults as values; a throw here is unexpected. Treat it as an outage and serve the page anyway.
     outcome = "unreachable";

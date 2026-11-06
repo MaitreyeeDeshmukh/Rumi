@@ -42,6 +42,7 @@ export const SETTINGS = {
     keep: "Keep them",
     confirmForget: "Delete",
   },
+  account: { legend: "Your account", body: "You are signed in with your email.", signOut: "Sign out", failed: "Sign out did not work. Try again." },
   data: { legend: "Your data", rows: PRIVACY.keeps.rows },
   erase: {
     legend: "Delete everything",

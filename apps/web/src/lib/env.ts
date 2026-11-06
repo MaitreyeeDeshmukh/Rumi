@@ -4,7 +4,7 @@ import { z } from "zod";
  * The home of the application's settings. Almost every variable is read here, but not every one. The allowed exceptions
  * (each is a small, named read next to the code that needs it, never a second parser):
  *  - lib/supabase/config.ts: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (Next inlines `NEXT_PUBLIC_*` only when
- *    written as a literal `process.env.NAME`, so the browser bundle cannot go through this module) and AUTH_PROXY_REFRESH.
+ *    written as a literal `process.env.NAME`, so the browser bundle cannot go through this module) and AUTH_PROXY_REFRESH and NEXT_PUBLIC_AUTH_OPTIONAL (the sign-up escape hatch).
  *  - lib/supabase/admin.ts: the Supabase secret key (its variable name is written only in that file, on purpose, and is not
  *    in the schema below: tests/unit/authBundle.test.ts pins that exactly one source file names it, so it cannot reach a
  *    bundle or a validation message, and this comment must not spell it out).
@@ -57,6 +57,8 @@ const schema = z.object({
   RELEASE: nonEmpty.optional(),
   TELEMETRY_DB_WRITES: nonEmpty.optional(),
   AUTH_PROXY_REFRESH: nonEmpty.optional(),
+  /** "1" keeps the anonymous-first demo behaviour (no sign-up gate). Read by lib/supabase/config.ts authOptional(). */
+  NEXT_PUBLIC_AUTH_OPTIONAL: flag.optional(),
   TURNSTILE_SECRET_KEY: nonEmpty.optional(),
 });
 

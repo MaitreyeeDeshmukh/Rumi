@@ -28,3 +28,10 @@ export function publicSupabaseConfig(): PublicSupabaseConfig | null {
  * the caller themselves with requireUser, so turning this off never weakens authorization.
  */
 export const authProxyRefreshEnabled = (): boolean => process.env.AUTH_PROXY_REFRESH?.trim().toLowerCase() !== "off";
+
+/**
+ * The demo escape hatch. Sign-up is REQUIRED unless NEXT_PUBLIC_AUTH_OPTIONAL is exactly "1": then the app keeps its
+ * anonymous-first behaviour (no gate, anonymous users accepted). It is a literal `process.env.NAME` read so Next inlines
+ * it into the browser bundle too, which is why it lives here and not in env.ts.
+ */
+export const authOptional = (): boolean => process.env.NEXT_PUBLIC_AUTH_OPTIONAL === "1";
