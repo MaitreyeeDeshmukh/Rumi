@@ -22,6 +22,7 @@ import { FactsRequest } from "@/features/shared/schemas";
 import type { EvidenceLedger, TaskSpec, Tier } from "@/features/shared/task";
 import { crisisTier } from "@/lib/crisis";
 import { ConfigError, assertRuntimeEnv, getEvalCanary, isProduction, mockAiEnabled } from "@/lib/env";
+import { estimateCostMicroUsd } from "./cost";
 import { HttpError, errorResponse, json, readJson } from "./http";
 import { adviceCodes, claimsHumanCodes, clinicianFindingCodes, collectStrings, mapStrings, stripUrls } from "./guards/output";
 import { MAX_GUARD_CHARS, promptForm, redactPii, scanInjection } from "./guards/input";
@@ -148,6 +149,7 @@ async function callProvider(run: Run, provider: Provider | undefined, call: Omit
     }
     run.ev.inTokens += Math.max(0, Math.floor(answer.inTokens));
     run.ev.outTokens += Math.max(0, Math.floor(answer.outTokens));
+    run.ev.costMicroUsd += estimateCostMicroUsd(answer.modelUsed, answer.inTokens, answer.outTokens);
     return { ok: true, result: answer };
   } catch (e) {
     // Anything that is not a ProviderError is a bug in a provider; it counts as a failed call like any other.
@@ -318,6 +320,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       memoryItems: 0,
       inTokens: 0,
       outTokens: 0,
+      costMicroUsd: 0,
       ms: 0,
     },
   };

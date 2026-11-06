@@ -40,6 +40,9 @@ export interface Provider {
   complete(call: ProviderCall): Promise<ProviderResult>;
 }
 
+/** The reasoning effort sent to the gpt-oss models. The eval pins the baseline arm to this same value (tests/evals/live.ts). */
+export const REASONING_EFFORT = "low";
+
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const Completion = z.object({
@@ -82,7 +85,7 @@ export function createGroqProvider(deps: { fetchFn?: typeof fetch } = {}): Provi
             max_completion_tokens: call.maxOutputTokens,
             response_format: { type: "json_object" },
             // Only the gpt-oss models take this parameter; any other model answers 400 to it.
-            ...(model.toLowerCase().includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
+            ...(model.toLowerCase().includes("gpt-oss") ? { reasoning_effort: REASONING_EFFORT } : {}),
             stream: false,
           }),
           signal: call.signal,

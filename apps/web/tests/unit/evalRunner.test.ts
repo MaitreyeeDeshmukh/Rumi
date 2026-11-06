@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildCases } from "../evals/cases";
 import { loadAll } from "../evals/data/schema";
 import { dryClassFor, loadFixtures, makeDryRun } from "../evals/dry";
-import { argvToEnv } from "../evals/cli.mjs";
+import { argvToEnv, exitCodeFor } from "../evals/cli.mjs";
 import { readFlags } from "../evals/flags";
 import {
   appendCalibration,
@@ -14,6 +14,7 @@ import {
   formatEstimate,
   ipFor,
   liveGuard,
+  liveSkipReason,
   loadLiveRun,
   loadEnvLocal,
   runFileName,
@@ -271,8 +272,8 @@ describe("estimateRun", () => {
 });
 
 describe("loadLiveRun", () => {
-  it("stops with a clear message while Phase 2 has not added the live adapter", async () => {
-    await expect(loadLiveRun("harness")).rejects.toThrow(/No live adapter yet/);
+  it("stops with a clear message when the adapter module is missing", async () => {
+    await expect(loadLiveRun("harness", async () => undefined)).rejects.toThrow(/No live adapter yet/);
   });
 });
 
@@ -291,5 +292,18 @@ describe("loadEnvLocal", () => {
     delete process.env.EVAL_TEST_ONLY_VAR;
     vi.restoreAllMocks();
     expect(existsSync(dir)).toBe(true);
+  });
+});
+
+describe("a live run without a key is skipped, not refused", () => {
+  it("liveSkipReason is one line naming only the variable, and is empty when the key is present", () => {
+    expect(liveSkipReason({})).toBe("live eval skipped: GROQ_API_KEY not set");
+    expect(liveSkipReason({ GROQ_API_KEY: "   " })).toBe("live eval skipped: GROQ_API_KEY not set");
+    expect(liveSkipReason({ GROQ_API_KEY: "gsk_x" })).toBeUndefined();
+  });
+  it("the CLI exits 0 for a skipped run with no verdicts, and still 1 when vitest itself failed", () => {
+    expect(exitCodeFor([], 0, 0, true)).toBe(0);
+    expect(exitCodeFor([], 1, 0, true)).toBe(1);
+    expect(exitCodeFor([], 0, 0, false)).toBe(1); // no verdicts and not skipped is still misuse
   });
 });

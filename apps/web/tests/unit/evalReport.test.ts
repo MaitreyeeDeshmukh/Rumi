@@ -60,7 +60,7 @@ describe("renderReport", () => {
     expect(text).toMatch(/baseline/);
     expect(text).toMatch(/not applicable/i);
   });
-  it("cost is shown as n/a when it cannot be computed, and as unverified when prices are not dated", () => {
+  it("cost is shown as n/a when it cannot be computed, and carries the date the prices were checked (undated prices are shown as unverified)", () => {
     const text = renderReport([{ arm: "harness", summary: good }], { mode: "live", k: 3 }).join("\n");
     expect(text).toMatch(/cost per session: n\/a/);
     const priced = agg([
@@ -69,7 +69,9 @@ describe("renderReport", () => {
       mk({ suite: "sayit", task: "sayit", calls: [{ model: "openai/gpt-oss-20b", tokensIn: 1000, tokensOut: 500 }] }),
       mk({ suite: "recap", task: "recap", calls: [{ model: "openai/gpt-oss-120b", tokensIn: 1000, tokensOut: 500 }] }),
     ]);
-    expect(renderReport([{ arm: "harness", summary: priced }], { mode: "live", k: 3 }).join("\n")).toMatch(/prices unverified/);
+    expect(renderReport([{ arm: "harness", summary: priced }], { mode: "live", k: 3 }).join("\n")).toMatch(/prices checked 2026-11-05/);
+    const undated = { ...priced, cost: { ...priced.cost, pricesVerifiedOn: null } };
+    expect(renderReport([{ arm: "harness", summary: undated }], { mode: "live", k: 3 }).join("\n")).toMatch(/prices unverified/);
   });
 });
 
