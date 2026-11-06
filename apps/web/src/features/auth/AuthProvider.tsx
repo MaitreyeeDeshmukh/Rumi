@@ -21,6 +21,8 @@ export interface AuthValue extends AuthState {
   signUpWithPassword(email: string, password: string): Promise<AuthResult>;
   /** Logs in with an email and a password. A reply with `unconfirmed` means the email is not confirmed yet. */
   signInWithPassword(email: string, password: string): Promise<AuthResult>;
+  /** Developer bypass: signs in the NEXT_PUBLIC_DEV_BYPASS_EMAIL account with no password. Fails everywhere but a non-production build with that variable set. */
+  signInAsDeveloper(email: string): Promise<AuthResult>;
   /** Signs out of this browser only and forgets the remembered user id. Never throws. */
   signOut(): Promise<void>;
   /** Checks the 6-digit code from the email and signs the person in. "signup" confirms a new account; "recovery" is the password-reset code. */
@@ -124,6 +126,7 @@ const NO_PROVIDER: AuthValue = {
   upgradeWithEmail: () => Promise.resolve({ ok: false, message: "Saving is paused, so email sign-in is not available yet." }),
   signUpWithPassword: () => Promise.resolve(UNAVAILABLE),
   signInWithPassword: () => Promise.resolve(UNAVAILABLE),
+  signInAsDeveloper: () => Promise.resolve(UNAVAILABLE),
   signOut: () => Promise.resolve(),
   verifyEmailCode: () => Promise.resolve(UNAVAILABLE),
   resendConfirmation: () => Promise.resolve(UNAVAILABLE),
@@ -148,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       signUpWithPassword: (email: string, password: string) => controller.signUpWithPassword(email, password),
       signInWithPassword: (email: string, password: string) => controller.signInWithPassword(email, password),
+      signInAsDeveloper: (email: string) => controller.signInAsDeveloper(email),
       signOut: () => controller.signOut(),
       verifyEmailCode: (email: string, code: string, purpose: "signup" | "recovery") => controller.verifyEmailCode(email, code, purpose),
       resendConfirmation: (email: string) => controller.resendConfirmation(email),

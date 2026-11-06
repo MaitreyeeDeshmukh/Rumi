@@ -406,6 +406,24 @@ export function createAuthController(deps: AuthDeps) {
         return { ok: true, needsConfirmation: false };
       });
     },
+    /** Developer bypass (see devBypassEmail): asks /api/dev-login for a token and trades it for a real session. No password. */
+    async signInAsDeveloper(rawEmail: string): Promise<AuthResult> {
+      const failure = { ok: false, message: "The developer log-in is not available." } as const;
+      try {
+        const res = await fetch("/api/dev-login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: normalizeEmail(rawEmail) }) });
+        const tokenHash = res.ok ? ((await res.json()) as { tokenHash?: string }).tokenHash : undefined;
+        if (!tokenHash) return failure;
+        return await intentionally(async (client) => {
+          const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
+          if (error || !data.session) return failure;
+          applySession(data.session);
+          ensureRows(client);
+          return { ok: true, needsConfirmation: false };
+        });
+      } catch {
+        return failure;
+      }
+    },
     /** Signs out of this browser only (scope local), then forgets the last user id and the email cooldown. Never throws. */
     async signOut(): Promise<void> {
       try {
