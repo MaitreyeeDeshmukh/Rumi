@@ -154,6 +154,14 @@ export function getGroqConfig(): GroqConfig {
   return { apiKey, modelQuality, modelFast };
 }
 
+/** Speech to text (Groq Whisper): the same key as the chat models, with its own model name and a default. */
+export function getGroqSttConfig(): { apiKey: string; model: string } {
+  const key = nonEmpty.safeParse(process.env.GROQ_API_KEY);
+  if (!key.success) throw new ConfigError(["GROQ_API_KEY"]);
+  const model = nonEmpty.safeParse(process.env.GROQ_MODEL_STT);
+  return { apiKey: key.data, model: model.success ? model.data : "whisper-large-v3-turbo" };
+}
+
 export interface UsageLimits {
   dailyUserLimit: number | undefined;
   dailyGlobalSpendCapUsd: number | undefined;

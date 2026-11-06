@@ -1,3 +1,4 @@
+import { canRecord, recordAndTranscribe } from "@/lib/recordSpeech";
 // Speech for the practice call screen. Both parts are optional: callers check canSpeak and canListen first.
 
 export const canSpeak = (): boolean => typeof window !== "undefined" && "speechSynthesis" in window;
@@ -36,10 +37,12 @@ const recognizerClass = (): RecognizerClass | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
-export const canListen = (): boolean => recognizerClass() !== null;
+export const canListen = (): boolean => canRecord() || recognizerClass() !== null;
 
 /** Starts one dictation. `onText` gets the words, `onEnd` runs when it stops. Returns a function that stops it. */
 export function listen(onText: (text: string) => void, onEnd: () => void): () => void {
+  // Recording plus server transcription first (works in every browser that can record); the browser's own dictation is the fallback.
+  if (canRecord()) return recordAndTranscribe(onText, () => onEnd());
   const Rec = recognizerClass();
   if (!Rec) return () => {};
   const rec = new Rec();
