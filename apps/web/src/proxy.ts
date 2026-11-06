@@ -21,7 +21,7 @@ const hasSessionCookie = (req: NextRequest): boolean => req.cookies.getAll().som
  *    @supabase/ssr docs; the per-request authoritative check stays in requireUser (getUser) on API routes.
  *    Projects that still sign tokens with a shared secret (HS256) make getClaims fall back to one getUser call.
  * 3. the sign-up gate: an app screen (see lib/auth/gate.ts) sends a visitor who is positively signed out, or only a guest
- *    (anonymous), to /sign-in?next=<path>. A session it cannot check (refresh off, Auth unreachable) is let through; every API
+ *    (anonymous), to /login?next=<path>. A session it cannot check (refresh off, Auth unreachable) is let through; every API
  *    route still verifies the caller itself. NEXT_PUBLIC_AUTH_OPTIONAL=1 turns the gate off.
  * AUTH_PROXY_REFRESH=off skips the refresh in step 2. An auth outage only means the session is not refreshed this time;
  * the page still loads.

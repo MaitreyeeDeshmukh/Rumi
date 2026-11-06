@@ -12,6 +12,7 @@ export const NAV = {
   noscriptLabel: "Site menu",
   footerLabel: "Footer",
   openRumi: "Open Rumi",
+  logIn: "Log in",
   howItWorks: "How it works",
   safety: "Safety",
   help: "Help",

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { classifyError, isRetryable, mapSupabaseError } from "./mapError";
+import { classifyError, isRetryable, type ErrorKind, mapAuthFormError, mapSupabaseError } from "./mapError";
 
 /**
  * signing_in: checking this browser for a session, or signing in because something asked for it.
@@ -11,15 +11,19 @@ export interface AuthState {
   status: AuthStatus;
   userId: string | null;
   isAnonymous: boolean;
+  /** The address of the signed-in account, or null for a guest or nobody. */
+  email: string | null;
   /** True when this browser signed in as a different person than last time (cookies cleared, session lost). Cloud data under the old identity is out of reach unless it was upgraded with an email. */
   identityReset: boolean;
 }
 
 type UpgradeFailure = { ok: false; message: string };
 export type UpgradeResult = { ok: true } | UpgradeFailure;
+/** `needsConfirmation`: the account exists only once the person types the code from their email. The text is the same whether or not the address was already in use. */
+export type AuthResult = { ok: true; needsConfirmation: boolean } | { ok: false; message: string; unconfirmed?: true };
 
 export type AuthClientLike = {
-  auth: Pick<SupabaseClient["auth"], "getSession" | "signInAnonymously" | "signInWithOtp" | "onAuthStateChange" | "updateUser">;
+  auth: Pick<SupabaseClient["auth"], "getSession" | "signInAnonymously" | "onAuthStateChange" | "updateUser" | "signUp" | "signInWithPassword" | "signOut" | "verifyOtp" | "resend" | "resetPasswordForEmail">;
   /** Used once after a new sign-in for `core_ensure_my_rows`. Optional: without it that step is skipped. */
   rpc?: SupabaseClient["rpc"];
 };
@@ -44,6 +48,8 @@ export interface AuthDeps {
   redirectTo?: () => string;
   /** False when sign-up is required: nobody is ever signed in anonymously. Default true (the demo escape hatch). */
   allowAnonymous?: () => boolean;
+  /** Clears what only this browser remembers about the last account (the last user id and the email cooldown). Never throws. */
+  forgetDevice?: () => void;
   /** Called when the one-time `core_ensure_my_rows` call after a new sign-in failed. It is counted and never shown. */
   onEnsureRowsFailed?: () => void;
 }
@@ -56,10 +62,52 @@ export const EMAIL_COOLDOWN_MS = 60_000;
 const BACKOFF_BASE_MS = 500;
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
-export const INITIAL_AUTH_STATE: AuthState = { status: "signing_in", userId: null, isAnonymous: true, identityReset: false };
+export const MIN_PASSWORD_LENGTH = 8;
+/** Auth hashes only the first 72 characters, so a longer password would silently be cut. */
+export const MAX_PASSWORD_LENGTH = 72;
+
+export const INITIAL_AUTH_STATE: AuthState = { status: "signing_in", userId: null, isAnonymous: true, email: null, identityReset: false };
+
+/** Sentences the controller itself returns. One literal sentence each, 15 words or fewer (checked by a test). */
+export const AUTH_MESSAGES = {
+  emailEmpty: "Enter your email.",
+  emailInvalid: "That email address does not look right.",
+  passwordEmpty: "Enter your password.",
+  cooldown: "A code was just sent, so wait one minute before asking again.",
+  noResetSession: "That reset did not finish, so ask for a new code.",
+  codeInvalid: "Enter the 6 digits from your email.",
+  codeWrong: "That code is wrong or too old, so ask for a new one.",
+} as const;
+
+export const normalizeEmail = (raw: string): string => raw.trim().toLowerCase();
+export const CODE_LENGTH = 6;
+/** Faults that say something other than "the code is wrong": the network, a limit. Every other answer to a code is the one wrong-or-old sentence. */
+const CODE_FAULTS: ReadonlySet<ErrorKind> = new Set<ErrorKind>(["network", "server", "rate_limited", "email_rate_limited", "captcha"]);
+/** Keeps only the digits, so a code pasted as "123 456" or "123-456" still works. */
+export const cleanCode = (raw: string): string => raw.replace(/\D/g, "");
+export const isValidCode = (code: string): boolean => code.length === CODE_LENGTH;
+export const isValidEmail = (address: string): boolean => address.length <= 254 && EMAIL_RE.test(address);
+
+export interface CredentialErrors {
+  email: string | null;
+  password: string | null;
+}
+
+/** The checks a log-in or sign-up form makes before it calls Auth. Log-in only needs a password; sign-up enforces the length. Null means fine. */
+export function checkCredentials(rawEmail: string, password: string, mode: "login" | "signup"): CredentialErrors {
+  const address = normalizeEmail(rawEmail);
+  let passwordError: string | null = null;
+  if (password.length === 0) passwordError = AUTH_MESSAGES.passwordEmpty;
+  else if (mode === "signup" && password.length < MIN_PASSWORD_LENGTH) passwordError = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  else if (mode === "signup" && password.length > MAX_PASSWORD_LENGTH) passwordError = `Use ${MAX_PASSWORD_LENGTH} characters or fewer.`;
+  return {
+    email: address.length === 0 ? AUTH_MESSAGES.emailEmpty : isValidEmail(address) ? null : AUTH_MESSAGES.emailInvalid,
+    password: passwordError,
+  };
+}
 
 interface SessionLike {
-  user: { id: string; is_anonymous?: boolean };
+  user: { id: string; is_anonymous?: boolean; email?: string };
 }
 
 interface Attempt {
@@ -87,10 +135,12 @@ export function createAuthController(deps: AuthDeps) {
   let active = false;
   let lastRetryAt: number | null = null;
   let ensureRowsFailures = 0;
+  /** Above zero while this controller itself logs in, signs up or signs out. The events those calls cause are not "another person signed in" and not "the session was lost". */
+  let intentional = 0;
 
   const set = (patch: Partial<AuthState>): void => {
     const next = { ...state, ...patch };
-    if (next.status === state.status && next.userId === state.userId && next.isAnonymous === state.isAnonymous && next.identityReset === state.identityReset) return;
+    if (next.status === state.status && next.userId === state.userId && next.isAnonymous === state.isAnonymous && next.email === state.email && next.identityReset === state.identityReset) return;
     state = next;
     for (const l of [...listeners]) l();
   };
@@ -102,7 +152,8 @@ export function createAuthController(deps: AuthDeps) {
       status: "ready",
       userId: session.user.id,
       isAnonymous: session.user.is_anonymous === true,
-      identityReset: state.identityReset || (previous !== null && previous !== session.user.id),
+      email: session.user.email || null,
+      identityReset: state.identityReset || (intentional === 0 && previous !== null && previous !== session.user.id),
     });
   };
 
@@ -125,6 +176,38 @@ export function createAuthController(deps: AuthDeps) {
       }, count);
     } catch {
       count();
+    }
+  }
+
+  /** Runs a call that changes who is signed in. A restore that is still running finishes first, so it cannot overwrite the answer afterwards. */
+  async function intentionally<T>(fn: (client: AuthClientLike) => Promise<T>): Promise<T> {
+    if (current !== null) await current.done;
+    intentional += 1;
+    try {
+      return await fn(deps.getClient());
+    } finally {
+      intentional -= 1;
+    }
+  }
+
+  /** A sentence when this device asked for an email link less than a minute ago, else null. */
+  const emailCooldownMessage = (): string | null => {
+    const t = deps.now();
+    const last = deps.emailSentAt.get();
+    return last !== null && t >= last && t - last < EMAIL_COOLDOWN_MS ? AUTH_MESSAGES.cooldown : null;
+  };
+
+  /** The checks and the shared failure handling of log-in and sign-up. Never throws. */
+  async function credentialCall(rawEmail: string, password: string, mode: "login" | "signup", call: (client: AuthClientLike, email: string) => Promise<AuthResult>): Promise<AuthResult> {
+    const email = normalizeEmail(rawEmail);
+    const bad = checkCredentials(email, password, mode);
+    const invalid = bad.email ?? bad.password;
+    if (invalid !== null) return { ok: false, message: invalid };
+    try {
+      return await intentionally((client) => call(client, email));
+    } catch (e) {
+      // supabase-js reports faults as values; a throw is a missing configuration or a network layer fault. No retry: the person presses the button again.
+      return { ok: false, message: mapAuthFormError(e) };
     }
   }
 
@@ -209,7 +292,7 @@ export function createAuthController(deps: AuthDeps) {
           if (!active) return;
           if (session && event !== "SIGNED_OUT") applySession(session);
           // Our own sign-in clears a dead session first, which emits SIGNED_OUT; that is not the end of the story.
-          else if (event === "SIGNED_OUT" && current === null) set({ status: "degraded", userId: null });
+          else if (event === "SIGNED_OUT" && current === null && intentional === 0) set({ status: "degraded", userId: null });
         });
         stops.push(() => data.subscription.unsubscribe());
       } catch {
@@ -259,21 +342,133 @@ export function createAuthController(deps: AuthDeps) {
     /** How many one-time row checks failed after a sign-in. For tests and diagnostics; no user data. */
     ensureRowsFailures: (): number => ensureRowsFailures,
     /**
-     * Sign up or sign in with one email link (no password). The reply is the same whether or not the address already has
-     * an account: the form cannot be used to find out who is a member. Works with no session; the link opens /auth/callback.
+     * Makes an account with an email and a password, and has Auth email a 6-digit code. A guest (anonymous session, demo mode only)
+     * keeps its data: the email and password are added to the same user. Anybody else gets a new account. Either way the account
+     * is confirmed by `verifyEmailCode`. The password goes to Auth only: it is never stored or logged.
      */
-    async signInWithEmail(email: string): Promise<UpgradeResult> {
-      const address = askForLink(email);
-      if (typeof address !== "string") return address;
+    signUpWithPassword(rawEmail: string, password: string): Promise<AuthResult> {
+      return credentialCall(rawEmail, password, "signup", async (client, email) => {
+        const existing = await client.auth.getSession();
+        if (existing.data.session?.user.is_anonymous === true) {
+          const { data, error } = await client.auth.updateUser({ email, password });
+          if (error) return { ok: false, message: mapAuthFormError(error) };
+          // With email confirmation on, the address is only pending, so the user stays a guest until the code is typed.
+          const pending = data.user?.is_anonymous === true;
+          if (data.user && !pending) applySession({ user: data.user });
+          if (pending) deps.emailSentAt.set(deps.now());
+          return { ok: true, needsConfirmation: pending };
+        }
+        const { data, error } = await client.auth.signUp({ email, password });
+        if (error) return { ok: false, message: mapAuthFormError(error) };
+        // No session means the code must be typed first. An address that already has an account looks the same (Auth hides it), so this reply never says which.
+        if (!data.session) {
+          deps.emailSentAt.set(deps.now());
+          return { ok: true, needsConfirmation: true };
+        }
+        applySession(data.session);
+        ensureRows(client);
+        return { ok: true, needsConfirmation: false };
+      });
+    },
+    /**
+     * Checks the 6-digit code from the email. "signup": confirms the new account and signs the person in. "recovery": the code
+     * from a password-reset email, which signs the person in so `updatePassword` can follow. A wrong or old code gets one sentence
+     * that never says why. Never throws.
+     */
+    async verifyEmailCode(rawEmail: string, rawCode: string, purpose: "signup" | "recovery"): Promise<UpgradeResult> {
+      const email = normalizeEmail(rawEmail);
+      if (!isValidEmail(email)) return { ok: false, message: AUTH_MESSAGES.emailInvalid };
+      const token = cleanCode(rawCode);
+      if (!isValidCode(token)) return { ok: false, message: AUTH_MESSAGES.codeInvalid };
       try {
-        const base = deps.redirectTo?.();
-        const { error } = await deps.getClient().auth.signInWithOtp({
-          email: address,
-          options: { shouldCreateUser: true, ...(base ? { emailRedirectTo: `${base}/auth/callback` } : {}) },
+        return await intentionally(async (client) => {
+          const guest = purpose === "signup" && (await client.auth.getSession()).data.session?.user.is_anonymous === true;
+          const { data, error } = await client.auth.verifyOtp({ email, token, type: purpose === "recovery" ? "recovery" : guest ? "email_change" : "signup" });
+          if (error) return { ok: false, message: CODE_FAULTS.has(classifyError(error)) ? mapAuthFormError(error) : AUTH_MESSAGES.codeWrong };
+          if (!data.session) return { ok: false, message: AUTH_MESSAGES.codeWrong };
+          applySession(data.session);
+          ensureRows(client);
+          return { ok: true };
         });
-        return error ? { ok: false, message: mapSupabaseError(error).message } : { ok: true };
       } catch (e) {
-        return { ok: false, message: mapSupabaseError(e).message };
+        return { ok: false, message: mapAuthFormError(e) };
+      }
+    },
+    /** Logs in with an email and a password. One try per call and no retry. */
+    signInWithPassword(rawEmail: string, password: string): Promise<AuthResult> {
+      return credentialCall(rawEmail, password, "login", async (client, email) => {
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error) return classifyError(error) === "email_not_confirmed" ? { ok: false, message: mapAuthFormError(error), unconfirmed: true } : { ok: false, message: mapAuthFormError(error) };
+        if (data.session) {
+          applySession(data.session);
+          ensureRows(client);
+        }
+        return { ok: true, needsConfirmation: false };
+      });
+    },
+    /** Signs out of this browser only (scope local), then forgets the last user id and the email cooldown. Never throws. */
+    async signOut(): Promise<void> {
+      try {
+        await intentionally((client) => client.auth.signOut({ scope: "local" }));
+      } catch {
+        // scope "local" only clears this browser; a failure leaves a dead token that the server already rejects.
+      }
+      try {
+        deps.forgetDevice?.();
+      } catch {
+        // Nothing of ours is readable if storage refuses access.
+      }
+      // Nobody asked for an account any more: a cloud feature signs in again as a new guest when it needs one.
+      wanted = false;
+      set({ status: "signed_out", userId: null, isAnonymous: true, email: null, identityReset: false });
+    },
+    /**
+     * Sends the confirmation code again (sign-up not finished, or a guest's pending address). Same 60 s per-device cooldown as
+     * the other emails. Auth answers the same for an unknown or already confirmed address, so this never says which.
+     */
+    async resendConfirmation(rawEmail: string): Promise<UpgradeResult> {
+      const email = normalizeEmail(rawEmail);
+      if (!isValidEmail(email)) return { ok: false, message: AUTH_MESSAGES.emailInvalid };
+      const wait = emailCooldownMessage();
+      if (wait !== null) return { ok: false, message: wait };
+      deps.emailSentAt.set(deps.now());
+      try {
+        const client = deps.getClient();
+        const guest = (await client.auth.getSession()).data.session?.user.is_anonymous === true;
+        const { error } = await client.auth.resend({ type: guest ? "email_change" : "signup", email });
+        return error ? { ok: false, message: mapAuthFormError(error) } : { ok: true };
+      } catch (e) {
+        return { ok: false, message: mapAuthFormError(e) };
+      }
+    },
+    /** Asks for a password-reset email with a 6-digit code. The reply is the same for every well-formed address, so it cannot be used to find out who has an account. */
+    async requestPasswordReset(rawEmail: string): Promise<UpgradeResult> {
+      const email = normalizeEmail(rawEmail);
+      if (email.length === 0) return { ok: false, message: AUTH_MESSAGES.emailEmpty };
+      if (!isValidEmail(email)) return { ok: false, message: AUTH_MESSAGES.emailInvalid };
+      const wait = emailCooldownMessage();
+      if (wait !== null) return { ok: false, message: wait };
+      deps.emailSentAt.set(deps.now());
+      try {
+        const { error } = await deps.getClient().auth.resetPasswordForEmail(email);
+        return error ? { ok: false, message: mapAuthFormError(error) } : { ok: true };
+      } catch (e) {
+        return { ok: false, message: mapAuthFormError(e) };
+      }
+    },
+    /** Sets a new password for the signed-in account (the reset code signs the person in). A guest cannot: there is no email to reset. */
+    async updatePassword(password: string): Promise<UpgradeResult> {
+      const bad = checkCredentials("a@b.co", password, "signup").password;
+      if (bad !== null) return { ok: false, message: bad };
+      try {
+        return await intentionally(async (client) => {
+          const session = (await client.auth.getSession()).data.session;
+          if (!session || session.user.is_anonymous === true) return { ok: false, message: AUTH_MESSAGES.noResetSession };
+          const { error } = await client.auth.updateUser({ password });
+          return error ? { ok: false, message: mapAuthFormError(error) } : { ok: true };
+        });
+      } catch (e) {
+        return { ok: false, message: mapAuthFormError(e) };
       }
     },
     async upgradeWithEmail(email: string): Promise<UpgradeResult> {

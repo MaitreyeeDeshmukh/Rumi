@@ -1,6 +1,6 @@
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { classifyError, isRetryable, mapSupabaseError } from "@/features/auth/mapError";
+import { classifyError, isRetryable, mapAuthFormError, mapSupabaseError } from "@/features/auth/mapError";
 import { countWords, literalLint } from "@/lib/literalLint";
 
 const pg = (code: string, message = "raw database text with secret-row-42"): { code: string; message: string } => ({ code, message });
@@ -89,5 +89,38 @@ describe("isRetryable", () => {
     const noRetry = ["rate_limited", "email_rate_limited", "disabled", "captcha", "jwt_expired", "refresh_failed", "unauthorized", "forbidden", "consent", "unique", "foreign_key", "check", "email_exists", "unknown"] as const;
     for (const k of retry) expect(isRetryable(k)).toBe(true);
     for (const k of noRetry) expect(isRetryable(k)).toBe(false);
+  });
+});
+
+describe("mapAuthFormError", () => {
+  it.each([
+    ["invalid_credentials code", new AuthApiError("x", 400, "invalid_credentials"), "That email or password is not right."],
+    ["invalid login (message only)", { message: "Invalid login credentials" }, "That email or password is not right."],
+    ["weak_password", new AuthApiError("x", 422, "weak_password"), "Choose a stronger password with at least 8 characters."],
+    ["email_not_confirmed", new AuthApiError("x", 400, "email_not_confirmed"), "Your email is not confirmed yet, so check your inbox."],
+    ["user_already_exists", new AuthApiError("x", 422, "user_already_exists"), "Check your email, or try signing in."],
+    ["email_exists", new AuthApiError("x", 422, "email_exists"), "Check your email, or try signing in."],
+    ["over_request_rate_limit", new AuthApiError("x", 429, "over_request_rate_limit"), "There were too many tries, so wait a while and try again."],
+    ["over_email_send_rate_limit", new AuthApiError("x", 429, "over_email_send_rate_limit"), "Too many emails were sent, so try again in an hour."],
+    ["network", new TypeError("Failed to fetch"), "I could not reach the server, so try again later."],
+    ["retryable fetch error", new AuthRetryableFetchError("x", 0), "I could not reach the server, so try again later."],
+    ["captcha", new AuthApiError("x", 400, "captcha_failed"), "The safety check failed, so try again."],
+    ["anything else", { message: "boom" }, "Something went wrong on our side, so try again later."],
+    ["null", null, "Something went wrong on our side, so try again later."],
+  ])("%s", (_label, input, message) => {
+    expect(mapAuthFormError(input)).toBe(message);
+  });
+
+  it("every form sentence is one literal sentence of 15 words or fewer, and none repeats the error text", () => {
+    const secret = "hunter2-secret@example.test";
+    const inputs: unknown[] = ["invalid_credentials", "weak_password", "email_not_confirmed", "email_exists", "user_already_exists", "over_request_rate_limit", "over_email_send_rate_limit", "captcha_failed"].map((code) => new AuthApiError(secret, 400, code));
+    inputs.push(new TypeError("Failed to fetch"), { message: "boom" });
+    for (const input of inputs) {
+      const message = mapAuthFormError(input);
+      expect({ message, words: countWords(message) <= 15 }).toEqual({ message, words: true });
+      expect(message.match(/[.!?]/g)).toHaveLength(1);
+      expect({ message, lint: literalLint(message).ok }).toEqual({ message, lint: true });
+      expect(message).not.toContain("hunter2");
+    }
   });
 });

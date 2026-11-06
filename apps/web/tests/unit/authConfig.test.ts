@@ -22,7 +22,12 @@ describe("supabase/config.toml [auth]", () => {
 
   it("site url and redirect urls are the production site and local development, exactly", () => {
     expect(auth).toContain('site_url = "https://rumi-lovat.vercel.app"');
-    expect(auth).toContain('additional_redirect_urls = ["https://rumi-lovat.vercel.app", "http://localhost:3000"]');
+    // The first and fifth entries are the original two; the others are the pages the email links and Google sign-in return to.
+    expect(auth).toContain('additional_redirect_urls = ["https://rumi-lovat.vercel.app", "https://rumi-lovat.vercel.app/", "https://rumi-lovat.vercel.app/auth/confirm", "https://rumi-lovat.vercel.app/reset-password", "http://localhost:3000", "http://localhost:3000/", "http://localhost:3000/auth/confirm", "http://localhost:3000/reset-password"]');
+  });
+
+  it("passwords need 8 characters or more, to match the sign-up form", () => {
+    expect(auth).toContain("minimum_password_length = 8");
   });
 
   it("email confirmations are on, for the email-link upgrade", () => {
