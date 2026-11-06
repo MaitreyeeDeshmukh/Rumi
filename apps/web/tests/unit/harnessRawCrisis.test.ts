@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { runTask, type HarnessDeps } from "@/lib/ai/harness";
 import { setLogSink } from "@/lib/ai/telemetry";
@@ -14,13 +14,16 @@ const deps = (provider?: HarnessDeps["provider"], extra: Partial<HarnessDeps> = 
   ...extra,
 });
 const CRISIS = "I want to kill myself.";
-const BAD = { error: { code: "bad_input", message: "I could not read that. Check what you wrote and try again." } };
+const BAD = { error: { code: "bad_input", message: "I could not read that. Check what you wrote and try again.", requestId: expect.any(String) } };
 
 beforeEach(() => {
   logs.length = 0;
   setLogSink((l) => logs.push(l));
 });
-afterEach(() => setLogSink(null));
+afterEach(() => {
+  setLogSink(null);
+  vi.unstubAllEnvs();
+});
 
 describe("P2-1: a crisis phrase in a request that is refused before the crisis check still gets the card", () => {
   it("a 2500-character message that starts with a certain phrase (over the field limit, so 400) shows the card", async () => {
@@ -111,6 +114,7 @@ describe("P2-1: a crisis phrase in a request that is refused before the crisis c
   });
 
   it("known limit: a request refused by the rate limit (429) is refused before the body is read, so there is no card", async () => {
+    vi.stubEnv("VERCEL", "1"); // the address header is trusted only on Vercel
     const limiter = createRateLimiter({ limits: { perIp: 1 } });
     const same = { "x-real-ip": "203.0.113.77" };
     await runTask(fakeTask().spec, post(okBody(), same), deps(fakeProvider([say("ok")]), { limiter }));

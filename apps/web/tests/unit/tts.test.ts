@@ -130,9 +130,9 @@ describe("the route handler", () => {
     expect(JSON.parse(String(calls[0].init.body)).transcript).toBe("Hello there");
   });
 
-  it("appends the session cookie to the answer, like the other routes", async () => {
+  it("sets no cookie: sessions are Supabase's, not ours", async () => {
     const r = await handler(fake().fetchFn)(post({ text: "Hi" }));
-    expect(r.headers.get("set-cookie")).toMatch(/^[^=]+=/);
+    expect(r.headers.get("set-cookie")).toBeNull();
   });
 
   it("cleans the text: control and invisible characters and region tokens do not reach Cartesia", async () => {
@@ -169,7 +169,6 @@ describe("the route handler", () => {
       ["missing field", () => post({}), 400, "bad_input"],
       ["text not a string", () => post({ text: 5 }), 400, "bad_input"],
       ["bad JSON", () => post(null, {}, "{not json"), 400, "bad_input"],
-      ["invalid recovery key header", () => post({ text: "Hi" }, { "x-rumi-key": "nope" }), 400, "bad_input"],
     ];
     it.each(cases)("%s", async (_name, make, status, code) => {
       const { fetchFn, calls } = fake();
@@ -210,6 +209,7 @@ describe("the route handler", () => {
   });
 
   it("the stricter limit: the 31st call from one client in ten minutes is a 429 with Retry-After", async () => {
+    vi.stubEnv("VERCEL", "1"); // the address header is trusted only on Vercel
     const { fetchFn, calls } = fake();
     const h = createTtsHandler({ fetchFn });
     const headers = { "x-real-ip": "203.0.113.77" };

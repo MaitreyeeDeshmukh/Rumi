@@ -5,8 +5,19 @@ import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("../../src", import.meta.url));
 
-/** Server-side modules: they hold the Supermemory key, the tag secret or node-only code. */
-const SERVER_ONLY = ["features/memory/smClient", "features/memory/remoteSync", "features/memory/forgetAll", "features/memory/tag", "features/memory/memoryHandlers"];
+/** Server-side modules: they read the service-role key, verify sessions, hold the hashing secret or use node-only code. */
+const SERVER_ONLY = [
+  "features/memory/server",
+  "features/memory/serverDeps",
+  "features/memory/supabaseStore",
+  "lib/supabase/admin",
+  "lib/auth/requireUser",
+  "lib/auth/secret",
+  "lib/security/guardRequest",
+  "lib/security/rateLimit",
+  "lib/ai/harness",
+  "lib/ai/cache",
+];
 /** Entry points that ship to the browser. */
 const CLIENT_ENTRIES = [
   "features/state/RumiProvider.tsx",
@@ -57,7 +68,7 @@ describe("browser bundle stays free of server modules", () => {
   const rel = [...files].map((f) => f.slice(SRC.length + 1).replace(/\\/g, "/"));
 
   it("the walk really reaches the browser code it should", () => {
-    expect(rel).toEqual(expect.arrayContaining(["features/state/stateStore.ts", "lib/storage.ts", "features/memory/persona.ts", "features/memory/recoveryCode.ts"]));
+    expect(rel).toEqual(expect.arrayContaining(["features/state/stateStore.ts", "lib/storage.ts", "features/memory/persona.ts"]));
   });
 
   it("no module reachable from RumiProvider, callApi, the memory actions or the builders is a server module", () => {
@@ -68,32 +79,29 @@ describe("browser bundle stays free of server modules", () => {
     expect(rel).toEqual(expect.arrayContaining(["lib/api/calls.ts", "features/memory/useMemoryControls.ts", "lib/crisis.ts", "lib/literalLint.ts"]));
   });
 
-  it("nothing reachable imports a node: module", () => {
-    expect([...packages].filter((p) => p.startsWith("node:"))).toEqual([]);
+  it("no reachable module imports a node: module except lib/errors.ts (fingerprintOf hashes with node:crypto; only server code calls it)", () => {
+    const importers = rel.filter((f) => /from\s*["']node:/.test(readFileSync(resolve(SRC, f), "utf8")));
+    expect(importers).toEqual(["lib/errors.ts"]);
   });
 
   it("the walker itself sees a server import when there is one", () => {
-    const withServer = reachable(["features/memory/remoteSync.ts"]);
+    const withServer = reachable(["features/memory/server.ts"]);
     const names = [...withServer.files].map((f) => f.slice(SRC.length + 1).replace(/\\/g, "/"));
-    expect(names).toContain("features/memory/smClient.ts");
-    expect(reachable(["features/memory/tag.ts"]).packages.has("node:crypto")).toBe(true);
+    expect(names).toContain("features/memory/supabaseStore.ts");
+    expect(reachable(["features/memory/serverDeps.ts"]).packages.has("node:crypto")).toBe(true);
   });
 
   it("the walker follows .js and .mjs specifiers to the TypeScript source", () => {
     const virtual = resolve(SRC, "features/memory/virtualEntry.ts");
     for (const ext of [".js", ".mjs", ""]) {
-      const seen = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'import { createSmClient } from "./smClient' + ext + '";' : readFileSync(f, "utf8")));
-      expect([...seen.files].some((f) => f.endsWith("smClient.ts")), 'extension "' + ext + '"').toBe(true);
+      const seen = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'import { createSupabaseStore } from "./supabaseStore' + ext + '";' : readFileSync(f, "utf8")));
+      expect([...seen.files].some((f) => f.endsWith("supabaseStore.ts")), 'extension "' + ext + '"').toBe(true);
     }
-    const aliased = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'export * from "@/features/memory/forgetAll.js";' : readFileSync(f, "utf8")));
-    expect([...aliased.files].some((f) => f.endsWith("forgetAll.ts"))).toBe(true);
+    const aliased = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'export * from "@/features/memory/serverDeps.js";' : readFileSync(f, "utf8")));
+    expect([...aliased.files].some((f) => f.endsWith("serverDeps.ts"))).toBe(true);
   });
 
-  it("server modules do not claim to be guarded by an import that is not there", () => {
-    for (const server of SERVER_ONLY) {
-      const text = readFileSync(resolve(SRC, `${server}.ts`), "utf8");
-      expect(text).not.toMatch(/server-only/);
-      expect(text).not.toMatch(/SERVER ONLY/);
-    }
+  it("the service-role client is guarded by server-only, which fails the Next build if a client module imports it", () => {
+    expect(readFileSync(resolve(SRC, "lib/supabase/admin.ts"), "utf8")).toMatch(/^import "server-only";/m);
   });
 });

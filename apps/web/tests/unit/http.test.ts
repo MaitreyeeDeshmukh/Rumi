@@ -30,7 +30,7 @@ describe("json and errorResponse", () => {
     expect(res.status).toBe(403);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("Retry-After")).toBeNull();
-    expect(await res.json()).toEqual({ error: { code: "forbidden", message: "This request was blocked. Reload the page and try again." } });
+    expect(await res.json()).toEqual({ error: { code: "forbidden", message: "This request was blocked. Reload the page and try again.", requestId: expect.any(String) } });
   });
 
   it("a 429 carries Retry-After, rounded up, with a default of 60", () => {
