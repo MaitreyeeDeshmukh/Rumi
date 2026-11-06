@@ -46,6 +46,8 @@ export type MoreState = {
   wins: Win[];
   tasks: Task[];
   spends: Spend[];
+  /** Weekly budget for Money Mirror, in cents. 0 means not set. */
+  budgetCents: number;
   circles: Circles;
 };
 
@@ -57,6 +59,7 @@ export const emptyMore = (): MoreState => ({
   wins: [],
   tasks: [],
   spends: [],
+  budgetCents: 0,
   circles: { joined: [], going: [], sent: {}, comfort: [], reported: [], prepDone: {} },
 });
 
@@ -124,6 +127,7 @@ export function parseMore(raw: unknown): MoreState {
         ? { id: str(s.id), cents: Math.max(0, Math.round(Number(s.cents))), category: str(s.category, 40), note: str(s.note, 120), date: str(s.date, 10) }
         : null,
     ),
+    budgetCents: Number.isFinite(Number(raw.budgetCents)) ? Math.max(0, Math.round(Number(raw.budgetCents))) : 0,
     circles: {
       joined: strList(c.joined),
       going: strList(c.going),

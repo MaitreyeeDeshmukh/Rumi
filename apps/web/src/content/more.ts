@@ -4,7 +4,7 @@ export const MORE = {
   title: "More in Rumi",
   lead: "Early versions of more Rumi tools. They use sample data and stay on this device.",
   previewTitle: "Preview",
-  previewText: "This part of Rumi is a preview. It uses made-up data. Nothing is sent anywhere.",
+  previewText: "This part of Rumi is a preview. What you add stays on this device. Nothing is sent anywhere.",
   sectionsTitle: "Preview tools",
   open: "Open",
   eraseTitle: "Erase preview data",
@@ -30,6 +30,8 @@ export const MORE_SECTIONS: readonly { href: string; title: string; text: string
   { href: "/home/circles", title: "Circles", text: "Small groups with clear plans. Talking is always optional." },
   { href: "/home/contacts", title: "Trusted contacts", text: "People you might want to text or call fast." },
   { href: "/home/growth", title: "My growth", text: "A private record of things you tried. No scores." },
+  { href: "/home/my-day", title: "My day", text: "A short list for today, with help to start each task." },
+  { href: "/home/money", title: "Money Mirror", text: "A simple view of what you spent this week." },
 ];
 
 /** Browser tab titles for each preview route (the first path segment after /home). */
@@ -41,4 +43,6 @@ export const MORE_TITLES: Readonly<Record<string, string>> = {
   contacts: "Trusted contacts",
   growth: "My growth",
   rescue: "Rescue",
+  "my-day": "My day",
+  money: "Money Mirror",
 };

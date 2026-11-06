@@ -5,6 +5,7 @@ import { AppointmentDetail, AppointmentsList, NewAppointment } from "@/component
 import { CirclesHome, Comfort, EventDetail, GroupChat, GroupDetail, MeetupPrep } from "@/components/more/circles";
 import { Contacts, Growth } from "@/components/more/you";
 import { Breathe, Changed, Overwhelmed, RescueFlow, RescueHome, SayIt, Trusted, Unsure } from "@/components/more/rescue";
+import { MoneyMirror, MyDay, StartWithMe } from "@/components/more/day";
 import { MoreHub } from "@/components/more/MoreHub";
 import { NotFound } from "@/components/more/parts";
 import { RecordVisit, VisitDetail, VisitsList } from "@/components/more/visits";
@@ -40,6 +41,8 @@ const ROUTES: Readonly<Record<string, Route>> = {
     if (a === "unsure") return <Unsure />;
     return a === "trusted" ? <Trusted /> : null;
   },
+  "my-day": (a, b) => (!a ? <MyDay /> : a === "task" && b ? <StartWithMe id={b} /> : null),
+  money: (a) => (a ? null : <MoneyMirror />),
 };
 
 const missing = () => (
