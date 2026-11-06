@@ -318,6 +318,8 @@ jobs:
     env:
       NEXT_PUBLIC_CONTACT_EMAIL: team@rumi.test
       MOCK_AI: "1"
+      # A production build with MOCK_AI requires sign-in on AI routes (401 otherwise); this run measures the app, not Auth.
+      NEXT_PUBLIC_AUTH_OPTIONAL: "1"
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: pnpm/action-setup@v4.1.0
