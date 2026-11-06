@@ -19,6 +19,8 @@ export type Appointment = {
   mode: "in_person" | "virtual";
   reason: string;
   accom: string[];
+  /** True when the time is booked; false when the person still needs to call. */
+  booked: boolean;
   done: boolean;
 };
 export type Contact = { id: string; name: string; relation: string; phone: string; how: "text" | "call" };
@@ -95,6 +97,7 @@ export function parseMore(raw: unknown): MoreState {
             mode: a.mode === "virtual" ? "virtual" : "in_person",
             reason: str(a.reason, 1000),
             accom: strList(a.accom),
+            booked: a.booked !== false,
             done: a.done === true,
           }
         : null,

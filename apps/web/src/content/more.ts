@@ -25,10 +25,12 @@ export const MORE = {
 /** One card on the hub. Added as each preview tool is built. */
 export const MORE_SECTIONS: readonly { href: string; title: string; text: string }[] = [
   { href: "/home/visits", title: "Your visits", text: "Record a visit and get a short summary. See past visits." },
+  { href: "/home/appointments", title: "Appointments", text: "Add appointments, see what is coming up and get a call script." },
 ];
 
 /** Browser tab titles for each preview route (the first path segment after /home). */
 export const MORE_TITLES: Readonly<Record<string, string>> = {
   more: "More in Rumi",
   visits: "Your visits",
+  appointments: "Appointments",
 };
