@@ -44,11 +44,12 @@ export function AppNav() {
         aria-label={NAV.appLabel}
         className="no-print fixed inset-x-0 bottom-0 z-[var(--z-nav)] bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
       >
-        <div ref={bar} className="mx-auto grid max-w-2xl grid-cols-5 border-t border-line">
-          {APP_NAV.map(({ href, label, icon: Icon }) => (
+        <div ref={bar} className="mx-auto grid max-w-2xl grid-cols-7 border-t border-line">
+          {APP_NAV.map(({ href, label, tab, icon: Icon }) => (
             <Link
               key={href}
               href={href}
+              aria-label={tab ? label : undefined}
               aria-current={page(href)}
               className={cn(
                 "flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 px-0 pt-[3px] text-center text-[min(.75rem,12px)] leading-tight font-bold whitespace-nowrap text-ink no-underline aria-[current=page]:border-t-[3px] aria-[current=page]:border-primary aria-[current=page]:pt-0",
@@ -56,7 +57,7 @@ export function AppNav() {
               )}
             >
               <Icon aria-hidden="true" className="size-6" />
-              <span data-tab-label>{label}</span>
+              <span data-tab-label>{tab ?? label}</span>
             </Link>
           ))}
         </div>

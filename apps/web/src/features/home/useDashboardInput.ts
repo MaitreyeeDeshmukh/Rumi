@@ -3,7 +3,8 @@ import type { DashboardState } from "@/features/home/nextStep";
 import { FOCUS_LABEL } from "@/features/practice/labels";
 import { startLevelFor } from "@/features/adapters/startLevelFor";
 import { summarizeSession } from "@/features/practice/summarizeSession";
-import type { PracticeSession } from "@/features/shared/types";
+import { splitAppointments } from "@/features/appointments/appointments";
+import type { Appointment, PracticeSession } from "@/features/shared/types";
 import { useRumi } from "@/lib/rumiActive";
 import { browserStorage } from "@/lib/storage";
 
@@ -20,6 +21,8 @@ export type HomeViewProps = {
   } | null;
   memoryOn: boolean;
   storageOk: boolean;
+  /** The soonest visit that has not happened yet. Absent or null: none booked. */
+  nextAppointment?: Appointment | null;
 };
 
 /** The most help the person used in one practice. */
@@ -60,6 +63,7 @@ export function useDashboardInput(): { ready: boolean; props: HomeViewProps } {
         summary && last
           ? { ...summary, trend: before ? helpTrend(mostHelp(before), mostHelp(last)) : null }
           : null,
+      nextAppointment: splitAppointments(state.appointments ?? [], new Date()).upcoming[0] ?? null,
       memoryOn: settings.memoryOptIn,
       storageOk: browserStorage() !== null && lastSave.ok && !readOnly,
     },

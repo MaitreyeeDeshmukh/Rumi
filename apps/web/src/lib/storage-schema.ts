@@ -19,6 +19,7 @@ import {
   VisitPlanSchema,
 } from '@/features/shared/schemas';
 import type {
+  Appointment,
   PersonaFact,
   PersonaRemoval,
   PracticeSession,
@@ -27,6 +28,7 @@ import type {
   Settings,
   SupportCard,
   SupportItem,
+  Visit,
   VisitPlan,
 } from '@/features/shared/types';
 import { presetText } from '@/features/support/presets';
@@ -35,6 +37,9 @@ export const MAX_SESSIONS = 20;
 /** More than this many support lines are dropped when stored data is read back, so the card refuses to grow past it. */
 export const MAX_SUPPORT_ITEMS = 20;
 const MAX_STORED_TURNS = 40;
+export const MAX_APPOINTMENTS = 50;
+export const MAX_VISITS = 10;
+export const MAX_VISIT_CHARS = 30_000;
 
 export const defaultSettings = (): Settings => ({
   name: '',
@@ -189,6 +194,31 @@ function parseRecap(raw: unknown): Recap | undefined {
   };
 }
 
+const NoteList = z.unknown().transform((v) => validItems(z.string().max(200), v).slice(0, 12)).catch(() => []);
+const AppointmentSchema = z.object({
+  id: Id,
+  care: z.enum(['primary', 'specialist', 'dentist', 'mental', 'other']).catch('other'),
+  providerName: text(80),
+  clinic: text(80),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  time: z.string().regex(/^\d{2}:\d{2}$/),
+  reason: text(200),
+  status: z.enum(['to_confirm', 'confirmed']).catch('to_confirm'),
+  createdAt: text(40),
+  questions: NoteList,
+  bring: NoteList,
+  symptoms: NoteList,
+});
+const VisitSchema = z.object({ id: Id, apptId: Id.optional().catch(undefined), createdAt: text(40), text: text(MAX_VISIT_CHARS) });
+
+const parseAppointments = (raw: unknown): Appointment[] =>
+  uniqueBy(validItems(AppointmentSchema, raw), (a) => a.id).slice(0, MAX_APPOINTMENTS) as Appointment[];
+const parseVisits = (raw: unknown): Visit[] =>
+  uniqueBy(validItems(VisitSchema, raw), (v) => v.id)
+    .filter((v) => v.text.trim() !== '')
+    .slice(-MAX_VISITS)
+    .map((v) => (v.apptId === undefined ? { id: v.id, createdAt: v.createdAt, text: v.text } : v));
+
 const iso = (v: unknown): string => (typeof v === 'string' ? v.slice(0, 40) : '');
 /** A change time in the one form the server accepts (with Z), or '' when it is not a time. */
 const isoTime = (v: unknown): string => {
@@ -245,6 +275,8 @@ export function parseState(raw: unknown): RumiState {
   const supportCard = parseSupportCard(raw.supportCard);
   const plan = parsePlan(raw.plan);
   const recap = parseRecap(raw.recap);
+  const appointments = parseAppointments(raw.appointments);
+  const visits = parseVisits(raw.visits);
   return {
     version: 1,
     settings,
@@ -253,5 +285,8 @@ export function parseState(raw: unknown): RumiState {
     ...(plan ? { plan } : {}),
     ...(supportCard ? { supportCard } : {}),
     ...(recap ? { recap } : {}),
+    // Absent when empty, so data saved before these existed round-trips unchanged.
+    ...(appointments.length > 0 ? { appointments } : {}),
+    ...(visits.length > 0 ? { visits } : {}),
   };
 }

@@ -147,6 +147,35 @@ export interface Persona {
   removed?: PersonaRemoval[];
 }
 
+export type CareType = 'primary' | 'specialist' | 'dentist' | 'mental' | 'other';
+
+/** A visit the person booked (a mock: nothing is sent to the office) with the notes they prepared. Device storage only. */
+export interface Appointment {
+  id: string;
+  care: CareType;
+  providerName: string;
+  clinic: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** HH:MM, 24 hours */
+  time: string;
+  reason: string;
+  /** to_confirm until the person says the office confirmed it. */
+  status: 'to_confirm' | 'confirmed';
+  createdAt: string;
+  questions: string[];
+  bring: string[];
+  symptoms: string[];
+}
+
+/** What was said at a visit, as text. Typed or turned into words from a recording. Device storage only. */
+export interface Visit {
+  id: string;
+  apptId?: string;
+  createdAt: string;
+  text: string;
+}
+
 export interface RumiState {
   version: 1;
   settings: Settings;
@@ -155,6 +184,9 @@ export interface RumiState {
   sessions: PracticeSession[];
   recap?: Recap;
   persona: Persona;
+  /** Absent means none. Added without a version bump: old saved data loads as it is. */
+  appointments?: Appointment[];
+  visits?: Visit[];
 }
 
 export type ApiErrorCode = 'bad_input' | 'too_large' | 'forbidden' | 'ai_invalid' | 'ai_unavailable' | 'rate_limited';

@@ -4,7 +4,9 @@ import { LoopStepper } from "@/components/marketing/LoopStepper";
 import { ButtonLink } from "@/components/ui/button";
 import { MessageSquareText, Settings, Share2 } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
+import { APPT } from "@/content/appointments";
 import { HOME, NEXT_STEPS, STATUS } from "@/content/dashboard";
+import { dayLong, timeText } from "@/features/appointments/appointments";
 import { PAGES_COPY } from "@/content/pages";
 import { HELP_KINDS, helpLevelWord } from "@/features/home/helpLevel";
 import { nextStep, stepStatus } from "@/features/home/nextStep";
@@ -14,7 +16,7 @@ import { fill, plural } from "@/lib/fill";
 const STEP_ROUTES = ["/get-ready", "/practice", "/remember"] as const;
 
 /** The dashboard (spec 7.1). Pure: everything it shows comes in through props. */
-export function HomeView({ state, helpLevels, lastPractice, memoryOn, storageOk }: HomeViewProps) {
+export function HomeView({ state, helpLevels, lastPractice, memoryOn, storageOk, nextAppointment }: HomeViewProps) {
   const next = nextStep(state);
   const status = stepStatus(state);
   const statuses = [status.getReady, status.practice, status.remember];
@@ -49,6 +51,23 @@ export function HomeView({ state, helpLevels, lastPractice, memoryOn, storageOk 
                 };
               })}
             />
+          </Block>
+
+          <Block title={APPT.homeHeading}>
+            {nextAppointment ? (
+              <p>
+                {fill(APPT.homeNext, {
+                  what: `${APPT.care[nextAppointment.care]} with ${nextAppointment.providerName}`,
+                  day: dayLong(nextAppointment.date),
+                  time: timeText(nextAppointment.time),
+                })}
+              </p>
+            ) : (
+              <p>{APPT.homeNone}</p>
+            )}
+            <ButtonLink kind="secondary" href={nextAppointment ? `/appointment?id=${nextAppointment.id}` : "/appointments/new"}>
+              {nextAppointment ? APPT.homeOpen : APPT.book}
+            </ButtonLink>
           </Block>
 
           <Block title={HOME.planHeading}>
