@@ -8,8 +8,8 @@ import { Field, fieldControlClass } from "@/components/ui/field";
 import { Copy, Printer } from "@/components/ui/icons";
 import { Toggle } from "@/components/ui/toggle";
 import { GET_READY } from "@/content/getReady";
-import { MAX_QUESTIONS, addCustomItem, buildSupportCardText } from "@/features/shims/getReadyKit";
-import type { RumiState } from "@/features/shims/types";
+import { MAX_QUESTIONS, addCustomItem, buildSupportCardText } from "@/features/adapters/getReadyKit";
+import type { RumiState } from "@/features/shared/types";
 import { useRumi } from "@/lib/rumiActive";
 
 /** How I like to be supported: sentence toggles, own sentences, up to two questions, and the printable card. */

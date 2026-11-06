@@ -13,7 +13,7 @@ export const LEGACY: string[] = [];
 const LEGACY_LIMIT = 0;
 
 /** Lib files whose strings are lint data (the idiom list), never shown to a person. */
-const NOT_UI = ["lib/literalLint.ts", "features/shims/fixtures.ts"];
+const NOT_UI = ["lib/literalLint.ts"];
 
 /** Server, AI and data code (the production integration). Its strings are prompts, errors and logs, not UI copy. */
 const NOT_UI_DIRS = [

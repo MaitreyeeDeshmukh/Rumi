@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_PLAN } from "@/features/shims/fixtures";
+import { DEMO_PLAN } from "@/fixtures/demoPlan";
 import {
   addCustomItem,
   buildKitText,
   buildSupportCardText,
   newSupportCard,
   shouldPlayFinishSound,
-} from "@/features/shims/getReadyKit";
-import type { RumiState, SupportCard } from "@/features/shims/types";
+} from "@/features/adapters/getReadyKit";
+import type { RumiState, SupportCard } from "@/features/shared/types";
 
-const fact = (key: string) => ({ id: `support_pref:${key}`, kind: "support_pref" as const, key, text: "", createdAt: "" });
+const fact = (key: string) => ({ id: `support_pref:${key}`, kind: "support_pref" as const, key, createdAt: "", updatedAt: "" });
 
 describe("support card builders", () => {
   it("newSupportCard turns on only the presets the persona holds and picks two questions", () => {
@@ -32,8 +32,8 @@ describe("support card builders", () => {
     const text = buildSupportCardText(card, DEMO_PLAN);
     expect(text).toContain("- Please speak slowly.\n- I may need extra time.");
     expect(text).not.toContain("Off line.");
-    expect(text).toContain("I get headaches most afternoons.");
-    expect(text).toContain("1. Why do I get these headaches?\n2. What should I do next?");
+    expect(text).toContain("My main concern\nI keep getting headaches");
+    expect(text).toContain("1. I want to ask why I get these headaches.\n2. I want to ask what I should do next.");
     expect(text).not.toContain("instructions in writing");
   });
 
@@ -53,13 +53,14 @@ describe("support card builders", () => {
     expect(ok.card.items.at(-1)).toMatchObject({ id: "u1", text: "I need a quiet room.", source: "user", enabled: true });
   });
 
-  it("buildKitText joins the enabled plan lines and the card, and is empty without both", () => {
+  it("buildKitText joins the enabled plan lines and the card, and is the card and concern, and has no support lines without a card", () => {
     const supportCard = newSupportCard(DEMO_PLAN, { facts: [fact("p1")] });
     const state = { plan: DEMO_PLAN, supportCard } as unknown as RumiState;
     const text = buildKitText(state);
-    expect(text.startsWith("My visit plan\n- I have had headaches for about three weeks.")).toBe(true);
-    expect(text).toContain("- Please speak slowly.");
-    expect(buildKitText({ plan: DEMO_PLAN } as unknown as RumiState)).toBe("");
+    // The kit is the support card, the main concern and the top two questions: the things to take into the room.
+    expect(text.startsWith("How I like to be supported\n- Please speak slowly.")).toBe(true);
+    expect(text).toContain("My main concern\nI keep getting headaches");
+    expect(buildKitText({ plan: DEMO_PLAN, persona: { facts: [] } } as unknown as RumiState)).not.toContain("How I like to be supported");
   });
 
   it("shouldPlayFinishSound follows the setting", () => {

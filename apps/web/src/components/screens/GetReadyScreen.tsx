@@ -11,9 +11,9 @@ import { Notice } from "@/components/ui/notice";
 import { Screen } from "@/components/ui/screen";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { GET_READY } from "@/content/getReady";
-import { newSupportCard, planCall } from "@/features/shims/getReadyKit";
-import { isCrisis } from "@/features/shims/isCrisis";
-import type { PlanItem, RumiState, VisitPlan } from "@/features/shims/types";
+import { newSupportCard, planCall } from "@/features/adapters/getReadyKit";
+import { isCrisis } from "@/lib/crisis";
+import type { PlanItem, RumiState, VisitPlan } from "@/features/shared/types";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 

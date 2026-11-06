@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Screen } from "@/components/ui/screen";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { SHARE } from "@/content/share";
-import { SHARE_IDS, availableShare, buildShareText, type ShareSelection } from "@/features/shims/share";
+import { SHARE_IDS, availableShare, buildShareText, type ShareSelection } from "@/features/adapters/share";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 

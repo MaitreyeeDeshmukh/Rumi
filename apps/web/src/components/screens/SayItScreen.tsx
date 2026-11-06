@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { z } from "zod";
 import { useCrisis } from "@/components/CrisisProvider";
 import { Button } from "@/components/ui/button";
 import { Field, fieldControlClass } from "@/components/ui/field";
@@ -9,12 +8,12 @@ import { Notice } from "@/components/ui/notice";
 import { Screen } from "@/components/ui/screen";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { SAYIT } from "@/content/sayit";
-import { callApi } from "@/features/shims/callApi";
-import type { ScenarioId } from "@/features/shims/sayit";
+import { SayItReply } from "@/features/shared/schemas";
+import { callApi } from "@/lib/api/callApi";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 
-const REPLY = z.object({ script: z.string(), blanks: z.array(z.string()) });
+type ScenarioId = (typeof SAYIT.scenarios)[number]["id"];
 type Level = 2 | 3;
 type View = { scenario: ScenarioId; level: Level; script: string | null; loading: boolean; failed: boolean };
 
@@ -58,7 +57,7 @@ export function SayItScreen() {
     stop();
     setStatus("");
     setView({ scenario, level, script: keep, loading: true, failed: false });
-    const result = await callApi("/api/sayit", { scenario, level }, REPLY);
+    const result = await callApi("/api/sayit", { scenario, level, companionName: state.settings.companionName }, SayItReply, { skipCrisisCheck: true });
     if (mine !== latest.current) return;
     if (result.ok) {
       setView({ scenario, level, script: result.data.script, loading: false, failed: false });

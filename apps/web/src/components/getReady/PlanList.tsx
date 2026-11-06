@@ -7,7 +7,7 @@ import { cn } from "@/components/ui/cn";
 import { Field, fieldControlClass } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { GET_READY } from "@/content/getReady";
-import type { PlanItem } from "@/features/shims/types";
+import type { PlanItem } from "@/features/shared/types";
 
 export type Removed = { item: PlanItem; index: number };
 

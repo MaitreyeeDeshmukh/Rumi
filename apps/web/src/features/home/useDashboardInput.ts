@@ -1,11 +1,11 @@
 import { HELP_KINDS, helpTrend, type HelpLevel, type ItemKind } from "@/features/home/helpLevel";
 import type { DashboardState } from "@/features/home/nextStep";
-import { FOCUS_LABEL } from "@/features/shims/focus";
-import { startLevelFor } from "@/features/shims/startLevelFor";
-import { summarizeSession } from "@/features/shims/summarizeSession";
-import type { PracticeSession } from "@/features/shims/types";
+import { FOCUS_LABEL } from "@/features/practice/labels";
+import { startLevelFor } from "@/features/adapters/startLevelFor";
+import { summarizeSession } from "@/features/practice/summarizeSession";
+import type { PracticeSession } from "@/features/shared/types";
 import { useRumi } from "@/lib/rumiActive";
-import { storageWorks } from "@/lib/rumiStore";
+import { browserStorage } from "@/lib/storage";
 
 export type HomeViewProps = {
   state: DashboardState;
@@ -27,7 +27,8 @@ const mostHelp = (s: PracticeSession): HelpLevel => Math.max(0, ...Object.values
 
 /** The summary when the plan is gone: counts of the lines the person covered. */
 function withoutPlan(s: PracticeSession) {
-  const alone = s.coveredItemIds.filter((id) => (s.helpLevelUsed[id] ?? 0) === 0).length;
+  // Help is stored per kind of plan line, so without the plan the best guess is: each help request covers one line.
+  const alone = Math.max(0, s.coveredItemIds.length - Math.max(0, Math.floor(s.helpCount)));
   return {
     saidMyself: alone,
     saidWithHelp: s.coveredItemIds.length - alone,
@@ -39,7 +40,7 @@ function withoutPlan(s: PracticeSession) {
 
 /** Everything the dashboard shows, worked out from the stored state. `ready` is false until the browser has loaded it. */
 export function useDashboardInput(): { ready: boolean; props: HomeViewProps } {
-  const { state, hydrated, persisted } = useRumi();
+  const { state, hydrated, lastSave, readOnly } = useRumi();
   const { plan, supportCard, sessions, recap, settings } = state;
   const last = sessions.at(-1);
   const before = sessions.at(-2);
@@ -60,7 +61,7 @@ export function useDashboardInput(): { ready: boolean; props: HomeViewProps } {
           ? { ...summary, trend: before ? helpTrend(mostHelp(before), mostHelp(last)) : null }
           : null,
       memoryOn: settings.memoryOptIn,
-      storageOk: storageWorks() && persisted,
+      storageOk: browserStorage() !== null && lastSave.ok && !readOnly,
     },
   };
 }

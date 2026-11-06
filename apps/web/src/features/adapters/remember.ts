@@ -1,16 +1,12 @@
-// swap when the lane merges: requestRecap becomes callApi('/api/recap', ...) from src/lib/api/client.ts.
-import { z } from "zod";
-import { callApi } from "@/features/shims/callApi";
-import { DEMO_PLAN, SAMPLE_VISIT, SAVED_RECAP_REPLY } from "@/features/shims/fixtures";
-import type { Recap, RecapItem, RecapSection, Speaker } from "@/features/shims/types";
+// The recap of the sample visit: the real /api/recap through callApi.
+import { RecapReply } from "@/features/shared/schemas";
+import type { Recap, RecapItem, RecapSection, Speaker } from "@/features/shared/types";
+import { DEMO_PLAN } from "@/fixtures/demoPlan";
+import { SAVED_RECAP_REPLY } from "@/fixtures/sampleRecap";
+import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
+import { callApi } from "@/lib/api/callApi";
 
-const RecapReply = z.object({
-  items: z.array(z.object({ section: z.enum(["discussed", "instructions", "medications", "next_steps"]), text: z.string(), evidence: z.array(z.string()) })),
-  unconfirmed: z.array(z.string()),
-  planStatus: z.array(z.object({ itemId: z.string(), status: z.enum(["asked_by_me", "asked_by_other", "not_asked", "unclear"]), evidence: z.array(z.string()) })),
-  dropped: z.number(),
-});
-type Reply = z.infer<typeof RecapReply>;
+type Reply = typeof RecapReply._output;
 
 export type RecapOutcome = { kind: "ok"; reply: Reply } | { kind: "crisis" } | { kind: "error" };
 
@@ -21,13 +17,14 @@ declare global {
   }
 }
 
-/** The recap call. The shim answers from a fixture; E2E builds can force failures. */
+/** The recap call. E2E builds can force failures. */
 export async function requestRecap(mySpeaker: Speaker): Promise<RecapOutcome> {
   if (process.env.NEXT_PUBLIC_E2E === "1" && (window.__rumiFailRecap ?? 0) > 0) {
     window.__rumiFailRecap = (window.__rumiFailRecap ?? 0) - 1;
     return { kind: "error" };
   }
-  const res = await callApi("/api/recap", { lines: SAMPLE_VISIT, mySpeaker, plan: DEMO_PLAN }, RecapReply);
+  // The visit is a fixed sample, so there is no typed text to check. The server still runs its own check.
+  const res = await callApi("/api/recap", { lines: SAMPLE_VISIT, mySpeaker, plan: DEMO_PLAN }, RecapReply, { skipCrisisCheck: true });
   if (res.ok) return { kind: "ok", reply: res.data };
   return "crisis" in res ? { kind: "crisis" } : { kind: "error" };
 }

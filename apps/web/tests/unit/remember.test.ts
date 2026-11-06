@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { SAMPLE_VISIT, SAVED_RECAP_REPLY } from "@/features/shims/fixtures";
-import { buildRecap, groupItems, quoted, unconfirmedText, voicesOf } from "@/features/shims/remember";
+import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
+import { SAVED_RECAP_REPLY } from "@/fixtures/sampleRecap";
+import { buildRecap, groupItems, quoted, unconfirmedText, voicesOf } from "@/features/adapters/remember";
 
 describe("remember builders", () => {
   it("lists each voice once with its first line", () => {

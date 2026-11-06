@@ -2,7 +2,7 @@
 
 import { Sheet } from "@/components/ui/sheet";
 import { PRACTICE } from "@/content/practice";
-import type { PlanItem, VisitPlan } from "@/features/shims/types";
+import type { PlanItem, VisitPlan } from "@/features/shared/types";
 
 const SECTIONS: { kind: PlanItem["kind"]; title: string }[] = [
   { kind: "concern", title: PRACTICE.planConcern },

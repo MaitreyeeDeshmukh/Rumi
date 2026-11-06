@@ -22,6 +22,8 @@ export interface Settings {
   speechRate: number;
   finishSound: boolean;
   memoryOptIn: boolean;
+  /** True once the person finished or skipped the welcome steps. Local only: Open Rumi uses it to pick /home or /welcome. */
+  onboarded: boolean;
 }
 
 export interface PlanItem {

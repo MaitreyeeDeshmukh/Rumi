@@ -9,7 +9,7 @@ import { Field, fieldControlClass } from "@/components/ui/field";
 import { Segmented } from "@/components/ui/segmented";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { WELCOME } from "@/content/welcome";
-import type { RumiState, Settings, ThemeName } from "@/features/shims/types";
+import type { RumiState, Settings, ThemeName } from "@/features/shared/types";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 import { THEMES } from "@/lib/theme";

@@ -7,7 +7,7 @@ import { Copy, Printer } from "@/components/ui/icons";
 import { Screen } from "@/components/ui/screen";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { KIT } from "@/content/getReady";
-import { buildKitText, shouldPlayFinishSound } from "@/features/shims/getReadyKit";
+import { buildKitText, shouldPlayFinishSound } from "@/features/adapters/getReadyKit";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 

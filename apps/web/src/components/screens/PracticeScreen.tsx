@@ -10,8 +10,8 @@ import { ChoiceCard, ChoiceGroup } from "@/components/ui/choice-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { PRACTICE } from "@/content/practice";
-import { FOCUS_LABEL, itemsForFocus } from "@/features/shims/focus";
-import type { Focus, PracticeSession, RumiState } from "@/features/shims/types";
+import { FOCUS_LABEL, itemsForFocus } from "@/features/practice/labels";
+import type { Focus, PracticeSession, RumiState } from "@/features/shared/types";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 

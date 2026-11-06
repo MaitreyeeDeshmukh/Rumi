@@ -6,9 +6,9 @@ import { Check } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { REMEMBER } from "@/content/remember";
-import { DEMO_PLAN } from "@/features/shims/fixtures";
-import { groupItems, unconfirmedText } from "@/features/shims/remember";
-import type { PlanStatus, Recap } from "@/features/shims/types";
+import { DEMO_PLAN } from "@/fixtures/demoPlan";
+import { groupItems, unconfirmedText } from "@/features/adapters/remember";
+import type { PlanStatus, Recap } from "@/features/shared/types";
 import { fill } from "@/lib/fill";
 
 const STATUS_ORDER: PlanStatus[] = ["asked_by_me", "asked_by_other", "not_asked", "unclear"];

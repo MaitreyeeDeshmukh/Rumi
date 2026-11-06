@@ -11,8 +11,9 @@ import { Toggle } from "@/components/ui/toggle";
 import { Screen } from "@/components/ui/screen";
 import { SETTINGS } from "@/content/settings";
 import { WELCOME } from "@/content/welcome";
-import { forgetMemory } from "@/features/shims/memory";
-import type { RumiState, Settings, ThemeName } from "@/features/shims/types";
+import { MEMORY_COPY } from "@/features/memory/consentCopy";
+import { useMemoryControls } from "@/features/memory/useMemoryControls";
+import type { RumiState, Settings, ThemeName } from "@/features/shared/types";
 import { announce } from "@/lib/announce";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
@@ -33,7 +34,10 @@ function Group({ legend, children }: { legend: string; children: ReactNode }) {
 /** /settings: every control saves at once. No primary button. */
 export function SettingsScreen() {
   const page = PAGES["/settings"];
-  const { state, update, reset, hydrated, persisted } = useRumi();
+  const { state, update, hydrated, lastSave, readOnly } = useRumi();
+  const persisted = lastSave.ok && !readOnly;
+  const { actions, facts } = useMemoryControls();
+  const [memoryNote, setMemoryNote] = useState("");
   const router = useRouter();
   const id = useId();
   const s = state.settings;
@@ -50,12 +54,27 @@ export function SettingsScreen() {
       d.settings[key] = value;
     });
 
-  const facts = state.persona.facts;
-
-  const erase = () => {
+  // The memory switch talks to the server first and flips only when that worked, so it never shows a state that is not true.
+  const toggleMemory = async (on: boolean) => {
+    setMemoryNote("");
+    const res = await (on ? actions.enableMemory() : actions.disableMemory());
+    setTouched(true);
+    setMemoryNote(res.ok ? (res.remote === "paused" ? MEMORY_COPY.paused : MEMORY_COPY.saved) : res.remote === "paused" ? MEMORY_COPY.paused : MEMORY_COPY.failed);
+  };
+  const forget = async () => {
     setSheet(null);
-    if (s.memoryOptIn) forgetMemory(update); // swap when the lane merges: forgetAll(), then reset()
-    reset();
+    const res = await actions.forgetAll();
+    setMemoryNote(res.remote === "failed" ? MEMORY_COPY.forgetFailed : res.remote === "paused" ? MEMORY_COPY.paused : MEMORY_COPY.saved);
+    setTouched(true);
+  };
+
+  const erase = async () => {
+    setSheet(null);
+    const res = await actions.deleteEverything();
+    if (res.status !== "ok") {
+      setMemoryNote(res.status === "paused" ? MEMORY_COPY.paused : MEMORY_COPY.forgetFailed);
+      return;
+    }
     announce(SETTINGS.deleted);
     router.push("/welcome");
   };
@@ -149,15 +168,18 @@ export function SettingsScreen() {
             <Toggle
               label={SETTINGS.memory.toggle}
               checked={s.memoryOptIn}
-              onCheckedChange={(v) => set("memoryOptIn", v)}
+              onCheckedChange={(v) => void toggleMemory(v)}
             />
+            <p role="status" className="note m-0 min-h-6">
+              {memoryNote}
+            </p>
             {s.memoryOptIn ? (
               <div className="grid gap-3">
                 <h3 className="m-0 text-base">{SETTINGS.memory.remembers}</h3>
                 {facts.length ? (
                   <ul className="m-0 grid gap-1 pl-5">
                     {facts.map((f) => (
-                      <li key={f.id}>{f.text}</li>
+                      <li key={f}>{f}</li>
                     ))}
                   </ul>
                 ) : (
@@ -198,11 +220,7 @@ export function SettingsScreen() {
         <div className="grid gap-3">
           <Button
             kind="danger"
-            onClick={() => {
-              forgetMemory(update);
-              setTouched(true);
-              setSheet(null);
-            }}
+            onClick={() => void forget()}
           >
             {SETTINGS.memory.confirmForget}
           </Button>
@@ -214,7 +232,7 @@ export function SettingsScreen() {
       <Sheet open={sheet === "erase"} onOpenChange={(o) => !o && setSheet(null)} title={SETTINGS.erase.title}>
         <p className="m-0">{SETTINGS.erase.warning}</p>
         <div className="grid gap-3">
-          <Button kind="danger" onClick={erase}>
+          <Button kind="danger" onClick={() => void erase()}>
             {SETTINGS.erase.confirm}
           </Button>
           <Button kind="secondary" onClick={() => setSheet(null)}>

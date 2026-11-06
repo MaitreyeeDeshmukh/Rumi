@@ -45,6 +45,7 @@ export const defaultSettings = (): Settings => ({
   speechRate: 1,
   finishSound: false,
   memoryOptIn: false,
+  onboarded: false,
 });
 
 export const defaultState = (): RumiState => ({ version: 1, settings: defaultSettings(), sessions: [], persona: { facts: [] } });
@@ -89,6 +90,7 @@ const SettingsSchema = z
     speechRate: z.number().min(0.5).max(2).catch(1),
     finishSound: z.boolean().catch(false),
     memoryOptIn: z.boolean().catch(false),
+    onboarded: z.boolean().catch(false),
   })
   .catch(defaultSettings);
 

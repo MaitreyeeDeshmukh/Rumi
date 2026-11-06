@@ -6,8 +6,8 @@ import { Field, fieldControlClass } from "@/components/ui/field";
 import { Sheet } from "@/components/ui/sheet";
 import { HELP_LEVEL_WORDS } from "@/content/dashboard";
 import { PRACTICE } from "@/content/practice";
-import { composeBlank, helpAnswer, type HelpLevelShown } from "@/features/shims/practice";
-import type { PlanItem } from "@/features/shims/types";
+import { composeBlank, helpAnswer, type HelpLevelShown } from "@/features/adapters/practice";
+import type { PlanItem } from "@/features/shared/types";
 
 export type HelpState = { item: PlanItem | null; level: HelpLevelShown };
 

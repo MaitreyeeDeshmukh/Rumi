@@ -7,9 +7,9 @@ import { StickyActions } from "@/components/ui/sticky-actions";
 import { HOME } from "@/content/dashboard";
 import { PRACTICE } from "@/content/practice";
 import { helpTrend } from "@/features/home/helpLevel";
-import { itemsForFocus } from "@/features/shims/focus";
-import { summarizeSession } from "@/features/shims/summarizeSession";
-import type { HelpLevel, PracticeSession, VisitPlan } from "@/features/shims/types";
+import { itemsForFocus } from "@/features/practice/labels";
+import { summarizeSession } from "@/features/practice/summarizeSession";
+import type { HelpLevel, PracticeSession, VisitPlan } from "@/features/shared/types";
 import { fill, plural } from "@/lib/fill";
 
 /** The most help the person used in one practice. */

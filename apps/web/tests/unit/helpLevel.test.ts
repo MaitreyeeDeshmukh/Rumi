@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { HELP_KINDS, helpLevelWord, helpTrend } from "@/features/home/helpLevel";
-import { nextStartLevel, startLevelFor } from "@/features/shims/startLevelFor";
-import { summarizeSession } from "@/features/shims/summarizeSession";
-import { isCrisis } from "@/features/shims/isCrisis";
-import { DEMO_PLAN } from "@/features/shims/fixtures";
-import type { PracticeSession, RumiState } from "@/features/shims/types";
+import { nextStartLevel } from "@/features/practice/nextStartLevel";
+import { startLevelFor } from "@/features/adapters/startLevelFor";
+import { summarizeSession } from "@/features/practice/summarizeSession";
+import { isCrisis } from "@/lib/crisis";
+import { DEMO_PLAN } from "@/fixtures/demoPlan";
+import type { PracticeSession, RumiState } from "@/features/shared/types";
 
 describe("helpLevelWord", () => {
   it("names each level in words", () => {
@@ -59,18 +60,18 @@ describe("nextStartLevel and startLevelFor (shim)", () => {
     expect(nextStartLevel([{ level: 2, stuck: true }, { level: 2, stuck: true }])).toBe(1);
   });
   it("startLevelFor reads the levels used for one kind", () => {
-    const q = DEMO_PLAN.items.find((i) => i.kind === "question")!;
     expect(startLevelFor(stateWith([]), "question")).toBe(1);
-    expect(startLevelFor(stateWith([session({ helpLevelUsed: { [q.id]: 3 } })]), "question")).toBe(2);
-    expect(startLevelFor(stateWith([session({ helpLevelUsed: { [q.id]: 0 } })]), "question")).toBe(0);
+    expect(startLevelFor(stateWith([session({ helpLevelUsed: { question: 3 } })]), "question")).toBe(2);
+    expect(startLevelFor(stateWith([session({ helpLevelUsed: { question: 0 } })]), "question")).toBe(0);
   });
 });
 
 describe("summarizeSession (shim)", () => {
   it("counts lines said alone and with help", () => {
     const ids = DEMO_PLAN.items.map((i) => i.id);
-    const s = summarizeSession(session({ coveredItemIds: ids.slice(0, 3), helpLevelUsed: { [ids[2]]: 2 } }), DEMO_PLAN);
-    expect(s).toMatchObject({ saidMyself: 2, saidWithHelp: 1, total: 4, focusLabel: "The whole visit" });
+    const s = summarizeSession(session({ coveredItemIds: ids.slice(0, 3), helpLevelUsed: { question: 2 } }), DEMO_PLAN);
+    // Help is recorded per kind of line: q2 and q3 are questions, q1 is a concern.
+    expect(s).toMatchObject({ saidMyself: 1, saidWithHelp: 2, total: 4, focusLabel: "The whole visit" });
   });
 });
 

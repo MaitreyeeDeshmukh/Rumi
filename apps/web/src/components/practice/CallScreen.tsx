@@ -31,10 +31,10 @@ import { Sheet } from "@/components/ui/sheet";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { NAV } from "@/content/nav";
 import { PRACTICE } from "@/content/practice";
-import { isCrisis } from "@/features/shims/isCrisis";
-import { openingLine, requestHelp, requestTurn, uncovered, type HelpLevelShown } from "@/features/shims/practice";
-import { startLevelFor } from "@/features/shims/startLevelFor";
-import type { Focus, HelpLevel, PracticeSession, VisitPlan } from "@/features/shims/types";
+import { isCrisis } from "@/lib/crisis";
+import { openingLine, requestHelp, requestTurn, uncovered, type HelpLevelShown } from "@/features/adapters/practice";
+import { startLevelFor } from "@/features/adapters/startLevelFor";
+import type { Focus, HelpLevel, PracticeSession, VisitPlan } from "@/features/shared/types";
 import { fill } from "@/lib/fill";
 import { PAGES } from "@/lib/pages";
 import { popMarker, pushMarker } from "@/lib/practiceHistory";
@@ -278,7 +278,7 @@ export function CallScreen({
     const level = Math.max(1, startLevelFor(state, item.kind)) as HelpLevelShown;
     setHelpBusy(true);
     setFailed(null);
-    const res = await requestHelp({ plan, item, level, clinicianQuestion: lastClinician.text });
+    const res = await requestHelp({ plan, item, level, clinicianQuestion: lastClinician.text, companionName });
     setHelpBusy(false);
     if (!res.ok) {
       if ("crisis" in res) show();
