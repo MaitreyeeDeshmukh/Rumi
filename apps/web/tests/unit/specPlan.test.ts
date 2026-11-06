@@ -24,7 +24,7 @@ const userItem = (text: string): PlanModelOutT["items"][number] => ({ text, kind
 
 describe("planSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap, the advice guard and memory", () => {
-    expect(planSpec).toMatchObject({ name: "plan", promptVersion: "plan@2", tier: "quality", temperature: 0.2, maxOutputTokens: 1200, adviceGuard: true, useMemory: true });
+    expect(planSpec).toMatchObject({ name: "plan", promptVersion: "plan@3", tier: "quality", temperature: 0.2, maxOutputTokens: 1200, adviceGuard: true, useMemory: true });
   });
 
   it("accepts the demo fixtures", () => {
