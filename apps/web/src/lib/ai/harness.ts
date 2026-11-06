@@ -29,6 +29,7 @@ import { MAX_GUARD_CHARS, promptForm, redactPii, scanInjection } from "./guards/
 import { buildCrisisCheckPrompt, buildPreamble, canaryLine, containsCanary, fence, newNonce, renderFactsRegion, renderStyleRegion, renderTaskRegion } from "./prompt";
 import { ProviderError, createGroqProvider, type Provider, type ProviderCall, type ProviderResult } from "./provider";
 import { logEvent, type AiEvent, type EventErrorCode, type Stage } from "./telemetry";
+import { AppError } from "@/lib/errors";
 import { guardRequest } from "@/lib/security/guardRequest";
 import type { RateLimiter } from "@/lib/security/rateLimit";
 
@@ -361,7 +362,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
   try {
     // 1. same origin, session, limits, declared size, key format
-    await guardRequest(req, { limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
+    await guardRequest(req, { authenticate: null, limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
 
     // 2. body with a byte cap, then the request schema
     stage = "body";
@@ -496,12 +497,12 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     return finish(degrade(failure));
   } catch (e) {
     // Refused after the body was read (does not fit the schema, or a string is over the size limit): a certain crisis phrase still wins.
-    if (e instanceof HttpError && bodyRead && (stage === "request" || stage === "sanitize") && rawBodyHasCrisis(body)) return finish(crisis());
+    if (e instanceof AppError && bodyRead && (stage === "request" || stage === "sanitize") && rawBodyHasCrisis(body)) return finish(crisis());
     ev.stage = stage;
-    if (e instanceof HttpError) {
+    if (e instanceof AppError) {
       ev.outcome = "error";
       ev.degraded = false;
-      ev.errorCode = e.code;
+      ev.errorCode = e.code as EventErrorCode;
       return finish(errorResponse(e));
     }
     if (clean !== undefined) {

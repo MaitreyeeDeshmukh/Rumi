@@ -10,6 +10,7 @@ import { z } from "zod";
 import { HttpError, errorResponse, readJson } from "@/lib/ai/http";
 import { promptForm } from "@/lib/ai/guards/input";
 import { createRateLimiter, type RateLimiter } from "@/lib/security/rateLimit";
+import { AppError } from "@/lib/errors";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { synthesize } from "./tts";
 import { VOICE_KEYS } from "./voices";
@@ -30,7 +31,7 @@ export interface TtsHandlerDeps {
 export function createTtsHandler({ fetchFn, limiter = ttsLimiter, timeoutMs }: TtsHandlerDeps) {
   return async (req: Request): Promise<Response> => {
     try {
-      await guardRequest(req, { maxBytes: TTS_BODY_MAX, limiter });
+      await guardRequest(req, { authenticate: null, maxBytes: TTS_BODY_MAX, limiter });
       const body = TtsRequest.safeParse(await readJson(req, TTS_BODY_MAX));
       if (!body.success) throw new HttpError(400, "bad_input");
       // NFKC can lengthen text, so the limit is checked again on the cleaned form.
@@ -46,7 +47,7 @@ export function createTtsHandler({ fetchFn, limiter = ttsLimiter, timeoutMs }: T
       const answer = new Response(speech.bytes, { headers: { "Content-Type": speech.contentType, "Cache-Control": "no-store" } });
       return answer;
     } catch (e) {
-      return errorResponse(e instanceof HttpError ? e : new HttpError(503, "ai_unavailable"));
+      return errorResponse(e instanceof AppError ? e : new HttpError(503, "ai_unavailable"));
     }
   };
 }
