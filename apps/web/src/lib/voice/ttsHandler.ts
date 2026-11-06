@@ -11,6 +11,7 @@ import { HttpError, errorResponse, readJson } from "@/lib/ai/http";
 import { promptForm } from "@/lib/ai/guards/input";
 import { createRateLimiter, type RateLimiter } from "@/lib/security/rateLimit";
 import { AppError } from "@/lib/errors";
+import { routeAuth } from "@/lib/auth/routeAuth";
 import { guardRequest } from "@/lib/security/guardRequest";
 import { synthesize } from "./tts";
 import { VOICE_KEYS } from "./voices";
@@ -31,7 +32,7 @@ export interface TtsHandlerDeps {
 export function createTtsHandler({ fetchFn, limiter = ttsLimiter, timeoutMs }: TtsHandlerDeps) {
   return async (req: Request): Promise<Response> => {
     try {
-      await guardRequest(req, { authenticate: null, maxBytes: TTS_BODY_MAX, limiter });
+      await guardRequest(req, { ...routeAuth(), maxBytes: TTS_BODY_MAX, limiter });
       const body = TtsRequest.safeParse(await readJson(req, TTS_BODY_MAX));
       if (!body.success) throw new HttpError(400, "bad_input");
       // NFKC can lengthen text, so the limit is checked again on the cleaned form.

@@ -5,7 +5,7 @@
  */
 export const KNOWN_ROUTES: ReadonlySet<string> = new Set([
   "/", "/about", "/accessibility", "/contact", "/get-ready", "/help", "/home", "/how-it-works", "/kit", "/practice",
-  "/privacy", "/remember", "/safety", "/say-it", "/settings", "/share", "/welcome", "/%5Ferror-test",
+  "/privacy", "/remember", "/safety", "/say-it", "/settings", "/share", "/sign-in", "/welcome", "/%5Ferror-test",
 ]);
 
 /** The route if it is a known page (query and trailing slash ignored), else "unknown". */

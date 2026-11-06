@@ -10,7 +10,8 @@ const runner = { testTimeout: 30_000, hookTimeout: 30_000, maxWorkers: Math.max(
 // `pnpm check` runs only tests/unit. Other suites (for example the gitignored tests/roast folder) are run with their own
 // config, which copies this file and changes `include`: pnpm vitest run --config <that file>.
 export default defineConfig({
-  test: { include: ["tests/unit/**/*.test.ts"], environment: "node", ...runner },
+  // The older route tests send no sign-in cookie, so they run in the escape-hatch mode; tests/unit/authRequired.test.ts turns it off to test the required mode.
+  test: { include: ["tests/unit/**/*.test.ts"], environment: "node", env: { NEXT_PUBLIC_AUTH_OPTIONAL: "1" }, ...runner },
   // `server-only` is resolved by Next at build time; under vitest it is an empty module.
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)), "server-only": fileURLToPath(new URL("./tests/unit/helpers/serverOnly.ts", import.meta.url)) } },
 });

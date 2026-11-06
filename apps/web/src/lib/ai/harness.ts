@@ -2,7 +2,7 @@
  * runTask: the one request pipeline behind /api/plan, /api/practice, /api/sayit and /api/recap.
  * The order of the stages is a contract (06 section 4, 07 D2 D5 D7 D18 D19 D43), and tests pin it:
  *
- *   guardRequest (origin, session, limits, declared size, key format)
+ *   guardRequest (origin, signed-in email user unless demo mode, limits, declared size, key format)
  *   -> readJson with a byte cap -> Zod request schema
  *   -> every string leaf through promptForm into a clone (the parsed body is never changed) -> schema again (I-044)
  *   -> crisis check on spec.crisisFields (tier "certain": card; tier "check": one cheap model call, fail safe)
@@ -30,6 +30,7 @@ import { buildCrisisCheckPrompt, buildPreamble, canaryLine, containsCanary, fenc
 import { ProviderError, createGroqProvider, type Provider, type ProviderCall, type ProviderResult } from "./provider";
 import { logEvent, type AiEvent, type EventErrorCode, type Stage } from "./telemetry";
 import { AppError } from "@/lib/errors";
+import { routeAuth } from "@/lib/auth/routeAuth";
 import { guardRequest } from "@/lib/security/guardRequest";
 import type { RateLimiter } from "@/lib/security/rateLimit";
 
@@ -362,7 +363,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
   try {
     // 1. same origin, session, limits, declared size, key format
-    await guardRequest(req, { authenticate: null, limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
+    await guardRequest(req, { ...routeAuth(), limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
 
     // 2. body with a byte cap, then the request schema
     stage = "body";

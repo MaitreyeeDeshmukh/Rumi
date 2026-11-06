@@ -10,6 +10,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { Toggle } from "@/components/ui/toggle";
 import { Screen } from "@/components/ui/screen";
 import { SETTINGS } from "@/content/settings";
+import { useAuth } from "@/features/auth/AuthProvider";
+import { getBrowserClient } from "@/lib/supabase/browser";
 import { WELCOME } from "@/content/welcome";
 import { MEMORY_COPY } from "@/features/memory/consentCopy";
 import { useMemoryControls } from "@/features/memory/useMemoryControls";
@@ -39,6 +41,8 @@ export function SettingsScreen() {
   const { actions, facts } = useMemoryControls();
   const [memoryNote, setMemoryNote] = useState("");
   const router = useRouter();
+  const { status, isAnonymous } = useAuth();
+  const [accountNote, setAccountNote] = useState("");
   const id = useId();
   const s = state.settings;
   const [touched, setTouched] = useState(false);
@@ -66,6 +70,18 @@ export function SettingsScreen() {
     const res = await actions.forgetAll();
     setMemoryNote(res.remote === "failed" ? MEMORY_COPY.forgetFailed : res.remote === "paused" ? MEMORY_COPY.paused : MEMORY_COPY.saved);
     setTouched(true);
+  };
+
+  // Ends the session on this device only, then goes to the home page. Saved settings on this device stay as they are.
+  const signOut = async () => {
+    setAccountNote("");
+    try {
+      const { error } = await getBrowserClient().auth.signOut({ scope: "local" });
+      if (error) throw error;
+      router.push("/");
+    } catch {
+      setAccountNote(SETTINGS.account.failed);
+    }
   };
 
   const erase = async () => {
@@ -203,6 +219,20 @@ export function SettingsScreen() {
               ))}
             </ul>
           </Group>
+
+          {status === "ready" && !isAnonymous ? (
+            <Group legend={SETTINGS.account.legend}>
+              <p className="m-0">{SETTINGS.account.body}</p>
+              <div>
+                <Button kind="secondary" onClick={() => void signOut()}>
+                  {SETTINGS.account.signOut}
+                </Button>
+              </div>
+              <p role="status" className="note m-0 min-h-6">
+                {accountNote}
+              </p>
+            </Group>
+          ) : null}
 
           <Group legend={SETTINGS.erase.legend}>
             <p className="m-0">{SETTINGS.erase.body}</p>
