@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { IDIOM_PATTERNS, MAX_WORDS, countWords, lintCodes, literalLint } from "@/lib/literalLint";
 
@@ -144,5 +146,43 @@ describe("lintCodes", () => {
     ]);
     expect(lintCodes(["I have a headache.", "It hurts."])).toEqual([]);
     expect(lintCodes([])).toEqual([]);
+  });
+});
+
+describe("no lookbehind (I-078): the former lookbehind rules behave the same", () => {
+  it("an idiom at the very start or end of the text is found", () => {
+    expect(reasons("A bit sad.")).toContain("idiom");
+    expect(reasons("Sort of sad.")).toContain("idiom");
+    expect(reasons("I am sad a bit")).toContain("idiom");
+    expect(reasons("It was kind of")).toContain("idiom");
+  });
+
+  it("an idiom glued to a letter, digit or apostrophe in front of it is not one", () => {
+    expect(reasons("Ka bit sad.").includes("idiom")).toBe(false);
+    expect(reasons("I have 5a bit.").includes("idiom")).toBe(false);
+    expect(reasons("The tab bit me.").includes("idiom")).toBe(false);
+    expect(reasons("It is o'sort of thing.").includes("idiom")).toBe(false);
+  });
+
+  it("an idiom after punctuation or a hyphen is found", () => {
+    expect(reasons("Yes, a bit.")).toContain("idiom");
+    expect(reasons("It is (a bit) sad.")).toContain("idiom");
+    expect(reasons("Is it well-kind of sad?")).toContain("idiom");
+  });
+
+  it("kind of / sort of is a hedge unless a type word comes right before it", () => {
+    for (const ok of ["What kind of pain is it?", "A kind of rash.", "Some sort of rash.", "I have the same kind of pain.", "One kind of pill helps."]) expect(literalLint(ok).ok, ok).toBe(true);
+    for (const bad of ["I feel kind of sad.", "Not what I feel, kind of sad.", "It is sort of sad.", "A kind of kind of sad.", "What kind of kind of sad."]) {
+      expect(reasons(bad), bad).toContain("idiom");
+    }
+  });
+
+  it("a type word that is only part of a longer word does not excuse the hedge", () => {
+    expect(reasons("Is it the anything kind of thing?")).toContain("idiom");
+    expect(reasons("I feel brand kind of sad.")).toContain("idiom");
+  });
+
+  it("the source has no lookbehind", () => {
+    expect(readFileSync(join(__dirname, "../../src/lib/literalLint.ts"), "utf8")).not.toContain("(?<");
   });
 });

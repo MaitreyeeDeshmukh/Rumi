@@ -5,10 +5,10 @@
  */
 import { z } from "zod";
 import { COMPANION_RE } from "@/features/shared/constants";
-import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import type { TaskName, TaskSpec } from "@/features/shared/task";
 import { buildLedger } from "@/lib/ai/ledger";
+import { crisisTier } from "@/lib/crisis";
 import { ProviderError, type Provider, type ProviderCall, type ProviderResult } from "@/lib/ai/provider";
 
 export interface FakeReq {
@@ -53,8 +53,10 @@ export function fakeTask(over: Partial<FakeSpec> & { name?: TaskName } = {}): Fa
     reply: z.object({ say: z.string(), degraded: z.boolean().optional() }),
     crisisFields: step("crisisFields", (r: FakeReq) => ({ text: r.text })),
     buildLedger: step("buildLedger", (r: FakeReq) => buildLedger({ rawText: r.text })),
-    // Through composePrompt like the real specs, so the fake prompt has the real shape: preamble once, STYLE, FACTS, TASK once each.
-    build: step("build", (ctx) => composePrompt(ctx, { persona: "PERSONA TEXT", task: "TASK TEXT.", data: ctx.r.other === undefined ? [] : [ctx.fence("other", ctx.r.other)] })),
+    build: step("build", (ctx) => ({
+      system: "PERSONA TEXT",
+      user: `TASK TEXT. ${ctx.fence("text", ctx.r.text)}${ctx.r.other === undefined ? "" : ` ${ctx.fence("other", ctx.r.other)}`}`,
+    })),
     validate: step("validate", (_r: FakeReq, o: FakeOut): GuardCode[] => [...o.say.matchAll(/CODE:([a-z0-9_]+)/g)].map((m) => m[1] as GuardCode)),
     finalize: step("finalize", (_r: FakeReq, o: FakeOut): FakeReply => {
       if (o.say.includes("THROWFINAL")) throw new Error("finalize crashed");
@@ -82,7 +84,6 @@ export function fakeProvider(script: Scripted[]): FakeProvider {
   const calls: ProviderCall[] = [];
   return {
     calls,
-    model: (tier) => (tier === "quality" ? "model-quality-x" : "model-fast-y"),
     async complete(call: ProviderCall): Promise<ProviderResult> {
       calls.push(call);
       const next = script[calls.length - 1];
@@ -108,8 +109,33 @@ export function post(body: unknown, headers: Record<string, string> = {}, rawBod
   });
 }
 
-export const okBody = (text = "I keep getting headaches.", extra: Record<string, unknown> = {}): Record<string, unknown> => ({ text, companionName: "Rumi", ...extra });
+/** Under 12 characters on purpose: longer text is also sent to the crisis classifier (tier none), which pipeline tests are not about. */
+export const okBody = (text = "Headaches.", extra: Record<string, unknown> = {}): Record<string, unknown> => ({ text, companionName: "Rumi", ...extra });
 
 export async function bodyOf(res: Response): Promise<unknown> {
   return JSON.parse(await res.text());
+}
+
+const quiet = new WeakMap<Provider, Provider>();
+/**
+ * For pipeline tests that use text of 12 characters or more but are not about crisis: the harness also asks the classifier about
+ * ordinary text (tier none). This wrapper answers that one question with "no", off the record (not in `calls`, no tokens), and
+ * passes every other call through, including the question about tier check text, which a test scripts itself.
+ * The same wrapper comes back for the same provider, so the circuit breaker still belongs to one provider.
+ */
+export function quietClassifier(provider: Provider): Provider {
+  let wrapped = quiet.get(provider);
+  if (wrapped === undefined) {
+    wrapped = {
+      async complete(call: ProviderCall): Promise<ProviderResult> {
+        const text = /field=text>>>([\s\S]*?)<<<END/.exec(call.user)?.[1];
+        if (call.system.includes("safety classifier") && text !== undefined && crisisTier(text) === "none") {
+          return { text: '{"crisis":false}', modelUsed: "classifier", inTokens: 0, outTokens: 0 };
+        }
+        return provider.complete(call);
+      },
+    };
+    quiet.set(provider, wrapped);
+  }
+  return wrapped;
 }

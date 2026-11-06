@@ -202,6 +202,8 @@ export const FactsRequest = z.strictObject({
     .refine((removed) => unique(removed.map((f) => `${f.kind}:${f.key}`)), { message: 'duplicate removal' })
     .optional(),
 });
+/** Body of /api/memory/forget: how long ago the browser last synced (its own clock), so the server can lengthen its settle wait. */
+export const ForgetRequest = z.strictObject({ sinceSyncMs: z.number().finite().min(0).max(600_000).optional() });
 export const ForgetReply = z.object({ status: z.enum(['ok', 'failed']) });
 /** `facts` is what the database holds after the write, so a second device can merge it. `rejected` counts stored rows we ignored. */
 export const FactsReply = z.object({

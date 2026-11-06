@@ -3,11 +3,11 @@
  * never claims to be real, and may only name plan items by their labels q1..qn. Which items the user covered is
  * proposed by the model and confirmed by code against the user's latest turn (07 D12).
  */
+import { clinicianRuleCodes, forGrounding } from "@/features/practice/clinicianRules";
 import { confirmCovered } from "@/features/practice/confirmCovered";
 import { practiceFallback } from "@/features/practice/fallback";
 import { enabledItems, idsForLabels, unknownLabelCodes } from "@/features/practice/labels";
 import { practiceMock } from "@/features/practice/mock";
-import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import {
   PracticeModelOut,
@@ -18,9 +18,9 @@ import {
   type PracticeRequestT,
 } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
-import { claimsHumanCodes, clinicianFindingCodes } from "@/lib/ai/guards/output";
 import { buildLedger } from "@/lib/ai/ledger";
 import { lintCodes } from "@/lib/literalLint";
+import { ledgerFromTexts, validateGrounding } from "@/lib/text/specifics";
 import { CLOSING_LINE, DR_LEE_PERSONA } from "../../../prompts/persona";
 import { MAX_CLINICIAN_TURNS, PRACTICE_VERSION, practiceTask } from "../../../prompts/practice";
 
@@ -40,18 +40,20 @@ export const practiceSpec: TaskSpec<PracticeRequestT, PracticeModelOutT, Practic
     return text === undefined ? {} : { latestMe: text };
   },
   buildLedger: (r) => buildLedger({ mainConcern: r.plan.mainConcern, symptoms: r.plan.symptomsInMyWords, planItems: enabledItems(r.plan) }),
-  build: (ctx) =>
-    composePrompt(ctx, {
-      persona: DR_LEE_PERSONA,
-      task: practiceTask(ctx.r.focus),
-      // Role words come from an enum; the text of every turn is fenced, so a typed "clinician:" is only text.
-      data: ctx.r.turns.map((t, n) => `T${n + 1} ${t.role}: ${ctx.fence(`T${n + 1}`, t.text)}`),
-    }),
+  // The conversation comes first and the task last. Role words come from an enum; the text of every turn is fenced,
+  // so a typed "clinician:" is only text. The harness adds the rules, STYLE and FACTS (the plan items q1..).
+  build: (ctx) => ({
+    system: DR_LEE_PERSONA,
+    user: [...ctx.r.turns.map((t, n) => `T${n + 1} ${t.role}: ${ctx.fence(`T${n + 1}`, t.text)}`), practiceTask(ctx.r.focus)].join("\n"),
+  }),
+  // clinician_finding (digits, results), claims_human and advice are run by the harness for every practice answer; the rest of "Dr. Lee only asks" is here.
   validate: (r, o, ledger) => {
+    // What the user gave: their plan and their own turns. Nothing the clinician says may add to it.
+    const said = [...ledger.items.map((i) => i.text), ...r.turns.filter((t) => t.role === "me").map((t) => t.text)];
     const codes: GuardCode[] = [
       ...unknownLabelCodes(r.plan, o.coveredItemIds),
-      ...clinicianFindingCodes(o.clinicianSay, ledger),
-      ...claimsHumanCodes(o.clinicianSay),
+      ...clinicianRuleCodes(o.clinicianSay, said),
+      ...validateGrounding(forGrounding(o.clinicianSay), ledgerFromTexts(said)),
       ...(/[\p{L}\p{N}]/u.test(o.clinicianSay) ? [] : (["empty"] as const)),
       ...lintCodes([o.clinicianSay]),
       ...((o.clinicianSay.match(/\?/g) ?? []).length > 1 ? (["multi_question"] as const) : []),

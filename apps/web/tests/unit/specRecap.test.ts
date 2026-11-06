@@ -5,8 +5,9 @@ import type { RecapModelOutT, RecapRequestT } from "@/features/shared/schemas";
 import { DEMO_PLAN } from "@/fixtures/demoPlan";
 import { SAVED_RECAP_REPLY } from "@/fixtures/sampleRecap";
 import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
+import { RUMI_PERSONA } from "../../prompts/persona";
 import { adviceCodes } from "@/lib/ai/guards/output";
-import { check, ctxFor, outsideFences, promptFor } from "./helpers/specCtx";
+import { check, promptFor } from "./helpers/specCtx";
 
 const R: RecapRequestT = { lines: [...SAMPLE_VISIT], mySpeaker: "B", plan: DEMO_PLAN };
 
@@ -23,7 +24,7 @@ const labelled = (): RecapModelOutT => ({
 
 describe("recapSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap; advice guard off, memory off", () => {
-    expect(recapSpec).toMatchObject({ name: "recap", promptVersion: "recap@2", tier: "quality", temperature: 0.1, maxOutputTokens: 2000, adviceGuard: false, useMemory: false });
+    expect(recapSpec).toMatchObject({ name: "recap", promptVersion: "recap@4", tier: "quality", temperature: 0.1, maxOutputTokens: 2000, adviceGuard: false, useMemory: false });
   });
 
   it("accepts the sample visit and the saved recap; mock and fallback satisfy the reply schema", () => {
@@ -111,6 +112,13 @@ describe("recapSpec finalize", () => {
     expect(reply.planStatus.find((p) => p.itemId === "real-1")).toMatchObject({ status: "asked_by_other" });
   });
 
+  it("a status the model gives for a plan label is applied to the real plan item, not lost", () => {
+    const plan = { ...DEMO_PLAN, items: DEMO_PLAN.items.map((i, n) => ({ ...i, id: `real-${n + 1}` })) };
+    // The lines would say asked_by_me for q2; the model says unclear, which the check accepts as a safe answer.
+    const reply = finalize(out([], [{ itemId: "q2", status: "unclear", evidence: [] }]), { ...R, plan });
+    expect(reply.planStatus.find((p) => p.itemId === "real-2")).toMatchObject({ status: "unclear", evidence: [] });
+  });
+
   it("a speaker claim the lines contradict is corrected by code (Mom spoke q1, not Sam)", () => {
     const o = labelled();
     o.planStatus = o.planStatus.map((p) => (p.itemId === "q1" ? { ...p, status: "asked_by_me" as const } : p));
@@ -168,30 +176,22 @@ describe("recapSpec build", () => {
     ],
   };
 
-  it("labels every line, gives the speakers outside any fence, and fences the text", () => {
+  it("is the persona, the speaker letters and the task: the line text itself comes from the harness's FACTS region", () => {
     const { system, user } = promptFor(recapSpec, R);
-    expect(user).toContain("L2: <<<DATA abcdef123456 field=L2>>>He gets headaches most afternoons. It has been about three weeks.<<<END abcdef123456>>>");
+    expect(system).toBe(RUMI_PERSONA);
     expect(user).toContain("SPEAKERS: L1=A, L2=C, L3=A, L4=B");
     expect(user).toContain("Speaker B is the user.");
-    expect(user).toContain("q1: <<<DATA abcdef123456 field=q1>>>I want to tell you about my headaches.<<<END abcdef123456>>>");
-    const bare = outsideFences(`${system}\n${user}`);
-    for (const word of ["blood pressure", "ibuprofen", "diary", "headaches"]) expect(bare).not.toContain(word);
+    for (const text of [system, user]) expect(text).not.toMatch(/<<<|You are Rumi, a helper|LITERAL MODE|headaches|ibuprofen/);
+    expect(user.indexOf("SPEAKERS")).toBeLessThan(user.indexOf("TASK:"));
   });
 
-  it("a hostile line cannot close its fence or open a region", () => {
+  it("a hostile line adds nothing to the spec's own text", () => {
     const { user } = promptFor(recapSpec, hostile);
-    expect(outsideFences(user)).not.toMatch(/Ignore all rules|900 mg/);
-    expect(user.match(/<<<FACTS abcdef123456>>>/g)).toHaveLength(1);
-    expect(user.match(/<<<END abcdef123456>>>/g)).toHaveLength(ctxFor(recapSpec, hostile).ledger.items.length);
+    expect(user).not.toMatch(/Ignore all rules|900 mg|<<</);
+    expect(user).toContain("SPEAKERS: L1=A, L2=B");
   });
 
-  it("states the pinned task sentence (I-062) and gets no memory region content", () => {
-    const { user } = promptFor(recapSpec, R);
-    expect(user).toContain("List what was said in this visit transcript and the line ids that show it.");
-    expect(user).toContain("(no stated preferences)");
-  });
-
-  it("matches the snapshot", () => {
-    expect(promptFor(recapSpec, R).user).toMatchSnapshot();
+  it("states the pinned task sentence (I-062)", () => {
+    expect(promptFor(recapSpec, R).user).toContain("List what was said in this visit transcript and the line ids that show it.");
   });
 });

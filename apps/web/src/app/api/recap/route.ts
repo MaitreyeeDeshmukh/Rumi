@@ -1,5 +1,7 @@
-import { recapSpec } from "@/features/recap/spec";
-import { runTask } from "@/lib/ai/harness";
+import { recapSpec } from '@/features/recap/spec';
+import { runTask } from '@/lib/ai/harness';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-export const POST = (req: Request): Promise<Response> => runTask(recapSpec, req);
+export const POST = (req: Request) => runTask(recapSpec, req);

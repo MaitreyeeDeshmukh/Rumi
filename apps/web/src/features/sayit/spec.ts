@@ -4,9 +4,9 @@
  * script by code, never taken from the model. `claims_human` is not checked here: the user may say their own job.
  */
 import { level1Codes } from "@/features/sayit/level1";
+import { inventedClaimCodes } from "@/features/shared/claims";
 import { sayitFallback } from "@/features/sayit/fallback";
 import { sayitMock } from "@/features/sayit/mock";
-import { composePrompt } from "@/features/shared/composePrompt";
 import type { GuardCode } from "@/features/shared/guards";
 import { SayItModelOut, SayItReply, SayItRequest, type SayItModelOutT, type SayItReplyT, type SayItRequestT } from "@/features/shared/schemas";
 import type { TaskSpec } from "@/features/shared/task";
@@ -34,12 +34,17 @@ export const sayitSpec: TaskSpec<SayItRequestT, SayItModelOutT, SayItReplyT> = {
       scenario !== undefined && Object.hasOwn(SCENARIO_CONTEXT, scenario)
         ? `CONTEXT: ${SCENARIO_CONTEXT[scenario]}`
         : `CONTEXT: The clinician asked: ${ctx.fence("clinicianQuestion", clinicianQuestion ?? "")}`;
-    return composePrompt(ctx, { persona: RUMI_PERSONA, task: sayitTask(ctx.r.level), data: [context] });
+    return { system: RUMI_PERSONA, user: `${context}\n${sayitTask(ctx.r.level)}` };
   },
   validate: (r, o, ledger) => {
+    // Nothing about the user's body, health, habits, history or safety unless the user's own words say it. A level 1 hint
+    // may also repeat the topic of the clinician's question, because it only asks what the user wants to add.
+    const allowed = [...ledger.items.map((i) => i.text), ...(r.level === 1 && r.clinicianQuestion !== undefined ? [r.clinicianQuestion] : [])];
     const codes: GuardCode[] = [
       ...validateGrounding(o.script, ledger),
-      ...(o.script.trim() === "" ? (["empty"] as const) : []),
+      ...inventedClaimCodes(o.script, allowed, r.level === 1 || r.clinicianQuestion === undefined ? [] : [r.clinicianQuestion]),
+      // Nothing but blanks ("[what] [how]") says nothing at all.
+      ...(o.script.normalize("NFKC").replace(/\[[^\]]*\]/g, " ").match(/\p{L}/u) === null ? (["empty"] as const) : []),
       ...(r.level === 1 ? level1Codes(o.script, ledger) : []),
       ...lintCodes([o.script]),
     ];

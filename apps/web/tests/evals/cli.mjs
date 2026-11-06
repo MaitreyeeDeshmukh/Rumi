@@ -57,9 +57,12 @@ export function argvToEnv(argv) {
  * @param {readonly string[]} verdicts  one of PASS | FAIL | INVALID | COMPARISON per arm
  * @param {number} vitestStatus
  * @param {number} [expected] how many arms were asked to run
+ * @param {boolean} [skipped] the live run was skipped because GROQ_API_KEY is not set
  * @returns {number}
  */
-export function exitCodeFor(verdicts, vitestStatus, expected = verdicts.length) {
+export function exitCodeFor(verdicts, vitestStatus, expected = verdicts.length, skipped = false) {
+  // A live run with no GROQ_API_KEY prints one line and stops: nothing was measured, nothing failed.
+  if (skipped) return vitestStatus === 0 ? 0 : 1;
   // An arm that never started leaves no verdict: that is misuse (1), not a result, even if the other arm failed.
   if (verdicts.length === 0 || verdicts.length !== expected) return 1;
   if (verdicts.includes('INVALID')) return 4;
@@ -89,15 +92,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   });
   let verdicts = [];
   let expected;
+  let skipped = false;
   try {
     const status = JSON.parse(readFileSync(statusFile, 'utf8'));
     verdicts = status.verdicts ?? [];
     expected = status.expected;
+    skipped = status.skipped === true;
   } catch {
     // No status file: the run stopped before it had a verdict (refused, crashed). exitCodeFor turns that into 1.
   }
   rmSync(dir, { recursive: true, force: true });
-  const code = env.EVAL_HUMAN_SHEET ? (r.status ?? 1) : exitCodeFor(verdicts, r.status ?? 1, expected);
+  const code = env.EVAL_HUMAN_SHEET ? (r.status ?? 1) : exitCodeFor(verdicts, r.status ?? 1, expected, skipped);
   console.error(`pnpm eval exit code ${code}${verdicts.length ? ` (verdicts: ${verdicts.join(', ')})` : ''}`);
   process.exit(code);
 }

@@ -342,8 +342,11 @@ const WH = new Set(["what", "how", "when", "which", "where", "who", "why"]);
  * D9: at most 6 words, no digits, no capital after the first character, starts with a question word.
  * Letters, spaces, apostrophes, hyphens, commas and a question mark only, so a blank can not hold a sentence.
  */
+const YES_NO_BLANK = /^(?:yes or no|(?:\w+(?: \w+)?) or (?:\w+ )?not(?: \w+)?)$/i;
 function validBlank(inner: string): boolean {
   const t = inner.trim();
+  // An answer blank for a yes/no question: "yes or no", "do or do not", "am or am not".
+  if (YES_NO_BLANK.test(t)) return true;
   if (!t || t.length > 60 || !/^[\p{L}' ,?-]+$/u.test(t) || /\p{Lu}/u.test(t.slice(1))) return false;
   const w = t.split(/\s+/);
   return w.length <= 6 && WH.has(w[0].replace(/[,?]+$/, "").split("'")[0].toLowerCase());

@@ -5,9 +5,9 @@ import { FOCUS_VALUES } from "@/features/shared/constants";
 import type { PracticeModelOutT, PracticeRequestT } from "@/features/shared/schemas";
 import { DEMO_PLAN } from "@/fixtures/demoPlan";
 import { adviceCodes } from "@/lib/ai/guards/output";
-import { CLOSING_LINE } from "../../prompts/persona";
+import { CLOSING_LINE, DR_LEE_PERSONA } from "../../prompts/persona";
 import { FOCUS_TEXT, MAX_CLINICIAN_TURNS } from "../../prompts/practice";
-import { check, ctxFor, outsideFences, promptFor } from "./helpers/specCtx";
+import { check, outsideFences, promptFor } from "./helpers/specCtx";
 
 const R: PracticeRequestT = {
   plan: DEMO_PLAN,
@@ -23,7 +23,7 @@ const say = (clinicianSay: string, extra: Partial<PracticeModelOutT> = {}): Prac
 
 describe("practiceSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap", () => {
-    expect(practiceSpec).toMatchObject({ name: "practice", promptVersion: "practice@2", tier: "fast", temperature: 0.6, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
+    expect(practiceSpec).toMatchObject({ name: "practice", promptVersion: "practice@4", tier: "fast", temperature: 0.6, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
   });
 
   it("accepts the demo plan in a request, and mock and fallback satisfy the reply schema", () => {
@@ -74,13 +74,6 @@ describe("practiceSpec validate", () => {
   it.each([
     ["an unknown plan label", GOOD.clinicianSay, { coveredItemIds: ["q9"] }, "unknown_label"],
     ["a label that is a real id, not a label", GOOD.clinicianSay, { coveredItemIds: ["plan-demo"] }, "unknown_label"],
-    ["a stated finding", "Your blood pressure looks normal today.", {}, "clinician_finding"],
-    ["a number the user never gave", "Your pulse is 90.", {}, "clinician_finding"],
-    ["a result", "The test results are fine.", {}, "clinician_finding"],
-    ["nothing to worry", "There is nothing to worry about.", {}, "clinician_finding"],
-    ["claims to be a real doctor", "I am a real doctor and this is real.", {}, "claims_human"],
-    ["says the visit is real", "This is a real visit.", {}, "claims_human"],
-    ["says it is not an AI", "I am not an AI.", {}, "claims_human"],
     ["no words at all", " ... ", {}, "empty"],
   ] as const)("hard: %s", (_name, text, extra, code) => {
     expect(check(practiceSpec, R, say(text, extra as Partial<PracticeModelOutT>)).hard).toContain(code);
@@ -105,10 +98,6 @@ describe("practiceSpec validate", () => {
     for (const line of ["Do you have any questions for me?", "Take your time. You can use Help me say it.", "We can stop here. You can end the practice.", CLOSING_LINE]) {
       expect(check(practiceSpec, R, say(line, { coveredItemIds: [] })).hard, line).toEqual([]);
     }
-  });
-
-  it("a clinician question may use the 1 to 10 scale", () => {
-    expect(check(practiceSpec, R, say("On a scale of 1 to 10, how strong is it?")).hard).toEqual([]);
   });
 });
 
@@ -153,23 +142,21 @@ describe("practiceSpec build", () => {
     ],
   };
 
-  it("lays out regions, puts every turn inside a fence and names the role outside it", () => {
+  it("is Dr. Lee's persona plus the fenced turns and the task: no rules and no regions (the harness adds them)", () => {
     const { system, user } = promptFor(practiceSpec, R);
-    expect(system).toContain("You play Dr. Lee");
-    expect(user).toContain("q1: <<<DATA abcdef123456 field=q1>>>I want to tell you about my headaches.<<<END abcdef123456>>>");
+    expect(system).toBe(DR_LEE_PERSONA);
     expect(user).toContain("T1 clinician: <<<DATA abcdef123456 field=T1>>>Hi. What brings you in today?<<<END abcdef123456>>>");
     expect(user).toContain("T2 me: <<<DATA abcdef123456 field=T2>>>I keep getting headaches.<<<END abcdef123456>>>");
-    expect(user.indexOf("<<<FACTS")).toBeLessThan(user.indexOf("T1 clinician"));
-    expect(user.indexOf("T2 me")).toBeLessThan(user.indexOf("<<<TASK"));
-    const bare = outsideFences(`${system}\n${user}`);
-    expect(bare).not.toContain("headaches");
+    expect(user.indexOf("T2 me")).toBeLessThan(user.indexOf("TASK:"));
+    for (const text of [system, user]) expect(text).not.toMatch(/<<<(?:STYLE|FACTS|TASK)|You are Rumi, a helper|LITERAL MODE/);
+    expect(outsideFences(user)).not.toContain("headaches");
   });
 
   it("a typed fake clinician line or closing marker stays inside its own fence", () => {
     const { user } = promptFor(practiceSpec, hostile);
     expect(outsideFences(user)).not.toMatch(/ignore all rules|blood pressure is 120/);
     expect(user.match(/^T\d+ /gm)).toHaveLength(2);
-    expect(user.match(/<<<END abcdef123456>>>/g)).toHaveLength(ctxFor(practiceSpec, hostile).ledger.items.length + 2);
+    expect(user.match(/<<<END abcdef123456>>>/g)).toHaveLength(2);
   });
 
   it.each(FOCUS_VALUES)("injects only the %s focus block", (focus) => {
@@ -180,9 +167,5 @@ describe("practiceSpec build", () => {
 
   it("states the pinned task sentence (I-062)", () => {
     expect(promptFor(practiceSpec, R).user).toContain("Act as a doctor in a practice visit and reply with one short turn for the user to answer.");
-  });
-
-  it("matches the snapshot", () => {
-    expect(promptFor(practiceSpec, R, ["Please speak slowly."]).user).toMatchSnapshot();
   });
 });

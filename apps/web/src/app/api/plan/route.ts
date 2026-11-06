@@ -1,5 +1,7 @@
-import { planSpec } from "@/features/plan/spec";
-import { runTask } from "@/lib/ai/harness";
+import { planSpec } from '@/features/plan/spec';
+import { runTask } from '@/lib/ai/harness';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-export const POST = (req: Request): Promise<Response> => runTask(planSpec, req);
+export const POST = (req: Request) => runTask(planSpec, req);

@@ -5,17 +5,15 @@ import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("../../src", import.meta.url));
 
-/** Memory modules that talk to the database or read the request: server only. */
-const SERVER_ONLY = ["features/memory/supabaseStore", "features/memory/server", "features/memory/serverDeps"];
-/** Everything that must never be bundled for the browser: the memory server modules and the server-side helpers they use. */
-const NEVER_IN_BROWSER = [...SERVER_ONLY, "lib/supabase/server", "lib/supabase/admin", "lib/auth/requireUser", "lib/security/"];
+/** Server-side modules: they hold the Supermemory key, the tag secret or node-only code. */
+const SERVER_ONLY = ["features/memory/smClient", "features/memory/remoteSync", "features/memory/forgetAll", "features/memory/tag", "features/memory/memoryHandlers"];
 /** Entry points that ship to the browser. */
 const CLIENT_ENTRIES = [
   "features/state/RumiProvider.tsx",
   "lib/api/client.ts",
+  "lib/api/calls.ts",
   "features/memory/actions.ts",
   "features/memory/useMemoryControls.ts",
-  "features/memory/consentCopy.ts",
   "features/share/buildShareText.ts",
   "features/support/card.ts",
 ];
@@ -45,7 +43,6 @@ function reachable(entries: string[], read: (file: string) => string = (f) => re
     if (files.has(file)) continue;
     files.add(file);
     for (const m of read(file).matchAll(IMPORT_RE)) {
-      if (/^(?:import|export)\s+type\s/.test(m[0])) continue; // type-only imports are erased by the compiler
       const spec = m[1] ?? m[2] ?? m[3];
       const target = resolveSpecifier(spec, file);
       if (target) queue.push(target);
@@ -60,11 +57,15 @@ describe("browser bundle stays free of server modules", () => {
   const rel = [...files].map((f) => f.slice(SRC.length + 1).replace(/\\/g, "/"));
 
   it("the walk really reaches the browser code it should", () => {
-    expect(rel).toEqual(expect.arrayContaining(["features/state/stateStore.ts", "lib/storage.ts", "features/memory/persona.ts", "features/memory/sanitize.ts"]));
+    expect(rel).toEqual(expect.arrayContaining(["features/state/stateStore.ts", "lib/storage.ts", "features/memory/persona.ts", "features/memory/recoveryCode.ts"]));
   });
 
   it("no module reachable from RumiProvider, callApi, the memory actions or the builders is a server module", () => {
-    for (const server of NEVER_IN_BROWSER) expect(rel.some((f) => f.startsWith(server))).toBe(false);
+    for (const server of SERVER_ONLY) expect(rel.some((f) => f.startsWith(server))).toBe(false);
+  });
+
+  it("the new browser entries (task calls, memory hook) are walked and reach the browser code they use", () => {
+    expect(rel).toEqual(expect.arrayContaining(["lib/api/calls.ts", "features/memory/useMemoryControls.ts", "lib/crisis.ts", "lib/literalLint.ts"]));
   });
 
   it("nothing reachable imports a node: module", () => {
@@ -72,21 +73,20 @@ describe("browser bundle stays free of server modules", () => {
   });
 
   it("the walker itself sees a server import when there is one", () => {
-    const names = (entry: string) => [...reachable([entry]).files].map((f) => f.slice(SRC.length + 1).replaceAll("\\", "/"));
-    expect(names("features/memory/server.ts")).toContain("features/memory/supabaseStore.ts");
-    expect(names("features/memory/supabaseStore.ts")).toContain("lib/supabase/server.ts");
-    expect(names("features/memory/serverDeps.ts")).toEqual(expect.arrayContaining(["lib/auth/requireUser.ts", "lib/security/guardRequest.ts"]));
-    expect(reachable(["features/memory/serverDeps.ts"]).packages.has("node:crypto")).toBe(true);
+    const withServer = reachable(["features/memory/remoteSync.ts"]);
+    const names = [...withServer.files].map((f) => f.slice(SRC.length + 1).replace(/\\/g, "/"));
+    expect(names).toContain("features/memory/smClient.ts");
+    expect(reachable(["features/memory/tag.ts"]).packages.has("node:crypto")).toBe(true);
   });
 
   it("the walker follows .js and .mjs specifiers to the TypeScript source", () => {
     const virtual = resolve(SRC, "features/memory/virtualEntry.ts");
     for (const ext of [".js", ".mjs", ""]) {
-      const seen = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'import { createSupabaseStore } from "./supabaseStore' + ext + '";' : readFileSync(f, "utf8")));
-      expect([...seen.files].some((f) => f.endsWith("supabaseStore.ts")), 'extension "' + ext + '"').toBe(true);
+      const seen = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'import { createSmClient } from "./smClient' + ext + '";' : readFileSync(f, "utf8")));
+      expect([...seen.files].some((f) => f.endsWith("smClient.ts")), 'extension "' + ext + '"').toBe(true);
     }
-    const aliased = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'export * from "@/features/memory/server.js";' : readFileSync(f, "utf8")));
-    expect([...aliased.files].some((f) => f.endsWith("server.ts"))).toBe(true);
+    const aliased = reachable(["features/memory/virtualEntry.ts"], (f) => (f === virtual ? 'export * from "@/features/memory/forgetAll.js";' : readFileSync(f, "utf8")));
+    expect([...aliased.files].some((f) => f.endsWith("forgetAll.ts"))).toBe(true);
   });
 
   it("server modules do not claim to be guarded by an import that is not there", () => {

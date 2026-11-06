@@ -34,12 +34,15 @@ export interface Price {
 }
 export type PriceTable = Record<string, Price>;
 
-/** From memory of Groq's list pricing; P3 must replace these from the pricing page and set the date. Reports say "unverified" until then. */
+/**
+ * Groq list prices per million tokens, from https://console.groq.com/docs/models (Groq's own model table), read 2026-11-05.
+ * Cached-input discounts are ignored. Keep in step with PRICES_PER_MTOK_USD in src/lib/ai/cost.ts (a unit test compares them).
+ */
 export const DEFAULT_PRICES: PriceTable = {
   'openai/gpt-oss-120b': { inPerMTok: 0.15, outPerMTok: 0.6 },
   'openai/gpt-oss-20b': { inPerMTok: 0.075, outPerMTok: 0.3 },
 };
-const PRICES_VERIFIED_ON: string | null = null;
+export const PRICES_VERIFIED_ON: string | null = '2026-11-05';
 
 export function wilsonLower(k: number, n: number, z = 1.96): number | null {
   if (n === 0) return null;

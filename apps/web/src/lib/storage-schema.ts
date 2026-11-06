@@ -4,6 +4,7 @@
  * The stored text is untrusted (another tab, an old version, a person editing it by hand).
  */
 import { z } from 'zod';
+import { DEFAULT_VOICE, VOICE_KEYS } from '@/lib/voice/voices';
 import { ID_RE, LIMITS, PLAN_ITEM_KINDS } from '@/features/shared/constants';
 import {
   FocusSchema,
@@ -31,7 +32,8 @@ import type {
 import { presetText } from '@/features/support/presets';
 
 export const MAX_SESSIONS = 20;
-const MAX_SUPPORT_ITEMS = 20;
+/** More than this many support lines are dropped when stored data is read back, so the card refuses to grow past it. */
+export const MAX_SUPPORT_ITEMS = 20;
 const MAX_STORED_TURNS = 40;
 
 export const defaultSettings = (): Settings => ({
@@ -43,6 +45,7 @@ export const defaultSettings = (): Settings => ({
   outputMode: 'both',
   detail: 'short',
   speechRate: 1,
+  voice: DEFAULT_VOICE,
   finishSound: false,
   memoryOptIn: false,
   onboarded: false,
@@ -88,6 +91,7 @@ const SettingsSchema = z
     outputMode: z.enum(['read', 'listen', 'both']).catch('both'),
     detail: z.enum(['short', 'detailed']).catch('short'),
     speechRate: z.number().min(0.5).max(2).catch(1),
+    voice: z.enum(VOICE_KEYS).catch(DEFAULT_VOICE),
     finishSound: z.boolean().catch(false),
     memoryOptIn: z.boolean().catch(false),
     onboarded: z.boolean().catch(false),
@@ -156,6 +160,7 @@ function parseSupportCard(raw: unknown): SupportCard | undefined {
     id: Id.catch('support-card').parse(raw.id),
     items: uniqueBy(items, (i) => i.id).slice(0, MAX_SUPPORT_ITEMS),
     topQuestionIds: validItems(Id, raw.topQuestionIds).slice(0, 2),
+    ...(Number.isSafeInteger(raw.nextCustomId) && (raw.nextCustomId as number) >= 1 && (raw.nextCustomId as number) <= 1_000_000_000 ? { nextCustomId: raw.nextCustomId as number } : {}),
   };
 }
 

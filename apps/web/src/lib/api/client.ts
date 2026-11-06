@@ -1,6 +1,6 @@
 /**
  * Browser side of the four AI routes. Built by a factory so the crisis check, fetch and the online flag are
- * injected (the crisis function belongs to the harness lane; the default wiring happens in Phase 2).
+ * injected; screens use the default wiring in calls.ts, which also passes the typed text of each request (I-035).
  * It never throws: every failure becomes an ApiResult with fixed, friendly wording.
  */
 import type { z } from 'zod';

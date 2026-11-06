@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { GUARD_LOG_RE } from "@/features/shared/guards";
-import { aiRecord, type AiEvent } from "@/lib/ai/telemetry";
+import { logEvent, setLogSink, type AiEvent } from "@/lib/ai/telemetry";
 
 const base: AiEvent = {
   id: "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4e",
@@ -17,14 +17,21 @@ const base: AiEvent = {
   memoryItems: 2,
   inTokens: 812,
   outTokens: 190,
+  costMicroUsd: 88,
   ms: 4123,
   errorCode: "ai_unavailable",
 };
 
-/** The line the writer produces for an event: one JSON string of the record. */
-const capture = (e: unknown): string[] => [JSON.stringify(aiRecord(e as AiEvent))];
+function capture(e: unknown): string[] {
+  const lines: string[] = [];
+  setLogSink((l) => lines.push(l));
+  logEvent(e as AiEvent);
+  return lines;
+}
 
-describe("aiRecord", () => {
+afterEach(() => setLogSink(null));
+
+describe("logEvent", () => {
   it("writes one JSON line with counts, ids and guard labels", () => {
     const lines = capture(base);
     expect(lines).toHaveLength(1);
@@ -44,8 +51,10 @@ describe("aiRecord", () => {
       memoryItems: 2,
       inTokens: 812,
       outTokens: 190,
+      costMicroUsd: 88,
       ms: 4123,
       errorCode: "ai_unavailable",
+      providerKind: "none",
     });
   });
 
@@ -82,7 +91,7 @@ describe("aiRecord", () => {
     expect(parsed.attempts).toBe(0);
     expect(parsed.inTokens).toBe(0);
     expect(Object.keys(parsed).sort()).toEqual(
-      ["type", "id", "task", "promptVersion", "outcome", "degraded", "attempts", "tier", "redactions", "injectionHits", "thin", "guardHits", "memoryItems", "inTokens", "outTokens", "ms", "errorCode"].sort(),
+      ["type", "id", "task", "promptVersion", "outcome", "degraded", "attempts", "tier", "redactions", "injectionHits", "thin", "guardHits", "memoryItems", "inTokens", "outTokens", "costMicroUsd", "ms", "errorCode", "providerKind"].sort(),
     );
   });
 
@@ -93,7 +102,7 @@ describe("aiRecord", () => {
   });
 });
 
-describe("aiRecord: narrow shapes", () => {
+describe("logEvent: narrow shapes", () => {
   it("an id is a uuid or 12 hex characters, nothing else", () => {
     for (const ok of [base.id, "0123456789ab"]) expect(JSON.parse(capture({ ...base, id: ok })[0]).id).toBe(ok);
     for (const bad of ["headache", "my-head-hurts", "abcdef", "0123456789abcdef", "ABCDEF123456", "5f1d7c52-8f58-4d52-9a47-0f7a1b2c3d4"]) {
@@ -115,10 +124,22 @@ describe("aiRecord: narrow shapes", () => {
   });
 });
 
-describe("aiRecord: stage", () => {
+describe("logEvent: stage", () => {
   it("is written only when set, and only from the fixed list", () => {
     expect(JSON.parse(capture({ ...base, stage: "prompt" })[0]).stage).toBe("prompt");
     expect(JSON.parse(capture({ ...base, stage: "my head hurts" })[0]).stage).toBe("unknown");
     expect(JSON.parse(capture(base)[0])).not.toHaveProperty("stage");
+  });
+});
+
+describe("logEvent: providerKind and the mock_prod stage", () => {
+  it("providerKind is one of the fixed kinds, none when missing, and never free text", () => {
+    for (const k of ["timeout", "http", "config", "empty", "aborted", "none"]) expect(JSON.parse(capture({ ...base, providerKind: k })[0]).providerKind).toBe(k);
+    expect(JSON.parse(capture(base)[0]).providerKind).toBe("none");
+    expect(JSON.parse(capture({ ...base, providerKind: "rate limited by Groq: my head hurts" })[0]).providerKind).toBe("none");
+  });
+
+  it("mock_prod is an allowed stage", () => {
+    expect(JSON.parse(capture({ ...base, stage: "mock_prod" })[0]).stage).toBe("mock_prod");
   });
 });

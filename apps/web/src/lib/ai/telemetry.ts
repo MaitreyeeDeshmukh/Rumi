@@ -7,9 +7,10 @@ import type { TaskName, Tier } from "@/features/shared/task";
 import type { ApiErrorCode } from "@/features/shared/types";
 
 export type Outcome = "ok" | "mock" | "crisis" | "fallback" | "error";
+export type ProviderKind = "timeout" | "http" | "config" | "empty" | "aborted" | "none";
 export type EventErrorCode = ApiErrorCode | "config" | "unauthorized" | "timeout" | "internal" | "store_unavailable";
 /** Where in the pipeline a request stopped or an unexpected error happened. A fixed list, never text. */
-export type Stage = "guard" | "body" | "request" | "sanitize" | "crisis" | "redact" | "config" | "ledger" | "prompt" | "provider" | "output" | "reply" | "auth" | "flags" | "cache" | "limits";
+export type Stage = "mock_prod" | "guard" | "body" | "request" | "sanitize" | "crisis" | "redact" | "config" | "ledger" | "prompt" | "provider" | "output" | "reply" | "auth" | "flags" | "cache" | "limits";
 
 export interface AiEvent {
   /** A random request id (uuid). */
@@ -31,6 +32,8 @@ export interface AiEvent {
   memoryItems: number;
   inTokens: number;
   outTokens: number;
+  /** Estimated cost of all provider calls of this request in millionths of a US dollar (list prices, see cost.ts). A number, never text. */
+  costMicroUsd?: number;
   ms: number;
   errorCode?: EventErrorCode;
   /**
@@ -46,6 +49,10 @@ export interface AiEvent {
   providerError?: string;
   providerStatus?: number;
   finishReason?: string;
+  /** The kind of the last failed provider call ("none" when no call failed). A fixed list, so outages are visible. */
+  providerKind?: ProviderKind;
+  /** Set only when the crisis classifier ran on text the regex layer let through (tier none): it answered, or it failed and the request went on. */
+  classifier?: "none_ok" | "none_failed";
 }
 
 export type CrisisSource = "tier1" | "model_yes" | "model_flag" | "failsafe_error" | "failsafe_off" | "failsafe_quota";
@@ -59,7 +66,9 @@ const TIERS: readonly string[] = ["quality", "fast", "none"];
 const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout", "internal", "store_unavailable"];
 const GUARD_CODES: readonly string[] = ALL_GUARD_CODES;
 const REQUEST_ID = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{12})$/;
-const STAGES: readonly string[] = ["guard", "body", "request", "sanitize", "crisis", "redact", "config", "ledger", "prompt", "provider", "output", "reply", "auth", "flags", "cache", "limits"];
+const STAGES: readonly string[] = ["mock_prod", "guard", "body", "request", "sanitize", "crisis", "redact", "config", "ledger", "prompt", "provider", "output", "reply", "auth", "flags", "cache", "limits"];
+const PROVIDER_KINDS: readonly string[] = ["timeout", "http", "config", "empty", "aborted", "none"];
+const CLASSIFIER_RESULTS: readonly string[] = ["none_ok", "none_failed"];
 const PROMPT_VERSION = /^[a-z]+@[0-9]{1,3}$/;
 
 const count = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
@@ -83,6 +92,11 @@ export function emitLine(line: string, level?: LogLevel): void {
 }
 
 /** The event as it is written to stdout and to ops_ai_events: known fields only, each checked for shape. */
+/** The hardened harness' one-line event: the sanitized record, written through the shared sink. */
+export function logEvent(event: AiEvent): void {
+  emitLine(JSON.stringify(aiRecord(event)));
+}
+
 export function aiRecord(event: AiEvent) {
   // The type says AiEvent; a bad caller or a cast must still not be able to crash a request or smuggle a field in.
   const e: Partial<AiEvent> = event ?? {};
@@ -102,6 +116,7 @@ export function aiRecord(event: AiEvent) {
     memoryItems: count(e.memoryItems),
     inTokens: count(e.inTokens),
     outTokens: count(e.outTokens),
+    costMicroUsd: count(e.costMicroUsd),
     ms: count(e.ms),
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
     ...(e.paused === true ? { paused: true } : {}),
@@ -110,6 +125,8 @@ export function aiRecord(event: AiEvent) {
     ...(e.providerError === undefined ? {} : { providerError: oneOf(e.providerError, PROVIDER_ERRORS, "unknown") }),
     ...(typeof e.providerStatus === "number" && e.providerStatus >= 100 && e.providerStatus <= 599 ? { providerStatus: Math.floor(e.providerStatus) } : {}),
     ...(e.finishReason === undefined ? {} : { finishReason: oneOf(e.finishReason, FINISH_REASONS, "other") }),
+    providerKind: oneOf(e.providerKind, PROVIDER_KINDS, "none"),
+    ...(e.classifier === undefined ? {} : { classifier: oneOf(e.classifier, CLASSIFIER_RESULTS, "unknown") }),
   };
   return record;
 }

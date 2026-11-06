@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { json, readJson, retryAfter } from "@/lib/ai/http";
+import { vi, describe, expect, it } from "vitest";
+import { HttpError, errorResponse, json, readJson } from "@/lib/ai/http";
 
 const post = (body: BodyInit | null, headers: Record<string, string> = {}): Request =>
   new Request("https://rumi.test/api/plan", { method: "POST", body, headers });
@@ -17,7 +17,7 @@ function streamOf(chunks: number, size: number, pulled: { n: number }, headers: 
   return new Request("https://rumi.test/api/plan", { method: "POST", body: stream, headers, duplex: "half" } as RequestInit & { duplex: "half" });
 }
 
-describe("json and retryAfter", () => {
+describe("json and errorResponse", () => {
   it("every answer is JSON and never cached", async () => {
     const res = json({ ok: true });
     expect(res.headers.get("Cache-Control")).toBe("no-store");
@@ -25,10 +25,18 @@ describe("json and retryAfter", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it("Retry-After is rounded up, with a default of 60", () => {
-    expect(retryAfter(12.2)).toBe(13);
-    expect(retryAfter(undefined)).toBe(60);
-    expect(retryAfter(0)).toBe(1);
+  it("maps a code to a plain message and the status", async () => {
+    const res = errorResponse(new HttpError(403, "forbidden"));
+    expect(res.status).toBe(403);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Retry-After")).toBeNull();
+    expect(await res.json()).toEqual({ error: { code: "forbidden", message: "This request was blocked. Reload the page and try again." } });
+  });
+
+  it("a 429 carries Retry-After, rounded up, with a default of 60", () => {
+    expect(errorResponse(new HttpError(429, "rate_limited", 12.2)).headers.get("Retry-After")).toBe("13");
+    expect(errorResponse(new HttpError(429, "rate_limited")).headers.get("Retry-After")).toBe("60");
+    expect(errorResponse(new HttpError(429, "rate_limited", 0)).headers.get("Retry-After")).toBe("1");
   });
 });
 
@@ -77,9 +85,9 @@ describe("readJson", () => {
 });
 
 describe("07 P3 and H-17 details", () => {
-  it("Retry-After is a whole number between 1 and 86400 (a day) even for NaN, Infinity or negative input", () => {
-    for (const [input, expected] of [[Number.NaN, "60"], [Number.POSITIVE_INFINITY, "60"], [-5, "1"], [999_999, "86400"], [7_200, "7200"], [0.2, "1"]] as const) {
-      expect(String(retryAfter(input))).toBe(expected);
+  it("Retry-After is a whole number between 1 and 3600 even for NaN, Infinity or negative input", () => {
+    for (const [input, expected] of [[Number.NaN, "60"], [Number.POSITIVE_INFINITY, "60"], [-5, "1"], [999_999, "3600"], [0.2, "1"]] as const) {
+      expect(errorResponse(new HttpError(429, "rate_limited", input)).headers.get("Retry-After")).toBe(expected);
     }
   });
 
@@ -107,5 +115,90 @@ describe("07 P3 and H-17 details", () => {
     expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
     expect(Object.keys(parsed.b as object)).toEqual(["c"]);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe("readJson: body read timeout", () => {
+  it("a body that stalls is cancelled after the timeout and answers 400 bad_input", async () => {
+    vi.useFakeTimers();
+    try {
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"a":'));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      const req = new Request("https://rumi.test/api/x", { method: "POST", body, duplex: "half" } as RequestInit);
+      const pending = readJson(req, 1000, 10_000);
+      const result = pending.then(
+        () => "resolved",
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(cancelled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toMatchObject({ status: 400, code: "bad_input" });
+      expect(cancelled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a body that is complete JSON but never ends is still refused at the timeout (not passed on as finished)", async () => {
+    vi.useFakeTimers();
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"a":1}'));
+        },
+      });
+      const req = new Request("https://rumi.test/api/x", { method: "POST", body, duplex: "half" } as RequestInit);
+      const result = readJson(req, 1000, 5_000).then(
+        (v: unknown) => ({ resolved: v }),
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await result).toMatchObject({ status: 400, code: "bad_input" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the timer is cleared when the body finishes or fails, so no timer is left running", async () => {
+    vi.useFakeTimers();
+    try {
+      await readJson(post(JSON.stringify({ a: 1 })), 1000);
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(readJson(post("{nope"), 1000)).rejects.toMatchObject({ status: 400 });
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(readJson(post(JSON.stringify({ t: "x".repeat(200) })), 50)).rejects.toMatchObject({ status: 413 });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the default limit is 10 s and a normal body is unaffected", async () => {
+    vi.useFakeTimers();
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"a":'));
+        },
+      });
+      const req = new Request("https://rumi.test/api/x", { method: "POST", body, duplex: "half" } as RequestInit);
+      const result = readJson(req, 1000).then(
+        () => "resolved",
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(10_001);
+      expect(await result).toMatchObject({ status: 400 });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await readJson(post(JSON.stringify({ a: 1 })), 1000)).toEqual({ a: 1 });
   });
 });

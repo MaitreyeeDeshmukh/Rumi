@@ -12,7 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { ARMS, PINNED, assertHarnessParity, baselineCall, type BaselineCall, type ParitySpec } from './baseline';
-import { aggregate, DEFAULT_PRICES, type PriceTable, type Summary } from './scorers/aggregate';
+import { aggregate, DEFAULT_PRICES, PRICES_VERIFIED_ON, type PriceTable, type Summary } from './scorers/aggregate';
 import { classify, isRateLimited } from './scorers/classify';
 import { isObj } from './scorers/body';
 import { drawSample, renderReplyForRater, type SampleSource } from './scorers/humanSample';
@@ -30,6 +30,11 @@ export function liveGuard(env: Record<string, string | undefined>): string[] {
   if ((env.GROQ_API_KEY ?? '').trim() === '') reasons.push('GROQ_API_KEY is missing: add it to apps/web/.env.local (or pass --dry)');
   if (env.NODE_ENV === 'production') reasons.push('NODE_ENV is production: EVAL_MODE is not honoured there');
   return reasons;
+}
+
+/** The one-line reason a live run is skipped (exit 0) instead of refused: no key to call Groq with. Names only. */
+export function liveSkipReason(env: Record<string, string | undefined>): string | undefined {
+  return (env.GROQ_API_KEY ?? '').trim() === '' ? 'live eval skipped: GROQ_API_KEY not set' : undefined;
 }
 
 /**
@@ -234,7 +239,7 @@ export function estimateRun(cases: readonly EvalCase[], k: number, arm: Arm, mod
 }
 
 export function formatEstimate(arm: Arm, e: Estimate): string {
-  const cost = e.costUsdWorst === null ? 'unknown (a model has no price in the table)' : `$${e.costUsdWorst.toFixed(2)} (prices unverified until P3 sets them)`;
+  const cost = e.costUsdWorst === null ? 'unknown (a model has no price in the table)' : `$${e.costUsdWorst.toFixed(2)} (Groq list prices checked ${PRICES_VERIFIED_ON ?? 'never: unverified'})`;
   return `cost estimate [${arm}]: ${e.requests} requests, about ${e.expectedCalls} model calls (worst case ${e.worstCalls}), ~${e.tokensInEstimate} input tokens, up to ${e.tokensOutWorst} output tokens, worst-case cost ${cost}`;
 }
 
