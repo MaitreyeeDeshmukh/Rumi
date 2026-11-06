@@ -13,9 +13,9 @@ type Phase = "idle" | "listening" | "working";
  * Hidden when the browser cannot record. Says what went wrong (microphone refused, service down) instead of failing silently.
  */
 export function MicButton({ onText }: { onText: (text: string) => void }) {
-  const [phase, setPhase] = useState<Phase>("idle");
+  const [phase, setPhase] = useState("idle" as Phase);
   const [note, setNote] = useState("");
-  const stop = useRef<(() => void) | null>(null);
+  const stop = useRef(null as (() => void) | null);
   const [supported, setSupported] = useState(false);
   useEffect(() => setSupported(canRecord()), []);
   useEffect(() => () => stop.current?.(), []);

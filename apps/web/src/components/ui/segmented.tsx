@@ -1,7 +1,18 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import { Check } from "@/components/ui/icons";
+
+/** The row with its name written above it (the name is also the radio group's accessible name). */
+const withLabel = (label: string, row: ReactNode): ReactNode => (
+  <div className="grid gap-2">
+    <p aria-hidden="true" className="m-0 text-sm font-bold text-muted-ink">
+      {label}
+    </p>
+    {row}
+  </div>
+);
 
 /** A short row of exclusive choices. The chosen one has a check and a tinted fill, never a purple fill. */
 export function Segmented({
@@ -40,13 +51,5 @@ export function Segmented({
       ))}
     </RadioGroupPrimitive.Root>
   );
-  if (!showLabel) return row;
-  return (
-    <div className="grid gap-2">
-      <p aria-hidden="true" className="m-0 text-sm font-bold text-muted-ink">
-        {label}
-      </p>
-      {row}
-    </div>
-  );
+  return showLabel ? withLabel(label, row) : row;
 }

@@ -74,7 +74,7 @@ describe("source rules for route handlers", () => {
 
   it("finds all the routes", () => {
     expect(files.map(rel).sort()).toEqual(
-      ["account/delete/route.ts", "account/export/route.ts", "client-error/route.ts", "health/route.ts", "memory/consent/route.ts", "memory/facts/route.ts", "memory/forget/route.ts", "plan/route.ts", "practice/route.ts", "ready/route.ts", "recap/route.ts", "sayit/route.ts", "voice/tts/route.ts"].sort(),
+      ["account/delete/route.ts", "account/export/route.ts", "client-error/route.ts", "health/route.ts", "memory/consent/route.ts", "memory/facts/route.ts", "memory/forget/route.ts", "plan/route.ts", "practice/route.ts", "ready/route.ts", "recap/route.ts", "sayit/route.ts", "voice/stt/route.ts", "voice/tts/route.ts"].sort(),
     );
   });
 
