@@ -1,6 +1,6 @@
 // The recap of the sample visit: the real /api/recap through callApi.
 import { RecapReply } from "@/features/shared/schemas";
-import type { Recap, RecapItem, RecapSection, Speaker } from "@/features/shared/types";
+import type { Recap, RecapItem, RecapSection, Speaker, TranscriptLine } from "@/features/shared/types";
 import { DEMO_PLAN } from "@/fixtures/demoPlan";
 import { SAVED_RECAP_REPLY } from "@/fixtures/sampleRecap";
 import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
@@ -27,6 +27,32 @@ export async function requestRecap(mySpeaker: Speaker): Promise<RecapOutcome> {
   const res = await callApi("/api/recap", { lines: SAMPLE_VISIT, mySpeaker, plan: DEMO_PLAN }, RecapReply, { skipCrisisCheck: true });
   if (res.ok) return { kind: "ok", reply: res.data };
   return "crisis" in res ? { kind: "crisis" } : { kind: "error" };
+}
+
+/**
+ * The recap of a visit the person recorded or typed. The client crisis check stays on, because this text came from the
+ * person. No plan is sent: the plan statuses in the sample screen refer to the sample plan only. "B" is the person's voice,
+ * but the lines carry only the clinician side (A), as the recording has one voice.
+ */
+export async function requestRecapLines(lines: TranscriptLine[]): Promise<RecapOutcome> {
+  const res = await callApi("/api/recap", { lines, mySpeaker: "B" }, RecapReply);
+  if (res.ok) return { kind: "ok", reply: res.data };
+  return "crisis" in res ? { kind: "crisis" } : { kind: "error" };
+}
+
+/** A recap of the person's own visit, shown on screen only. It is not saved: the saved recap record is for the sample. */
+export function buildOwnRecap(reply: Reply, lines: TranscriptLine[]): Recap {
+  return {
+    id: "visit-recap",
+    createdAt: new Date().toISOString(),
+    isSample: true, // ponytail: the type says true; nothing reads it for a recap that is not stored
+    isSavedFallback: false,
+    mySpeaker: "B",
+    transcript: lines,
+    items: reply.items,
+    unconfirmed: reply.unconfirmed,
+    planStatus: reply.planStatus,
+  };
 }
 
 /** The saved example answer, used after two failed calls. */

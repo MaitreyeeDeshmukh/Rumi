@@ -18,6 +18,10 @@ export const PARENT: Readonly<Record<string, string | null>> = {
   "/share": "/home",
   "/kit": "/home",
   "/say-it": "/home",
+  "/appointments": "/home",
+  "/appointments/new": "/appointments",
+  "/appointment": "/appointments",
+  "/record": "/home",
   "/settings": "/home",
 };
 
@@ -31,6 +35,10 @@ const APP_ROUTES: readonly string[] = [
   "/kit",
   "/say-it",
   "/settings",
+  "/appointments",
+  "/appointments/new",
+  "/appointment",
+  "/record",
 ];
 
 export function isAppRoute(pathname: string): boolean {

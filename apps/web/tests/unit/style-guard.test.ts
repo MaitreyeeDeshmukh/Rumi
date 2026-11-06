@@ -18,7 +18,7 @@ const NOT_UI = ["lib/literalLint.ts"];
 /** Server, AI and data code (the production integration). Its strings are prompts, errors and logs, not UI copy. */
 const NOT_UI_DIRS = [
   "features/auth/", "features/memory/", "features/shared/", "features/plan/", "features/practice/", "features/recap/",
-  "features/sayit/", "features/share/", "features/support/", "features/state/",
+  "features/sayit/", "features/share/", "features/appointments/", "features/support/", "features/state/",
   "lib/ai/", "lib/security/", "lib/api/", "lib/auth/", "lib/text/", "lib/telemetry/", "lib/supabase/",
   "lib/errors.ts", "lib/log.ts", "lib/crisis.ts", "lib/env.ts", "lib/requestContext.ts", "lib/storage.ts", "lib/storage-schema.ts",
 ];

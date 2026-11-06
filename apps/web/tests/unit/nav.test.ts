@@ -5,8 +5,8 @@ import { PARENT, backAriaLabel, backHref, isAppRoute, navStack, navStore } from 
 const WITH_PARENT = Object.entries(PARENT).filter(([, p]) => p !== null);
 
 describe("backHref", () => {
-  it("falls back to the fixed parent for all 16 routes that have one", () => {
-    expect(WITH_PARENT).toHaveLength(16);
+  it("falls back to the fixed parent for all 20 routes that have one", () => {
+    expect(WITH_PARENT).toHaveLength(20);
     for (const [route, parent] of WITH_PARENT) expect(backHref(route, []), route).toBe(parent);
   });
   it("has the exact parent table", () => {
@@ -14,6 +14,8 @@ describe("backHref", () => {
       expect(PARENT[r]).toBe("/");
     for (const r of ["/get-ready", "/practice", "/remember", "/share", "/kit", "/say-it", "/settings"])
       expect(PARENT[r]).toBe("/home");
+    for (const r of ["/appointments", "/record"]) expect(PARENT[r]).toBe("/home");
+    for (const r of ["/appointments/new", "/appointment"]) expect(PARENT[r]).toBe("/appointments");
     expect(PARENT["/"]).toBeNull();
   });
   it("is null only for the home page", () => {
@@ -67,8 +69,8 @@ describe("backAriaLabel", () => {
 });
 
 describe("isAppRoute", () => {
-  it("is true for the nine app routes only", () => {
-    for (const r of ["/home", "/welcome", "/get-ready", "/practice", "/remember", "/share", "/kit", "/say-it", "/settings"])
+  it("is true for the thirteen app routes only", () => {
+    for (const r of ["/home", "/welcome", "/get-ready", "/practice", "/remember", "/share", "/kit", "/say-it", "/settings", "/appointments", "/appointments/new", "/appointment", "/record"])
       expect(isAppRoute(r), r).toBe(true);
     for (const r of ["/", "/help", "/contact", "/nope"]) expect(isAppRoute(r), r).toBe(false);
   });

@@ -17,7 +17,7 @@ describe("site navigation", () => {
     for (const route of ROUTES) expect(pageFileFor(route), route).toBeDefined();
   });
 
-  it("lists the seventeen routes that exist", () => {
+  it("lists the twenty-one routes that exist", () => {
     expect([...ROUTES]).toEqual([
       "/",
       "/how-it-works",
@@ -36,6 +36,10 @@ describe("site navigation", () => {
       "/kit",
       "/say-it",
       "/settings",
+      "/appointments",
+      "/appointments/new",
+      "/appointment",
+      "/record",
     ]);
   });
 

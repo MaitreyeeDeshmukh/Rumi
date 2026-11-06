@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useCrisis } from "@/components/CrisisProvider";
 import { RecapView } from "@/components/remember/RecapView";
@@ -9,12 +10,14 @@ import { ChoiceCard, ChoiceGroup } from "@/components/ui/choice-card";
 import { Notice } from "@/components/ui/notice";
 import { Screen } from "@/components/ui/screen";
 import { StickyActions } from "@/components/ui/sticky-actions";
+import { APPT } from "@/content/appointments";
 import { NAV } from "@/content/nav";
 import { PAGES_COPY } from "@/content/pages";
 import { REMEMBER } from "@/content/remember";
 import { SAMPLE_VISIT } from "@/fixtures/sampleVisit";
-import { SAVED_REPLY, buildRecap, quoted, requestRecap, voicesOf } from "@/features/adapters/remember";
-import type { Recap, RumiState, Speaker } from "@/features/shared/types";
+import { SAVED_REPLY, buildOwnRecap, buildRecap, quoted, requestRecap, requestRecapLines, voicesOf } from "@/features/adapters/remember";
+import { transcriptLines } from "@/features/appointments/appointments";
+import type { Recap, RumiState, Speaker, Visit } from "@/features/shared/types";
 import { fill } from "@/lib/fill";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
@@ -23,14 +26,18 @@ type Phase =
   | { k: "intro" }
   | { k: "pick" }
   | { k: "loading" }
-  | { k: "error"; speaker: Speaker }
+  | { k: "error"; speaker: Speaker; visit?: Visit }
   | { k: "recap"; recap: Recap };
 
 const PRIMARY = PAGES_COPY["/remember"].primary;
 
 /** /remember: the sample visit only. Intro, voice picker, recap. No recording, no microphone. */
 export function RememberScreen() {
-  const { update, hydrated } = useRumi();
+  const { state, update, hydrated } = useRumi();
+  const visitId = useSearchParams().get("visit");
+  const visits = state.visits ?? [];
+  // The visit named in the address, else the latest one saved.
+  const mine = visits.find((v) => v.id === visitId) ?? (visitId ? undefined : visits[visits.length - 1]);
   const { show } = useCrisis();
   const [phase, setPhase] = useState({ k: "intro" } as Phase);
   const [speaker, setSpeaker] = useState("");
@@ -69,6 +76,18 @@ export function RememberScreen() {
     setPhase({ k: "error", speaker: who });
   };
 
+  const runMine = async (visit: Visit) => {
+    setPhase({ k: "loading" });
+    const lines = transcriptLines(visit.text);
+    const res = lines.length > 0 ? await requestRecapLines(lines) : ({ kind: "error" } as const);
+    if (res.kind === "ok") return setPhase({ k: "recap", recap: buildOwnRecap(res.reply, lines) });
+    if (res.kind === "crisis") {
+      setPhase({ k: "intro" });
+      return show();
+    }
+    setPhase({ k: "error", speaker: "B", visit });
+  };
+
   const voices = voicesOf(SAMPLE_VISIT);
 
   return (
@@ -78,6 +97,18 @@ export function RememberScreen() {
           <div ref={live} tabIndex={-1} className="grid gap-5 outline-none">
             {phase.k === "intro" && (
               <>
+                {mine ? (
+                  <div className="grid gap-2">
+                    <p className="m-0">{APPT.myVisitBody}</p>
+                    <p className="note m-0">{APPT.myVisitCrisisNote}</p>
+                    <Button kind="primary" arrow block onClick={() => void runMine(mine)}>
+                      {APPT.myVisit}
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="note m-0">{APPT.myVisitNone}</p>
+                )}
+                <p className="m-0 font-bold">{APPT.orSample}</p>
                 <Banner>{REMEMBER.sampleLabel}</Banner>
                 <p className="note m-0">{REMEMBER.sampleNote}</p>
                 <StickyActions>
@@ -121,7 +152,7 @@ export function RememberScreen() {
                   <p>{REMEMBER.errorBody}</p>
                 </Notice>
                 <StickyActions>
-                  <Button kind="primary" block onClick={() => run(phase.speaker)}>
+                  <Button kind="primary" block onClick={() => (phase.visit ? void runMine(phase.visit) : run(phase.speaker))}>
                     {NAV.tryAgain}
                   </Button>
                 </StickyActions>
