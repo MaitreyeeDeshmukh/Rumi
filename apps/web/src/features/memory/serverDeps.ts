@@ -6,6 +6,7 @@ import { guardRequest } from '@/lib/security/guardRequest';
 import { createRateLimiter, type RateLimiter } from '@/lib/security/rateLimit';
 import { getServerClient } from '@/lib/supabase/server';
 import type { RouteDeps } from './server';
+import { eraseRemote, mirrorFacts } from './supermemory';
 import type { MemoryDb } from './types';
 
 /**
@@ -33,4 +34,5 @@ export const routeDeps: RouteDeps = {
   readJson,
   userLimit: makeUserLimit(newUserLimiter()),
   now: Date.now,
+  sm: { mirror: mirrorFacts, erase: eraseRemote },
 };

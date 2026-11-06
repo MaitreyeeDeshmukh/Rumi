@@ -20,6 +20,7 @@ import { createLogger, type Logger } from '@/lib/log';
 import { REQUEST_ID_HEADER, requestIdOf } from '@/lib/requestContext';
 import { recordAppEvent } from '@/lib/telemetry/sinks';
 import { parseFactBatch } from './sanitize';
+import type { eraseRemote, mirrorFacts } from './supermemory';
 import { createSupabaseStore } from './supabaseStore';
 import { MemoryStoreError, type MemoryDb } from './types';
 
@@ -38,6 +39,8 @@ export interface RouteDeps {
   /** Per-user limit, checked after sign-in. Throws HttpError 429. */
   userLimit: (userId: string) => void;
   now: () => number;
+  /** Supermemory recall layer (serverDeps wires the real ones). Absent or off: nothing is sent, nothing is waited for. */
+  sm?: { mirror: typeof mirrorFacts; erase: typeof eraseRemote };
   /** Only a test sets this, to see what is logged. */
   createLog?: typeof createLogger;
 }
@@ -141,6 +144,9 @@ export function handleFacts(req: Request, deps: RouteDeps): Promise<Response> {
       const { facts, rejected } = await store.search();
       // Consent can be withdrawn while this request runs: what was just read must not be handed back then.
       if (!(await store.hasConsent())) throw new MemoryStoreError('consent_required');
+      // Consent was just re-checked, so the copy for semantic recall may be made now. It fails open and never throws.
+      const sm = deps.sm ? await deps.sm.mirror(userId, batch.facts, batch.removed) : 'off';
+      log.info('memory_sm_mirror', { status: sm });
       if (batch.clamped > 0) log.warn('memory_stamps_clamped', { count: batch.clamped });
       log.info('memory_facts_ok', { saved, removed: batch.removed.length, stored: facts.length, rejected });
       return ok({ saved, rejected, facts }, requestId);
@@ -160,6 +166,10 @@ export function handleForget(req: Request, deps: RouteDeps): Promise<Response> {
       await store.setConsent(false);
       await store.forget(); // throws erasure_incomplete unless zero rows remain: answered as a failure, never as ok
       if (await store.hasConsent()) throw new MemoryStoreError('unavailable'); // the revoke did not stick
+      // The semantic copy goes too, and is checked by listing again. Ignores MEMORY_ENABLED. Not erased = a failure, like the rows.
+      const sm = deps.sm ? await deps.sm.erase(userId) : 'off';
+      log.info('memory_sm_erase', { status: sm });
+      if (sm === 'failed') throw new MemoryStoreError('erasure_incomplete');
       log.info('memory_forget_ok');
       return ok({ status: 'ok' }, requestId);
     },
