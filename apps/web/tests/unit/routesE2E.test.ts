@@ -313,7 +313,7 @@ describe("what finalize does with a model answer, through the harness", () => {
 
 describe("stated preferences", () => {
   it("facts in the body become fenced STYLE lines for plan, practice and say-it, and none for recap", async () => {
-    const facts = [{ kind: "support_pref", key: "p1" }];
+    const facts = [{ kind: "support_pref", key: "p1", client_updated_at: "2026-01-01T00:00:00.000Z" }];
     for (const c of CASES) {
       const { provider, done } = run(c, [JSON.stringify(c.good)], { ...c.body, facts });
       await done;

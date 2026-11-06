@@ -224,24 +224,6 @@ export function contactEmail(): string | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-/** Memory routes exist only when MEMORY_ENABLED is exactly "1" (07 D24). Any other value, including a typo, is off. */
-export const memoryEnabled = (): boolean => process.env.MEMORY_ENABLED === "1";
-
-export interface MemoryConfig {
-  apiKey: string;
-  tagSecret: string;
-}
-
-/** Throws ConfigError listing the missing or invalid names (never values). */
-export function getMemoryConfig(): MemoryConfig {
-  const apiKey = nonEmpty.safeParse(process.env.SUPERMEMORY_API_KEY);
-  const tagSecret = secret.safeParse(process.env.MEMORY_TAG_SECRET);
-  if (!apiKey.success || !tagSecret.success) {
-    throw new ConfigError([apiKey.success ? "" : "SUPERMEMORY_API_KEY", tagSecret.success ? "" : "MEMORY_TAG_SECRET"].filter(Boolean));
-  }
-  return { apiKey: apiKey.data, tagSecret: tagSecret.data };
-}
-
 export interface CartesiaConfig {
   apiKey: string;
   version: string;

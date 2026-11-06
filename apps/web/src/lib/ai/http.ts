@@ -27,8 +27,8 @@ export function json(body: unknown, status = 200, headers: Record<string, string
 export const retryAfter = (sec: number | undefined): number => (sec !== undefined && Number.isFinite(sec) ? Math.min(86_400, Math.max(1, Math.ceil(sec))) : 60);
 
 /** Answer for a thrown HttpError (the hardened harness' error path): code and a fixed sentence, Retry-After on a 429. */
-export function errorResponse(e: AppError): Response {
-  return toResponse(e, crypto.randomUUID());
+export function errorResponse(e: AppError, requestId: string = crypto.randomUUID()): Response {
+  return toResponse(e, requestId);
 }
 
 /**

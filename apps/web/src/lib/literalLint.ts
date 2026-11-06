@@ -136,12 +136,13 @@ function isDoubleCommand(sentence: string): boolean {
   return starts[0] === true && starts.filter(Boolean).length >= 2;
 }
 
-export function literalLint(text: string): { ok: boolean; failures: LintFailure[] } {
+/** `maxWords` raises the sentence cap for long-form copy such as page meta descriptions. Guards never pass it. */
+export function literalLint(text: string, options: { maxWords?: number } = {}): { ok: boolean; failures: LintFailure[] } {
   const failures: LintFailure[] = [];
   // A line break inside a sentence is not a sentence end; only punctuation ends one.
   for (const sentence of splitSentences(text.replace(/\s+/g, " "))) {
     const flat = flatten(sentence).replace(TYPE_OF, " ");
-    if (countWords(sentence) > MAX_WORDS) failures.push({ sentence, reason: "too_long" });
+    if (countWords(sentence) > (options.maxWords ?? MAX_WORDS)) failures.push({ sentence, reason: "too_long" });
     if (IDIOMS.some((re) => re.test(flat))) failures.push({ sentence, reason: "idiom" });
     if (isDoubleCommand(sentence)) failures.push({ sentence, reason: "double_command" });
   }

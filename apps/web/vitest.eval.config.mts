@@ -11,5 +11,6 @@ export default defineConfig({
     // Live cases of one arm run four at a time (tests/evals/live.ts matches telemetry to requests by id, so this is safe).
     maxConcurrency: 4,
   },
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  // `server-only` is resolved by Next at build time; under vitest it is an empty module.
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)), "server-only": fileURLToPath(new URL("./tests/unit/helpers/serverOnly.ts", import.meta.url)) } },
 });

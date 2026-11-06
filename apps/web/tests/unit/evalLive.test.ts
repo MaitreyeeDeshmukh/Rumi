@@ -368,11 +368,9 @@ describe("a short Retry-After on a 429 is waited out (eval pacing)", () => {
 });
 
 describe("response headers for the leak scan", () => {
-  it("keeps the session cookie name and value but not its attributes (HttpOnly would trip a forbidden word \"http\")", async () => {
+  it("the harness sets no cookie, and no header text trips the forbidden word \"http\"", async () => {
     const obs = await run(script([completion(GOOD_PLAN)]));
-    const cookie = obs.headers?.["set-cookie"];
-    expect(cookie).toBeTypeOf("string");
-    expect(cookie).toMatch(/^[A-Za-z_]+=/);
+    expect(obs.headers?.["set-cookie"]).toBeUndefined();
     expect(JSON.stringify(obs.headers).toLowerCase()).not.toContain("http");
   });
 });

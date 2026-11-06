@@ -31,6 +31,7 @@ import { ProviderError, createGroqProvider, type Provider, type ProviderCall, ty
 import { logEvent, type AiEvent, type EventErrorCode, type Stage } from "./telemetry";
 import { AppError } from "@/lib/errors";
 import { routeAuth } from "@/lib/auth/routeAuth";
+import { requestIdOf } from "@/lib/requestContext";
 import { guardRequest } from "@/lib/security/guardRequest";
 import type { RateLimiter } from "@/lib/security/rateLimit";
 
@@ -504,7 +505,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       ev.outcome = "error";
       ev.degraded = false;
       ev.errorCode = e.code as EventErrorCode;
-      return finish(errorResponse(e));
+      return finish(errorResponse(e, requestIdOf(req)));
     }
     if (clean !== undefined) {
       try {
@@ -516,6 +517,6 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     ev.outcome = "error";
     ev.degraded = false;
     ev.errorCode = "ai_unavailable";
-    return finish(errorResponse(new HttpError(503, "ai_unavailable")));
+    return finish(errorResponse(new HttpError(503, "ai_unavailable"), requestIdOf(req)));
   }
 }
