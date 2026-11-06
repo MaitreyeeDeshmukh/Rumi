@@ -92,6 +92,11 @@ img, svg, video { max-width: 100%; }
 a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
 main { flex: 1; width: 100%; max-width: var(--main-max); margin: 0 auto; padding: 1.25rem 1rem 2rem; min-width: 0; }
+/* Wide landscape screens use the whole width. The narrow centred column is for portrait and phone-sized windows. */
+@media (min-width: 900px) and (orientation: landscape) {
+  :root { --main-max: none; }
+  main { padding: 1.5rem clamp(1.5rem, 4vw, 3.5rem) 2.5rem; }
+}
 main:focus { outline: none; }
 /* Focus and anchors must not land under the sticky app bar, the tab bar or a sticky action bar (WCAG 2.4.11). */
 html { scroll-padding-top: calc(var(--appbar-h) + 1rem); }
