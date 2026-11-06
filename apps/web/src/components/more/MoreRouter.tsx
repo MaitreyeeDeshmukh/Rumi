@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppointmentDetail, AppointmentsList, NewAppointment } from "@/components/more/appointments";
 import { CirclesHome, Comfort, EventDetail, GroupChat, GroupDetail, MeetupPrep } from "@/components/more/circles";
 import { Contacts, Growth } from "@/components/more/you";
+import { Breathe, Changed, Overwhelmed, RescueFlow, RescueHome, SayIt, Trusted, Unsure } from "@/components/more/rescue";
 import { MoreHub } from "@/components/more/MoreHub";
 import { NotFound } from "@/components/more/parts";
 import { RecordVisit, VisitDetail, VisitsList } from "@/components/more/visits";
@@ -28,6 +29,17 @@ const ROUTES: Readonly<Record<string, Route>> = {
   },
   contacts: (a) => (a ? null : <Contacts />),
   growth: (a) => (a ? null : <Growth />),
+  rescue: (a, b) => {
+    if (!a) return <RescueHome />;
+    if (a === "flow") return b ? <RescueFlow id={b} /> : null;
+    if (a === "say") return <SayIt preset={b} />;
+    if (b) return null;
+    if (a === "changed") return <Changed />;
+    if (a === "over") return <Overwhelmed />;
+    if (a === "breathe") return <Breathe />;
+    if (a === "unsure") return <Unsure />;
+    return a === "trusted" ? <Trusted /> : null;
+  },
 };
 
 const missing = () => (
