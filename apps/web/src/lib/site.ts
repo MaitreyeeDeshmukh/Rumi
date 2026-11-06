@@ -59,4 +59,8 @@ export const ROUTES: readonly string[] = [
   "/kit",
   "/say-it",
   "/settings",
+  "/appointments",
+  "/appointments/new",
+  "/appointment",
+  "/record",
 ];

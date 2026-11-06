@@ -25,6 +25,10 @@ const SPEC_ROUTES = [
   "/kit",
   "/say-it",
   "/settings",
+  "/appointments",
+  "/appointments/new",
+  "/appointment",
+  "/record",
 ];
 
 describe("PAGES (spec 4.8)", () => {
