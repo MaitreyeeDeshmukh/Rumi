@@ -427,31 +427,42 @@ export function CallScreen({
                     <label htmlFor="practice-answer" className="font-bold">
                       {PRACTICE.answerLabel}
                     </label>
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-end gap-2">
                       <textarea
                         id="practice-answer"
                         ref={input}
-                        rows={2}
-                        className={`${fieldControlClass} min-w-0 flex-1`}
+                        rows={1}
+                        className={`${fieldControlClass} min-h-12 min-w-0 flex-1 resize-none`}
                         value={text}
                         disabled={paused || leaving}
                         onChange={(e) => {
                           setText(e.target.value);
                           if (status === PRACTICE.blank) setStatus("");
                         }}
+                        onKeyDown={(e) => {
+                          // Enter sends, Shift+Enter adds a line, and a key that only finishes a word (IME) is left alone.
+                          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            if (!paused && !leaving && !busy) void send();
+                          }
+                        }}
                       />
                       {canListen() ? (
                         <Button kind="secondary" onClick={mic} disabled={paused || leaving} aria-pressed={listening}>
                           {listening ? <MicOff aria-hidden="true" className={icon} /> : <Mic aria-hidden="true" className={icon} />}
-                          {listening ? PRACTICE.micStop : PRACTICE.micStart}
+                          <span className="sr-only">{listening ? PRACTICE.micStop : PRACTICE.micStart}</span>
                         </Button>
                       ) : null}
+                      <Button kind={paused ? "secondary" : "primary"} type="submit" arrow disabled={paused || leaving} loading={busy}>
+                        {PRACTICE.send}
+                      </Button>
                     </div>
                   </>
                 )}
                 <p role="status" className="note m-0 min-h-6">
                   {line}
                 </p>
+                {isLast ? (
                 <Button
                   kind={paused ? "secondary" : "primary"}
                   type="submit"
@@ -460,8 +471,9 @@ export function CallScreen({
                   disabled={paused || leaving}
                   loading={busy}
                 >
-                  {isLast ? PRACTICE.seeSummary : PRACTICE.send}
+                  {PRACTICE.seeSummary}
                 </Button>
+                ) : null}
               </div>
             </StickyActions>
           </form>
