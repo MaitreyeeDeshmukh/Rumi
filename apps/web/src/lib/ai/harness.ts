@@ -16,6 +16,8 @@
  */
 import { z } from "zod";
 import { factStrings } from "@/features/memory/factText";
+import { recallForRequest, type RecallArgs } from "@/features/memory/recallForRequest";
+import { recallQuery } from "@/features/memory/supermemory";
 import { COMPANION_RE, LIMITS } from "@/features/shared/constants";
 import { isHard, type GuardCode } from "@/features/shared/guards";
 import { FactsRequest } from "@/features/shared/schemas";
@@ -42,6 +44,8 @@ export interface HarnessDeps {
   now?: () => number;
   /** Source of the request id and the prompt nonce (12 hex characters each). */
   rand?: () => string;
+  /** Semantic recall from Supermemory for tasks with `useMemory`. Tests inject a fake; the default is off unless MEMORY_ENABLED=1. Must not throw. */
+  recall?: (a: RecallArgs) => Promise<string[]>;
 }
 
 /** One deadline per request, a cap per call, and a pause so the fallback always has time to answer (07 D18). */
@@ -364,7 +368,9 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
 
   try {
     // 1. same origin, session, limits, declared size, key format
-    await guardRequest(req, { ...routeAuth(), limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
+    const guarded = await guardRequest(req, { ...routeAuth(), limiter: deps.limiter, maxBytes: LIMITS.bodyBytesMax });
+    // The user comes from the verified session, never from the body.
+    const userId = guarded.user?.userId;
 
     // 2. body with a byte cap, then the request schema
     stage = "body";
@@ -459,6 +465,11 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
     const ledger = spec.buildLedger(redacted);
     ev.thin = spec.name === "plan" && ledger.thin;
     const memory = memoryStrings(spec.useMemory, body);
+    if (spec.useMemory && userId !== undefined) {
+      // Semantic recall of the person's stated preferences. Fixed-vocabulary query, 1.5 s cap inside, any failure = no memory.
+      const recalled = await (deps.recall ?? recallForRequest)({ req, userId, task: spec.name, queryText: recallQuery(spec.name, body) }).catch((): string[] => []);
+      for (const m of recalled) if (!memory.includes(m)) memory.push(m);
+    }
     ev.memoryItems = memory.length;
     stage = "prompt";
     const companionName = companionOf(redacted);

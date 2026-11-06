@@ -154,6 +154,17 @@ export function getGroqConfig(): GroqConfig {
   return { apiKey, modelQuality, modelFast };
 }
 
+/**
+ * Supermemory (semantic recall of the persona facts). Off unless MEMORY_ENABLED is "1" AND the key and a tag secret of
+ * 32+ characters are set. getSupermemoryConfig() ignores the switch so an erase still works after it is turned off.
+ */
+export function getSupermemoryConfig(): { apiKey: string; tagSecret: string } | undefined {
+  const key = nonEmpty.safeParse(process.env.SUPERMEMORY_API_KEY);
+  const tag = secret.safeParse(process.env.MEMORY_TAG_SECRET);
+  return key.success && tag.success ? { apiKey: key.data, tagSecret: tag.data } : undefined;
+}
+export const memoryEnabled = (): boolean => process.env.MEMORY_ENABLED === "1" && getSupermemoryConfig() !== undefined;
+
 /** Speech to text (Groq Whisper): the same key as the chat models, with its own model name and a default. */
 export function getGroqSttConfig(): { apiKey: string; model: string } {
   const key = nonEmpty.safeParse(process.env.GROQ_API_KEY);

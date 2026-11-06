@@ -7,6 +7,7 @@ import { StickyActions } from "@/components/ui/sticky-actions";
 import { HOME } from "@/content/dashboard";
 import { PRACTICE } from "@/content/practice";
 import { helpTrend } from "@/features/home/helpLevel";
+import { useMemoryControls } from "@/features/memory/useMemoryControls";
 import { itemsForFocus } from "@/features/practice/labels";
 import { summarizeSession } from "@/features/practice/summarizeSession";
 import type { HelpLevel, PracticeSession, VisitPlan } from "@/features/shared/types";
@@ -32,6 +33,9 @@ export function Summary({
   onReadyAfter: (value: Ready) => void;
   onAgain: () => void;
 }) {
+  // The practice just ended: with memory on, this hook syncs once on mount, so the help level this practice needed (per kind
+  // of question) is saved and mirrored for recall. Facts are ids and levels only, nothing the person typed.
+  useMemoryControls();
   const s = summarizeSession(session, plan);
   const trend = before ? helpTrend(mostHelp(before), mostHelp(session)) : null;
   const items = itemsForFocus(plan, session.focus);
