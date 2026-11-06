@@ -318,6 +318,9 @@ jobs:
     env:
       NEXT_PUBLIC_CONTACT_EMAIL: team@rumi.test
       MOCK_AI: "1"
+      # The k6 script sends no session cookie and CI has no Supabase, so the AI routes must not ask for a signed-in user here.
+      # It is read at build time too, which is why it sits on the job and not only on the start step.
+      NEXT_PUBLIC_AUTH_OPTIONAL: "1"
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: pnpm/action-setup@v4.1.0
