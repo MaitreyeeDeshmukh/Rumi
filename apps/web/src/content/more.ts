@@ -27,6 +27,8 @@ export const MORE_SECTIONS: readonly { href: string; title: string; text: string
   { href: "/home/visits", title: "Your visits", text: "Record a visit and get a short summary. See past visits." },
   { href: "/home/appointments", title: "Appointments", text: "Add appointments, see what is coming up and get a call script." },
   { href: "/home/circles", title: "Circles", text: "Small groups with clear plans. Talking is always optional." },
+  { href: "/home/contacts", title: "Trusted contacts", text: "People you might want to text or call fast." },
+  { href: "/home/growth", title: "My growth", text: "A private record of things you tried. No scores." },
 ];
 
 /** Browser tab titles for each preview route (the first path segment after /home). */
@@ -35,4 +37,6 @@ export const MORE_TITLES: Readonly<Record<string, string>> = {
   visits: "Your visits",
   appointments: "Appointments",
   circles: "Circles",
+  contacts: "Trusted contacts",
+  growth: "My growth",
 };

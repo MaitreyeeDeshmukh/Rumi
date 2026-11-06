@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { AppointmentDetail, AppointmentsList, NewAppointment } from "@/components/more/appointments";
 import { CirclesHome, Comfort, EventDetail, GroupChat, GroupDetail, MeetupPrep } from "@/components/more/circles";
+import { Contacts, Growth } from "@/components/more/you";
 import { MoreHub } from "@/components/more/MoreHub";
 import { NotFound } from "@/components/more/parts";
 import { RecordVisit, VisitDetail, VisitsList } from "@/components/more/visits";
@@ -25,6 +26,8 @@ const ROUTES: Readonly<Record<string, Route>> = {
     if (a === "event") return <EventDetail id={b} />;
     return a === "prep" ? <MeetupPrep id={b} /> : null;
   },
+  contacts: (a) => (a ? null : <Contacts />),
+  growth: (a) => (a ? null : <Growth />),
 };
 
 const missing = () => (
