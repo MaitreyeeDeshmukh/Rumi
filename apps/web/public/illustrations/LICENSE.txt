@@ -1,0 +1,7 @@
+Illustrations in this folder
+
+doodle-*.svg  Open Doodles by Pablo Stanley, https://www.opendoodles.com  (CC0 1.0, public domain)
+peep-*.svg    Open Peeps by Pablo Stanley, https://www.openpeeps.com      (CC0 1.0, public domain)
+
+Recolored to the Rumi palette and optimized with SVGO. No attribution is required under CC0;
+this note is kept as a courtesy.

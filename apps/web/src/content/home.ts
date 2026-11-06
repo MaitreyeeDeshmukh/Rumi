@@ -75,3 +75,20 @@ export const HOME = {
 } as const;
 
 export const EXAMPLE_CAPTION = "Made up";
+
+// Hand-written labels and image text for the illustrated home page. The drawings are decorative,
+// so most images use empty alt text; the hero drawing is described once.
+export const HOME_ART = {
+  heroAlt: "A drawing of a person who sits in a chair with a book and waits.",
+  kicker: {
+    hero: "for your next doctor visit",
+    problem: "why visits are hard",
+    audience: "who Rumi is for",
+    steps: "how it works",
+    different: "what is different",
+    control: "your data",
+    faq: "more answers",
+    final: "start when you want",
+  },
+  credit: "Drawings by Pablo Stanley, from Open Doodles and Open Peeps (CC0).",
+} as const;
