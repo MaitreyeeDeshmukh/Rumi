@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import { getBrowserClient } from "@/lib/supabase/browser";
 import { reportClientError } from "@/lib/telemetry/reportClientError";
 import { LAST_USER_KEY, EMAIL_SENT_KEY } from "./afterAccountDeleted";
-import { createAuthController, INITIAL_AUTH_STATE, type AuthDeps, type AuthState, type UpgradeResult } from "./authController";
+import { createAuthController, INITIAL_AUTH_STATE, type AuthDeps, type AuthResult, type AuthState, type UpgradeResult } from "./authController";
 
 export interface AuthValue extends AuthState {
   /** Manual retry after `degraded` or `offline`. */
@@ -16,6 +16,20 @@ export interface AuthValue extends AuthState {
   ensureSignedIn(): Promise<AuthState>;
   /** Adds an email to this anonymous identity. The reply is the same whether or not the address is already in use. */
   upgradeWithEmail(email: string): Promise<UpgradeResult>;
+  /** Makes an account with an email and a password. A guest keeps its saved data. With `needsConfirmation` the person must follow the emailed link first; the reply never says whether the address was already in use. */
+  signUpWithPassword(email: string, password: string): Promise<AuthResult>;
+  /** Logs in with an email and a password. A reply with `unconfirmed` means the email is not confirmed yet. */
+  signInWithPassword(email: string, password: string): Promise<AuthResult>;
+  /** Signs out of this browser only and forgets the remembered user id. Never throws. */
+  signOut(): Promise<void>;
+  /** Starts the Google redirect. Only offer it when NEXT_PUBLIC_GOOGLE_AUTH is "1" (the provider must be on in the Supabase dashboard). */
+  signInWithGoogle(): Promise<AuthResult>;
+  /** Sends the confirmation email again. One per minute per device. */
+  resendConfirmation(email: string): Promise<UpgradeResult>;
+  /** Sends a password-reset email. The reply is the same for every well-formed address. */
+  requestPasswordReset(email: string): Promise<UpgradeResult>;
+  /** Sets a new password for the signed-in account (the reset link signs the person in). */
+  updatePassword(password: string): Promise<UpgradeResult>;
 }
 
 const storage = (): Storage | null => {
@@ -84,8 +98,20 @@ const browserDeps = (): AuthDeps => ({
     },
   },
   redirectTo: () => window.location.origin,
+  forgetDevice() {
+    emailAskedAt = null;
+    for (const key of [LAST_USER_KEY, EMAIL_SENT_KEY]) {
+      try {
+        storage()?.removeItem(key);
+      } catch {
+        // Blocked storage: nothing of ours is readable either.
+      }
+    }
+  },
   onEnsureRowsFailed: () => reportClientError("ensure_rows_failed"),
 });
+
+const UNAVAILABLE = { ok: false, message: "Accounts are not available right now, so try again later." } as const;
 
 /** Used when no provider is mounted: the app still renders and runs on this device. */
 const NO_PROVIDER: AuthValue = {
@@ -94,6 +120,13 @@ const NO_PROVIDER: AuthValue = {
   retry: () => undefined,
   ensureSignedIn: () => Promise.resolve({ ...INITIAL_AUTH_STATE, status: "degraded" }),
   upgradeWithEmail: () => Promise.resolve({ ok: false, message: "Saving is paused, so email sign-in is not available yet." }),
+  signUpWithPassword: () => Promise.resolve(UNAVAILABLE),
+  signInWithPassword: () => Promise.resolve(UNAVAILABLE),
+  signOut: () => Promise.resolve(),
+  signInWithGoogle: () => Promise.resolve(UNAVAILABLE),
+  resendConfirmation: () => Promise.resolve(UNAVAILABLE),
+  requestPasswordReset: () => Promise.resolve(UNAVAILABLE),
+  updatePassword: () => Promise.resolve(UNAVAILABLE),
 };
 
 const AuthContext = createContext<AuthValue>(NO_PROVIDER);
@@ -109,7 +142,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const retry = useCallback(() => controller.retry(), [controller]);
   const ensureSignedIn = useCallback(() => controller.ensureSignedIn(), [controller]);
   const upgradeWithEmail = useCallback((email: string) => controller.upgradeWithEmail(email), [controller]);
-  const value = useMemo<AuthValue>(() => ({ ...state, retry, ensureSignedIn, upgradeWithEmail }), [state, retry, ensureSignedIn, upgradeWithEmail]);
+  const actions = useMemo(
+    () => ({
+      signUpWithPassword: (email: string, password: string) => controller.signUpWithPassword(email, password),
+      signInWithPassword: (email: string, password: string) => controller.signInWithPassword(email, password),
+      signOut: () => controller.signOut(),
+      signInWithGoogle: () => controller.signInWithGoogle(),
+      resendConfirmation: (email: string) => controller.resendConfirmation(email),
+      requestPasswordReset: (email: string) => controller.requestPasswordReset(email),
+      updatePassword: (password: string) => controller.updatePassword(password),
+    }),
+    [controller],
+  );
+  const value = useMemo<AuthValue>(() => ({ ...state, retry, ensureSignedIn, upgradeWithEmail, ...actions }), [state, retry, ensureSignedIn, upgradeWithEmail, actions]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
