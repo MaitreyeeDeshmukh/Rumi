@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ChoiceCard, ChoiceGroup } from "@/components/ui/choice-card";
 import { Field, fieldControlClass } from "@/components/ui/field";
 import { Segmented } from "@/components/ui/segmented";
+import { ThemeSwatch } from "@/components/ui/theme-swatch";
 import { Sheet } from "@/components/ui/sheet";
 import { Toggle } from "@/components/ui/toggle";
 import { Screen } from "@/components/ui/screen";
@@ -131,12 +132,14 @@ export function SettingsScreen() {
 
           <Group legend={SETTINGS.reading.legend}>
             <Segmented
+              showLabel
               label={SETTINGS.reading.output}
               value={s.outputMode}
               onValueChange={(v) => set("outputMode", v as Settings["outputMode"])}
               options={options(WELCOME.output)}
             />
             <Segmented
+              showLabel
               label={SETTINGS.reading.detail}
               value={s.detail}
               onValueChange={(v) => set("detail", v as Settings["detail"])}
@@ -152,11 +155,13 @@ export function SettingsScreen() {
             >
               {THEMES.map((t) => (
                 <ChoiceCard key={t.id} value={t.id} title={t.label}>
-                  {WELCOME.lookHint[t.id]}
+                  <ThemeSwatch theme={t.id} />
+                  <span className="block">{WELCOME.lookHint[t.id]}</span>
                 </ChoiceCard>
               ))}
             </ChoiceGroup>
             <Segmented
+              showLabel
               label={SETTINGS.look.size}
               value={String(s.textScale)}
               onValueChange={(v) => set("textScale", Number(v) as Settings["textScale"])}
