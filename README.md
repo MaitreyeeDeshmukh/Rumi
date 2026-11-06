@@ -172,6 +172,16 @@ If the database cannot be read, AI stays on and memory sync stays off. The app r
 ### Sentry (optional, off)
 Sentry is not registered by default: it is not installed and nothing sends to it until you do the steps below. The adapter and the `beforeSend` scrubber are in `apps/web/src/lib/telemetry/sentry.ts`. To turn on: `pnpm add @sentry/nextjs`, set `SENTRY_DSN`, and register the reporter as described at the top of that file. It sends the error code, fingerprint, route and release only: no message, request, user or breadcrumbs.
 
+### Accounts: log in, sign up, reset (auth)
+- Pages: `/login`, `/signup` (two steps: email and password, then the emailed 6-digit code) and `/forgot-password` (two steps: email, then code and new password). All are `noindex` and public. `/sign-in` redirects to `/login`. Signed-out visitors to an app screen are sent to `/login?next=...`. `NEXT_PUBLIC_AUTH_OPTIONAL=1` keeps the anonymous-first demo mode.
+- The code is needed once, at sign-up (and for a forgotten password). After that the person logs in with email and password only. No magic links.
+- Sign-up from a guest session (demo mode only) keeps the guest's saved data: the email and password are added to the same user (`updateUser`, confirmed with an `email_change` code).
+- **Email confirmation is ON** (`enable_confirmations = true`). An address that already has an account gets the same screen, so the form cannot be used to find out who has an account. Forgot-password also answers the same for every well-formed address. Resend waits 60 seconds.
+- **Custom SMTP is required.** The built-in Supabase sender allows only a few emails per hour. In the dashboard: Authentication, SMTP Settings.
+- **Email templates** (Authentication, Email Templates) must show the code, not a link. Confirm signup: `Your Rumi code is {{ .Token }}`. Reset password: `Your Rumi code to reset your password is {{ .Token }}`. Change email address (demo mode guests): `Your Rumi code is {{ .Token }}`. Keep the code length at 6 (Authentication, Sign In / Providers, Email OTP length).
+- Dashboard: Email on, Confirm email on, minimum password length 8. No redirect URLs are needed for codes.
+- Passwords are sent only to Supabase Auth. They are never stored, logged or placed in an address. Errors are one literal sentence each (`mapAuthFormError`).
+
 ### One-time setup the code cannot do
 - Uptime monitor (see above). Required.
 - Vercel Firewall: add a rate-limit rule for `POST /api/client-error`, for example 20 requests per minute per IP, action Deny or Challenge. The app also limits it, but only per server instance, so the platform rule is the real flood control.

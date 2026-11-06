@@ -21,6 +21,10 @@ export type ErrorKind =
   | "foreign_key"
   | "check"
   | "email_exists"
+  | "invalid_credentials"
+  | "weak_password"
+  | "same_password"
+  | "email_not_confirmed"
   | "unknown";
 
 const KIND_BY_CODE = new Map<string, ErrorKind>(Object.entries({
@@ -40,6 +44,10 @@ const KIND_BY_CODE = new Map<string, ErrorKind>(Object.entries({
   email_exists: "email_exists",
   user_already_exists: "email_exists",
   identity_already_exists: "email_exists",
+  invalid_credentials: "invalid_credentials",
+  weak_password: "weak_password",
+  same_password: "same_password",
+  email_not_confirmed: "email_not_confirmed",
   "42501": "consent",
   "23505": "unique",
   "23503": "foreign_key",
@@ -58,6 +66,8 @@ const MESSAGE_PATTERNS: ReadonlyArray<readonly [RegExp, ErrorKind]> = [
   [/invalid refresh token|refresh token (?:not found|already used)/, "refresh_failed"],
   [/anonymous sign-?ins are disabled/, "disabled"],
   [/captcha/, "captcha"],
+  [/invalid login credentials/, "invalid_credentials"],
+  [/email not confirmed/, "email_not_confirmed"],
   [/failed to fetch|fetch failed|networkerror|network request failed|load failed/, "network"],
 ];
 
@@ -105,8 +115,31 @@ const BY_KIND: Record<ErrorKind, Mapped> = {
   foreign_key: { code: "conflict", message: "The item it belongs to is gone, so it was not saved." },
   check: { code: "bad_input", message: "That value is not allowed, so it was not saved." },
   email_exists: { code: "bad_input", message: "That email could not be used." },
+  invalid_credentials: { code: "unauthorized", message: "That email or password is not right." },
+  weak_password: { code: "bad_input", message: "Choose a stronger password with at least 8 characters." },
+  same_password: { code: "bad_input", message: "Choose a password you have not used before." },
+  email_not_confirmed: { code: "unauthorized", message: "Your email is not confirmed yet, so check your inbox." },
   unknown: { code: "internal", message: "Something went wrong on our side, so try again later." },
 };
 
 /** Never throws and never returns text from the error itself. */
 export const mapSupabaseError = (e: unknown): Mapped => BY_KIND[classifyError(e)];
+
+const FORM_DEFAULT = "Something went wrong on our side, so try again later.";
+
+/** Sentences for the log-in and sign-up forms, where "saving is paused" would be the wrong thing to say. */
+const FORM_BY_KIND: Partial<Record<ErrorKind, string>> = {
+  invalid_credentials: BY_KIND.invalid_credentials.message,
+  weak_password: BY_KIND.weak_password.message,
+  same_password: BY_KIND.same_password.message,
+  email_not_confirmed: BY_KIND.email_not_confirmed.message,
+  // Does not confirm that an address has an account.
+  email_exists: "Check your email, or try signing in.",
+  rate_limited: "There were too many tries, so wait a while and try again.",
+  email_rate_limited: "Too many emails were sent, so try again in an hour.",
+  network: "I could not reach the server, so try again later.",
+  captcha: "The safety check failed, so try again.",
+};
+
+/** One literal sentence for a failed log-in or sign-up. Never throws and never returns text from the error itself. */
+export const mapAuthFormError = (e: unknown): string => FORM_BY_KIND[classifyError(e)] ?? FORM_DEFAULT;

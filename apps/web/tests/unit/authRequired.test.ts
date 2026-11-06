@@ -27,13 +27,13 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("return path (?next=)", () => {
   it.each(["/home", "/practice?item=2", "/kit#top"])("keeps the same-site path %s", (p) => expect(safeNext(p)).toBe(p));
-  it.each([null, undefined, "", "home", "//evil.test", "///evil.test/x", "https://evil.test", "/\\evil.test", "/\\/evil.test", "javascript:alert(1)", "/a\nb", "/sign-in", "/sign-in?next=/home", "/auth/callback", `/${"a".repeat(600)}`])(
+  it.each([null, undefined, "", "home", "//evil.test", "///evil.test/x", "https://evil.test", "/\\evil.test", "/\\/evil.test", "javascript:alert(1)", "/a\nb", "/sign-in", "/sign-in?next=/home", "/login", "/login?next=/home", "/signup", "/forgot-password", "/auth/callback", `/${"a".repeat(600)}`])(
     "refuses %j",
     (p) => expect(safeNext(p)).toBeNull(),
   );
   it("signInUrl carries a safe path and drops an unsafe one", () => {
-    expect(signInUrl("/settings?x=1")).toBe("/sign-in?next=%2Fsettings%3Fx%3D1");
-    expect(signInUrl("//evil.test")).toBe("/sign-in");
+    expect(signInUrl("/settings?x=1")).toBe("/login?next=%2Fsettings%3Fx%3D1");
+    expect(signInUrl("//evil.test")).toBe("/login");
   });
   it("APP_ROUTES lists exactly the folders of the (app) route group", () => {
     const dirs = readdirSync(join(__dirname, "../../src/app/(app)"), { withFileTypes: true })
@@ -42,7 +42,7 @@ describe("return path (?next=)", () => {
     expect([...APP_ROUTES].sort()).toEqual(dirs.sort());
     expect(isAppPath("/home")).toBe(true);
     expect(isAppPath("/kit/abc")).toBe(true);
-    expect(["/", "/sign-in", "/auth/callback", "/privacy", "/safety", "/accessibility", "/help", "/homework"].some(isAppPath)).toBe(false);
+    expect(["/", "/login", "/signup", "/forgot-password", "/sign-in", "/privacy", "/safety", "/accessibility", "/help", "/homework"].some(isAppPath)).toBe(false);
   });
 });
 
@@ -103,7 +103,6 @@ describe("controller when sign-up is required", () => {
     const auth = {
       getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
       signInAnonymously: vi.fn(),
-      signInWithOtp: vi.fn().mockResolvedValue({ data: {}, error: null }),
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
       updateUser: vi.fn(),
     };
@@ -139,23 +138,5 @@ describe("controller when sign-up is required", () => {
     s.controller.start();
     await s.controller.ensureSignedIn();
     expect(s.auth.signInAnonymously).toHaveBeenCalledTimes(1);
-  });
-
-  it("signInWithEmail sends a sign-up-or-sign-in link to /auth/callback, then holds a 60 second cooldown", async () => {
-    const s = setup(false);
-    await expect(s.controller.signInWithEmail(" me@example.com ")).resolves.toEqual({ ok: true });
-    expect(s.auth.signInWithOtp).toHaveBeenCalledWith({ email: "me@example.com", options: { shouldCreateUser: true, emailRedirectTo: "https://rumi.test/auth/callback" } });
-    expect((await s.controller.signInWithEmail("me@example.com")).ok).toBe(false);
-    expect(s.auth.signInWithOtp).toHaveBeenCalledTimes(1);
-    s.tick(60_000);
-    await expect(s.controller.signInWithEmail("me@example.com")).resolves.toEqual({ ok: true });
-  });
-
-  it("rejects a bad address before any call, and never shows provider text", async () => {
-    const s = setup(false);
-    expect((await s.controller.signInWithEmail("nope")).ok).toBe(false);
-    expect(s.auth.signInWithOtp).not.toHaveBeenCalled();
-    s.auth.signInWithOtp.mockRejectedValue(new TypeError("secret provider text"));
-    expect(JSON.stringify(await s.controller.signInWithEmail("me@example.com"))).not.toContain("secret");
   });
 });
