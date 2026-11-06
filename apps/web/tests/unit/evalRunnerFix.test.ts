@@ -159,7 +159,7 @@ describe("E-6: exit codes", () => {
     expect(r.stderr).toMatch(/--dry --release is refused/);
   });
   it("end to end: a live run with MOCK_AI set is refused and exits 1, before any request", { timeout: 60_000 }, () => {
-    const r = spawnSync(process.execPath, ["tests/evals/cli.mjs", "--k=1", "--arm=harness"], { cwd: root, encoding: "utf8", env: { ...process.env, MOCK_AI: "1" } });
+    const r = spawnSync(process.execPath, ["tests/evals/cli.mjs", "--k=1", "--arm=harness"], { cwd: root, encoding: "utf8", env: { ...process.env, MOCK_AI: "1", GROQ_API_KEY: "gsk_dummy_never_sent" } });
     expect(r.status).toBe(1);
     expect(r.stdout + r.stderr).toMatch(/MOCK_AI is set/);
   });

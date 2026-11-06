@@ -20,6 +20,7 @@ import {
   formatEstimate,
   getCommit,
   liveGuard,
+  liveSkipReason,
   loadEnvLocal,
   loadLiveRun,
   writeHumanSample,
@@ -30,6 +31,7 @@ import {
   type Session,
 } from './runner';
 import { aggregate } from './scorers/aggregate';
+import { liveReport } from './live';
 import { DEFAULT_CANARY } from './scorers/leak';
 import { renderReport, type ReportInput } from './scorers/report';
 
@@ -47,10 +49,19 @@ const reports: ReportInput[] = [];
 const records: RunRecord[] = [];
 const sessions: Session[] = [];
 
+// A live run needs the key: without it, say so in one line and stop with exit 0 (cli.mjs reads `skipped` from the status file).
+if (!flags.dry) loadEnvLocal();
+const skipReason = flags.dry ? undefined : liveSkipReason(process.env);
+if (skipReason) {
+  print([skipReason]);
+  if (process.env.EVAL_STATUS_FILE) writeFileSync(process.env.EVAL_STATUS_FILE, JSON.stringify({ verdicts: [], expected: 0, skipped: true }));
+  it.skip(skipReason, () => undefined);
+}
+
 if (flags.dry) print(['DRY RUN, NOT MEASUREMENT: replaying recorded fixture replies. Nothing here measures the product and nothing is written.']);
 
-for (const arm of flags.arms) {
-  describe(`eval arm: ${arm} (${mode}, k=${flags.k})`, () => {
+for (const arm of skipReason ? [] : flags.arms) {
+  describe.concurrent(`eval arm: ${arm} (${mode}, k=${flags.k})`, () => {
     const cases = buildCases(data, arm);
     let session: Session;
     // The only model ids this run may have used: from config (never printed); the dry fixtures use the two Groq ids of 06 section 0.
@@ -61,7 +72,6 @@ for (const arm of flags.arms) {
       if (flags.dry) {
         run = makeDryRun(flags.fault, arm);
       } else {
-        loadEnvLocal();
         const reasons = liveGuard(process.env);
         if (reasons.length > 0) throw new Error(`Refusing to run live:\n- ${reasons.join('\n- ')}`);
         process.env.EVAL_CANARY = canary;
@@ -104,6 +114,7 @@ afterAll(() => {
   const common = commonSummaries(records);
   for (const rep of reports) rep.common = common.get(rep.arm);
   print(renderReport(reports, { mode, k: flags.k, commit }));
+  if (!flags.dry) print(liveReport());
   if (process.env.EVAL_STATUS_FILE) writeFileSync(process.env.EVAL_STATUS_FILE, JSON.stringify({ verdicts: reports.map((r) => r.summary.verdict), expected: flags.arms.length }));
   if (flags.dry) return;
   for (const rec of records) {

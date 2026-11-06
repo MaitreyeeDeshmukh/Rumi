@@ -17,6 +17,7 @@ const base: AiEvent = {
   memoryItems: 2,
   inTokens: 812,
   outTokens: 190,
+  costMicroUsd: 88,
   ms: 4123,
   errorCode: "ai_unavailable",
 };
@@ -50,6 +51,7 @@ describe("logEvent", () => {
       memoryItems: 2,
       inTokens: 812,
       outTokens: 190,
+      costMicroUsd: 88,
       ms: 4123,
       errorCode: "ai_unavailable",
       providerKind: "none",
@@ -89,7 +91,7 @@ describe("logEvent", () => {
     expect(parsed.attempts).toBe(0);
     expect(parsed.inTokens).toBe(0);
     expect(Object.keys(parsed).sort()).toEqual(
-      ["type", "id", "task", "promptVersion", "outcome", "degraded", "attempts", "tier", "redactions", "injectionHits", "thin", "guardHits", "memoryItems", "inTokens", "outTokens", "ms", "errorCode", "providerKind"].sort(),
+      ["type", "id", "task", "promptVersion", "outcome", "degraded", "attempts", "tier", "redactions", "injectionHits", "thin", "guardHits", "memoryItems", "inTokens", "outTokens", "costMicroUsd", "ms", "errorCode", "providerKind"].sort(),
     );
   });
 

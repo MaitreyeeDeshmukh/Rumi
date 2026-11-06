@@ -8,6 +8,8 @@ export default defineConfig({
     environment: "node",
     testTimeout: 60_000,
     hookTimeout: 60_000,
+    // Live cases of one arm run four at a time (tests/evals/live.ts matches telemetry to requests by id, so this is safe).
+    maxConcurrency: 4,
   },
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
 });

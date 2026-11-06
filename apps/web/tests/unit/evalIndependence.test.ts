@@ -9,11 +9,13 @@ const sources = (dir: string): string[] =>
     if (e.isDirectory()) return e.name === "runs" ? [] : sources(p);
     return /\.(ts|mjs)$/.test(e.name) ? [p] : [];
   });
+/** The live adapter is the one file that must call the system it measures; the scorers, runner and dry replay still may not. */
+const ADAPTER = "live.ts";
 const importsOf = (file: string): string[] =>
   [...readFileSync(file, "utf8").matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
 
 describe("D33: the measurement does not share code with the thing it measures", () => {
-  const files = sources(root);
+  const files = sources(root).filter((f) => path.basename(f) !== ADAPTER);
   it("scans the eval sources", () => {
     expect(files.length).toBeGreaterThan(20);
   });
@@ -30,5 +32,19 @@ describe("D33: the measurement does not share code with the thing it measures", 
         expect(spec, `${path.relative(root, f)} imports ${spec}`).toMatch(/src\/features\/shared\/(constants|schemas|task)$/);
       }
     }
+  });
+});
+
+describe("the live adapter is the only exception", () => {
+  it("live.ts exists, and nothing else under tests/evals imports it except the runner (by name) and run.eval.ts (its end-of-run report)", () => {
+    const all = sources(root);
+    expect(all.some((f) => path.basename(f) === ADAPTER)).toBe(true);
+    for (const f of all.filter((x) => path.basename(x) !== ADAPTER)) {
+      const importsLive = importsOf(f).some((s) => /(^|\/)live$/.test(s));
+      if (importsLive) expect(["run.eval.ts"], path.relative(root, f)).toContain(path.basename(f));
+    }
+  });
+  it("no scorer imports the adapter", () => {
+    for (const f of sources(path.join(root, "scorers"))) expect(importsOf(f).some((s) => /live/.test(s)), f).toBe(false);
   });
 });

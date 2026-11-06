@@ -32,6 +32,8 @@ export interface AiEvent {
   memoryItems: number;
   inTokens: number;
   outTokens: number;
+  /** Estimated cost of all provider calls of this request in millionths of a US dollar (list prices, see cost.ts). A number, never text. */
+  costMicroUsd: number;
   ms: number;
   errorCode?: EventErrorCode;
   /** The pipeline stage that failed, set when a request ended with an error or an unexpected exception. */
@@ -84,6 +86,7 @@ export function logEvent(event: AiEvent): void {
     memoryItems: count(e.memoryItems),
     inTokens: count(e.inTokens),
     outTokens: count(e.outTokens),
+    costMicroUsd: count(e.costMicroUsd),
     ms: count(e.ms),
     ...(e.errorCode === undefined ? {} : { errorCode: oneOf(e.errorCode, ERROR_CODES, "unknown") }),
     providerKind: oneOf(e.providerKind, PROVIDER_KINDS, "none"),
