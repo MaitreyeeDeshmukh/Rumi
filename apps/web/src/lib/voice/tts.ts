@@ -7,10 +7,10 @@
  * The error carries a kind and nothing the provider said.
  */
 import { ConfigError, getCartesiaConfig } from "@/lib/env";
+import { DEFAULT_VOICE, voiceIdFor, type VoiceKey } from "./voices";
 
 const CARTESIA_URL = "https://api.cartesia.ai/tts/bytes";
 const CARTESIA_MODEL = "sonic-3.6";
-const CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
 const TTS_TIMEOUT_MS = 10_000;
 
 export type TtsErrorKind = "config" | "timeout" | "http" | "empty";
@@ -30,10 +30,12 @@ interface Speech {
 interface SynthesizeDeps {
   fetchFn: typeof fetch;
   timeoutMs?: number;
+  /** One of the listed voices (see voices.ts). Default: the first. */
+  voice?: VoiceKey;
 }
 
 /** One request to Cartesia. Only the text and fixed settings are sent: no session, address or other user data. */
-export async function synthesize(text: string, { fetchFn, timeoutMs = TTS_TIMEOUT_MS }: SynthesizeDeps): Promise<Speech> {
+export async function synthesize(text: string, { fetchFn, timeoutMs = TTS_TIMEOUT_MS, voice = DEFAULT_VOICE }: SynthesizeDeps): Promise<Speech> {
   let config;
   try {
     config = getCartesiaConfig();
@@ -50,7 +52,7 @@ export async function synthesize(text: string, { fetchFn, timeoutMs = TTS_TIMEOU
       body: JSON.stringify({
         model_id: CARTESIA_MODEL,
         transcript: text,
-        voice: { id: CARTESIA_VOICE_ID },
+        voice: { id: voiceIdFor(voice) },
         output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128000 },
         language: "en",
       }),

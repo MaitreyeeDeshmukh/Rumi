@@ -10,6 +10,7 @@
  */
 import { memoryCodeFor } from '@/features/memory/actions';
 import { toWireFacts } from '@/features/memory/persona';
+import type { VoiceKey } from '@/lib/voice/voices';
 import {
   PlanReply,
   PracticeReply,
@@ -97,14 +98,17 @@ const SPEAK_MAX_BYTES = 5_000_000;
  * voice. Never throws. Play it with `const url = URL.createObjectURL(blob); new Audio(url).play()` and call
  * `URL.revokeObjectURL(url)` when it ends. The text is spoken as given: the crisis check is not run here.
  */
-export async function speakCall(text: string, { fetchFn = (input, init) => fetch(input, init) }: { fetchFn?: typeof fetch } = {}): Promise<Blob | null> {
+export async function speakCall(
+  text: string,
+  { fetchFn = (input, init) => fetch(input, init), voice }: { fetchFn?: typeof fetch; voice?: VoiceKey } = {},
+): Promise<Blob | null> {
   try {
     const res = await fetchFn('/api/voice/tts', {
       method: 'POST',
       credentials: 'same-origin',
       signal: AbortSignal.timeout(SPEAK_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(voice === undefined ? { text } : { text, voice }),
     });
     if (!res.ok || !(res.headers.get('content-type') ?? '').startsWith('audio/')) return null;
     const blob = await res.blob();
