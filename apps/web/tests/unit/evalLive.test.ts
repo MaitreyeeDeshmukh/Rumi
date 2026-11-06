@@ -374,4 +374,3 @@ describe("response headers for the leak scan", () => {
     expect(JSON.stringify(obs.headers).toLowerCase()).not.toContain("http");
   });
 });
-});

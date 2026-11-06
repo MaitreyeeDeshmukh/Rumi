@@ -68,7 +68,7 @@ describe("runTask: security guard comes first", () => {
     const third = await runTask(spec, post(okBody(), same), deps(provider, { limiter }));
     expect(third.status).toBe(429);
     expect(Number(third.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
-    expect(await bodyOf(third)).toEqual({ error: { code: "rate_limited", message: "That was too many tries. Wait one minute and try again.", requestId: expect.any(String) } });
+    expect(await bodyOf(third)).toEqual({ error: { code: "rate_limited", message: "That was too many tries. Please try again later or tomorrow.", requestId: expect.any(String) } });
     expect(provider.calls).toHaveLength(2);
     expect(log.filter((s) => s === "request")).toHaveLength(4); // two requests, each parsed twice; the third never reached the schema
   });
@@ -1025,7 +1025,7 @@ describe("runTask: provider failures, tier swap, deadline, breaker (07 D18)", ()
     const { spec } = fakeTask();
     const down: Scripted[] = Array.from({ length: 200 }, () => providerError("http"));
     const p = fakeProvider(down);
-    const d = deps(p);
+    const d = deps(p, { limiter: createRateLimiter({ limits: { perUnknownIp: 1000 } }) }); // this test is about the provider, not the address limit
     for (let i = 0; i < 40; i++) {
       const res = await runTask(spec, post(okBody()), d);
       expect(res.status).toBe(200);
