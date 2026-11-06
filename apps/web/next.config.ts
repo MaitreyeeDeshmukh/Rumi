@@ -20,6 +20,8 @@ const baseHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Parallel test runs set NEXT_DIST_DIR so their builds do not overwrite each other. Default stays .next.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

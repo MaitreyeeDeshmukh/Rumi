@@ -113,10 +113,29 @@ export const useApp = () => useContext(AppCtx) as any;
 
 // ---------- Speech + clipboard ----------
 export function canSpeak() { return typeof window !== 'undefined' && 'speechSynthesis' in window && typeof (window as any).SpeechSynthesisUtterance === 'function'; }
+// Whether Rumi is reading something aloud right now. Any screen can show a Stop control from this.
+let speakingNow = false;
+let speakId = 0;
+const speakListeners = new Set<() => void>();
+function setSpeaking(v: boolean) { if (speakingNow === v) return; speakingNow = v; speakListeners.forEach((f) => f()); }
+export function stopSpeaking() { speakId++; try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) { } setSpeaking(false); }
+export function useSpeaking(): boolean {
+  const [v, setV] = useState(speakingNow);
+  useEffect(() => { const f = () => setV(speakingNow); speakListeners.add(f); f(); return () => { speakListeners.delete(f); }; }, []);
+  return v;
+}
 export function speakText(text: string, toast: (m: string) => void) {
   if (!canSpeak()) { toast("Read aloud isn't supported in this browser."); return; }
-  try { window.speechSynthesis.cancel(); const u = new (window as any).SpeechSynthesisUtterance(text); u.rate = 0.95; window.speechSynthesis.speak(u); }
-  catch (e) { toast("Read aloud isn't available here."); }
+  try {
+    window.speechSynthesis.cancel();
+    const id = ++speakId;
+    const u = new (window as any).SpeechSynthesisUtterance(text); u.rate = 0.95;
+    // Only the newest utterance may clear the flag (cancel() ends the previous one a moment later).
+    u.onend = u.onerror = () => { if (id === speakId) setSpeaking(false); };
+    setSpeaking(true);
+    window.speechSynthesis.speak(u);
+  }
+  catch (e) { setSpeaking(false); toast("Read aloud isn't available here."); }
 }
 export function copyText(text: string, toast: (m: string) => void, el?: HTMLTextAreaElement | null) {
   const fallback = () => { if (el) { el.focus(); el.select(); } toast("Copy isn't available here. The text is selected so you can copy it yourself."); };
@@ -295,8 +314,9 @@ export function Empty({ icon, title, body, action }: any) {
 
 export function ReadAloud({ text, label = 'Read aloud', small }: any) {
   const { s, speak } = useApp();
+  const speaking = useSpeaking();
   if (!s.settings.readAloud) return null;
-  return <button type="button" className={'btn btn-ghost' + (small ? ' btn-sm' : '')} onClick={() => speak(text)}><Icon name="volume" size={18} />{label}</button>;
+  return <button type="button" className={'btn btn-ghost' + (small ? ' btn-sm' : '')} onClick={() => (speaking ? stopSpeaking() : speak(text))}><Icon name={speaking ? 'stop' : 'volume'} size={18} />{speaking ? 'Stop reading' : label}</button>;
 }
 
 export function Sheet({ title, onClose, children }: any) {

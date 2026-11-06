@@ -1,16 +1,19 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { SitePage } from "@/components/SitePage";
+import { SiteChrome } from "@/components/nav/SiteChrome";
+import { ButtonLink } from "@/components/ui/button";
+import { NOT_FOUND } from "@/content/pages";
 
-export const metadata: Metadata = { title: "Page not found", description: "We could not find that page." };
+export const metadata: Metadata = { title: NOT_FOUND.title, description: NOT_FOUND.description };
 
 export default function NotFound() {
   return (
-    <section className="page center">
-      <h1>We can&apos;t find that page</h1>
-      <p className="intro">The link may be old, or the address may have a typo. Nothing is wrong on your side.</p>
-      <Link className="btn btn-primary" href="/">
-        Go to Home
-      </Link>
-    </section>
+    <SiteChrome>
+      <SitePage title={NOT_FOUND.h1} lead={NOT_FOUND.lead}>
+        <ButtonLink kind="primary" arrow href="/">
+          {NOT_FOUND.primary}
+        </ButtonLink>
+      </SitePage>
+    </SiteChrome>
   );
 }

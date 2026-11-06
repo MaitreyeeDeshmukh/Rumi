@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PRIVACY_INTRO, PRIVACY_SECTIONS } from "@/app/privacy/copy";
+import { PRIVACY_INTRO, PRIVACY_SECTIONS } from "@/app/(site)/privacy/copy";
 import { MEMORY_COPY } from "@/features/memory/consentCopy";
 import { countWords, literalLint, MAX_WORDS } from "@/lib/literalLint";
 

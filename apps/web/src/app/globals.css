@@ -1,33 +1,71 @@
 @import "tailwindcss";
 
-:root {
-  --bg: #f8f7f4;
-  --surface: #ffffff;
-  --ink: #343345;
-  --muted: #5e5c70;
-  --line: #e6e2eb;
-  --primary: #66558d;
-  --primary-ink: #ffffff;
-  --lav: #eae5f3;
-  --lav-strong: #c9bce6;
-  --focus: #2f5fa8;
+/* Themes. Applied through data-app-theme (first-paint script and the Look switcher). */
+:root,[data-app-theme="soft"]{--bg:#F8F7F4;--surface:#FFFFFF;--ink:#343345;--muted:#5E5C70;--line:#E6E2EB;--line-strong:#8B87A0;--primary:#66558D;--primary-ink:#FFFFFF;--primary-soft:#EAE5F3;--lav:#EAE5F3;--lav-strong:#C9BCE6;--sage:#DCEBE5;--blue:#DCEAF4;--apricot:#F5E8DB;--success:#386B5E;--danger:#A23B3B;--danger-ink:#FFFFFF;--warn:#8A5A1F;--focus:#2F5FA8;--bw:1px;--shadow:0 1px 2px rgba(52,51,69,.05),0 8px 24px -12px rgba(52,51,69,.14);--call:#211F2C;--call-2:#2C2939;--call-ink:#F2F0F7;--call-muted:#C2BED3;--mascot-ink:#343345;color-scheme:light}
+[data-app-theme="contrast"]{--bg:#FFFFFF;--surface:#FFFFFF;--ink:#111019;--muted:#2E2C3A;--line:#4B4860;--line-strong:#111019;--primary:#3F2F6B;--primary-ink:#FFFFFF;--primary-soft:#E4DDF2;--lav:#E4DDF2;--lav-strong:#3F2F6B;--sage:#D3E7DE;--blue:#D3E4F2;--apricot:#F3E1CE;--success:#1F4D3E;--danger:#8A1F1F;--danger-ink:#FFFFFF;--warn:#6B4210;--focus:#0046C7;--bw:2px;--shadow:none;--call:#0E0D14;--call-2:#1C1A26;--call-ink:#FFFFFF;--call-muted:#E2DFEC;--mascot-ink:#FFFFFF;color-scheme:light}
+[data-app-theme="low"]{--bg:#17161E;--surface:#22212C;--ink:#ECEAF2;--muted:#B8B5C8;--line:#34323F;--line-strong:#7A768F;--primary:#BBAAE8;--primary-ink:#1B1726;--primary-soft:#352F4A;--lav:#2F2A44;--lav-strong:#BBAAE8;--sage:#1F3530;--blue:#1E2E3B;--apricot:#3A2E24;--success:#8FCBB5;--danger:#F0A3A3;--danger-ink:#2A1212;--warn:#E9C38F;--focus:#9CC3FF;--bw:1px;--shadow:none;--call:#100F16;--call-2:#1D1B26;--call-ink:#F2F0F7;--call-muted:#C2BED3;--mascot-ink:#1B1726;color-scheme:dark}
+
+/* Tokens that do not change with the theme. */
+:root{
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;--space-7:48px;--space-8:64px;
+  --tap:44px;--measure:66ch;--main-max:64rem;--tabbar-h:57px;--appbar-h:0px;--sticky-h:0px;
+  --z-base:0;--z-nav:20;--z-call:40;--z-sheet:50;--z-crisis:60;
+  --dur-fast:150ms;--dur-base:250ms;--ease:cubic-bezier(.2,.7,.2,1);
+}
+html{font-size:calc(100% * var(--scale,1))}
+/* The native page scrollbar is hidden (it would take layout width); OverlayScrollbar draws a thin thumb on top. */
+html{scrollbar-width:none}
+html::-webkit-scrollbar{display:none}
+.overlay-scrollbar{position:fixed;top:0;right:0;z-index:var(--z-nav);width:16px;height:0;opacity:0;pointer-events:none;transition:opacity 300ms var(--ease)}
+.overlay-scrollbar::after{content:"";position:absolute;top:0;bottom:0;right:3px;width:4px;border-radius:2px;background:color-mix(in srgb,var(--ink) 65%,transparent)}
+.overlay-scrollbar[data-showing="true"]{opacity:1;pointer-events:auto}
+.overlay-scrollbar[data-empty="true"]{display:none}
+html[data-reduced-motion="true"] .overlay-scrollbar{transition:none}
+@media (prefers-reduced-motion: reduce){.overlay-scrollbar{transition:none}}
+/* Windows high contrast replaces author backgrounds, so the thumb would vanish: bring back the native scrollbar. */
+@media (forced-colors: active){html{scrollbar-width:auto}html::-webkit-scrollbar{display:block}.overlay-scrollbar{display:none}}
+html[data-reduced-motion="true"] *,html[data-reduced-motion="true"] *::before,html[data-reduced-motion="true"] *::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+
+/* Tailwind utilities (bg-surface, text-ink, border-line ...) follow the theme variables. */
+@theme static{--radius-card:16px;--radius-control:14px}
+@theme inline{
+  --color-bg:var(--bg);
+  --color-surface:var(--surface);
+  --color-ink:var(--ink);
+  --color-muted-ink:var(--muted);
+  --color-line:var(--line);
+  --color-line-strong:var(--line-strong);
+  --color-primary:var(--primary);
+  --color-primary-ink:var(--primary-ink);
+  --color-primary-soft:var(--primary-soft);
+  --color-lav:var(--lav);
+  --color-sage:var(--sage);
+  --color-blue:var(--blue);
+  --color-apricot:var(--apricot);
+  --color-danger:var(--danger);
+  --color-danger-ink:var(--danger-ink);
+  --color-success:var(--success);
+  --color-warn:var(--warn);
+  --color-focus:var(--focus);
+  /* shadcn names */
+  --color-background:var(--bg);
+  --color-foreground:var(--ink);
+  --color-card:var(--surface);
+  --color-card-foreground:var(--ink);
+  --color-popover:var(--surface);
+  --color-popover-foreground:var(--ink);
+  --color-primary-foreground:var(--primary-ink);
+  --color-muted:var(--lav);
+  --color-muted-foreground:var(--muted);
+  --color-accent:var(--primary-soft);
+  --color-border:var(--line);
+  --color-input:var(--line-strong);
+  --color-ring:var(--focus);
+  --color-destructive:var(--danger);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17161e;
-    --surface: #22212c;
-    --ink: #eceaf2;
-    --muted: #b8b5c8;
-    --line: #34323f;
-    --primary: #bbaae8;
-    --primary-ink: #1b1726;
-    --lav: #2f2a44;
-    --lav-strong: #bbaae8;
-    --focus: #9cc3ff;
-  }
-}
-
+/* Element defaults live in the base layer so Tailwind utilities (button kinds, dialogs) can override them. */
+@layer base {
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
@@ -45,47 +83,57 @@ body {
   overflow-wrap: anywhere;
 }
 h1, h2, h3 { font-family: var(--font-display), var(--font-body), sans-serif; line-height: 1.15; margin: 0 0 .5rem; text-wrap: balance; }
-h1 { font-size: clamp(1.7rem, 6vw, 2.6rem); }
-h2 { font-size: 1.3rem; margin-top: 1.5rem; }
-h3 { font-size: 1.05rem; }
+h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); font-weight: 700; }
+h2 { font-size: 1.4rem; font-weight: 650; margin-top: 1.5rem; }
+h3 { font-size: 1.1rem; font-weight: 650; }
 p { margin: 0 0 1rem; }
+main p { max-width: var(--measure); }
 img, svg, video { max-width: 100%; }
-a { color: var(--primary); text-underline-offset: 3px; }
+a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
-main { flex: 1; width: 100%; max-width: 44rem; margin: 0 auto; padding: 1.25rem 1rem 2rem; min-width: 0; }
+main { flex: 1; width: 100%; max-width: var(--main-max); margin: 0 auto; padding: 1.25rem 1rem 2rem; min-width: 0; }
 main:focus { outline: none; }
+/* Focus and anchors must not land under the sticky app bar, the tab bar or a sticky action bar (WCAG 2.4.11). */
+html { scroll-padding-top: calc(var(--appbar-h) + 1rem); }
+@media (max-width: 1023.98px) { html { scroll-padding-bottom: calc(var(--tabbar-h) + var(--sticky-h) + env(safe-area-inset-bottom) + 1rem); } }
+html:has(main[data-no-tabs]) { scroll-padding-bottom: calc(var(--sticky-h) + env(safe-area-inset-bottom) + 1rem); }
+/* Phones: the fixed tab bar covers the bottom of the page, so main keeps that much room free. */
+@media (max-width: 1023.98px) { main:not([data-no-tabs]) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 2rem); } }
+  .lucide { stroke-width: 1.75; }
+}
 
-.skip-link { position: absolute; left: -999px; top: 0; background: var(--primary); color: var(--primary-ink); padding: .75rem 1rem; z-index: 10; }
+dialog.crisis { z-index: var(--z-crisis); width: calc(100% - 2rem); max-width: 28rem; margin: auto; padding: var(--space-5); padding-top: max(var(--space-5), env(safe-area-inset-top)); padding-bottom: max(var(--space-5), env(safe-area-inset-bottom)); border: 2px solid var(--line-strong); border-radius: var(--radius-card); background: var(--surface); color: var(--ink); }
+dialog.crisis::backdrop { background: color-mix(in srgb, var(--ink) 55%, transparent); }
+
+.sticky-actions { padding-block: var(--space-3); background: var(--bg); }
+.sticky-actions[data-sticky="true"] { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); z-index: var(--z-nav); border-top: 1px solid var(--line); }
+main[data-no-tabs] .sticky-actions[data-sticky="true"] { bottom: env(safe-area-inset-bottom); }
+
+.skip-link { position: absolute; left: -999px; top: 0; background: var(--primary); color: var(--primary-ink); padding: .75rem 1rem; z-index: var(--z-call); }
 .skip-link:focus { left: 0; }
 
-.site-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; padding: .5rem 1rem; padding-top: max(.5rem, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); }
-.logo { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; font-family: var(--font-display), sans-serif; font-weight: 700; font-size: 1.4rem; color: var(--ink); text-decoration: none; }
-.main-nav { display: flex; gap: .25rem; flex-wrap: wrap; }
-.main-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .75rem; color: var(--ink); font-weight: 700; text-decoration: none; border-radius: 10px; }
-.main-nav a:hover { background: var(--lav); }
-
-.site-footer { border-top: 1px solid var(--line); padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom)); color: var(--muted); font-size: .9rem; max-width: 44rem; width: 100%; margin: 0 auto; }
-.site-footer ul { list-style: none; display: flex; flex-wrap: wrap; gap: .25rem 1rem; padding: 0; margin: 0 0 1rem; }
-.site-footer a { display: inline-flex; align-items: center; min-height: 44px; }
-
-.eyebrow { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; color: var(--muted); }
-.intro { color: var(--muted); font-size: 1.08rem; }
+.back-row { margin-bottom: var(--space-4); }
+.back-row:empty { display: none; }
+.intro { color: var(--muted); font-size: 1.15rem; }
 .note { color: var(--muted); font-size: .9rem; }
-.hero { padding: 1rem 0 1.5rem; }
-.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.25rem 0; }
-.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .6rem 1.2rem; border-radius: 14px; border: 2px solid transparent; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; text-align: center; transition: transform .2s ease, opacity .2s ease; }
-.btn:active { transform: scale(.98); }
-.btn-primary { background: var(--primary); color: var(--primary-ink); }
-.btn-secondary { background: transparent; color: var(--primary); border-color: var(--primary); }
-.cards, .list { padding: 0; margin: 0 0 1rem; display: grid; gap: .75rem; }
-.cards { list-style: none; grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr)); }
-.list { padding-left: 1.25rem; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; min-width: 0; }
-.card h2, .card h3 { margin-top: 0; }
-.card p:last-child { margin-bottom: 0; }
-.center { text-align: center; padding-top: 2rem; }
-.center .actions { justify-content: center; }
+
+/* Parts that only work with JavaScript hide when it is off; [data-no-script] text takes their place. */
+[data-no-script] { display: none; }
+@media (scripting: none) {
+  [data-needs-script] { display: none !important; }
+  [data-no-script] { display: block; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+.page-enter { animation: page-enter 250ms var(--ease) both; }
+@keyframes page-enter { from { transform: translateY(6px); } to { transform: none; } }
+
+@media print {
+  .no-print { display: none !important; }
+  body * { visibility: hidden !important; }
+  .printable, .printable * { visibility: visible !important; }
+  .printable { position: absolute; left: 0; top: 0; width: 100%; color: #000; background: #fff; white-space: pre-wrap; }
 }

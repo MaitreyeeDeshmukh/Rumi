@@ -1,0 +1,35 @@
+// /share copy (spec 4.8, plan 04). tests/unit/copy.test.ts lints every string.
+export const SHARE = {
+  legend: "What to share",
+  previewTitle: "The text",
+  previewLabel: "Text to share",
+  unavailable: "Nothing here yet.",
+  nothingSelected: "Nothing is selected yet.",
+  copy: "Copy text",
+  share: "Share…",
+  copied: "Copied.",
+  copyFailed: "Copy is not available here. The text is selected so you can copy it.",
+  note: "Rumi does not send anything. You decide.",
+  sections: {
+    plan: "My plan",
+    card: "How I like to be supported",
+    discussed: "What was discussed",
+    instructions: "Instructions",
+    medications: "Medications",
+    next_steps: "Next steps",
+    said: "What I said myself",
+  },
+  planKinds: {
+    concern: "What I want to say",
+    question: "My questions",
+    accommodation: "What I need",
+  },
+  mainConcern: "Main concern",
+  inMyWords: "In my words",
+  status: {
+    asked_by_me: "I asked",
+    asked_by_other: "Someone else asked",
+    not_asked: "Not asked",
+    unclear: "Not clear",
+  },
+} as const;

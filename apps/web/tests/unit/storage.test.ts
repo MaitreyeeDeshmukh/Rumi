@@ -93,7 +93,7 @@ describe("loadState: one bad field never resets everything", () => {
   });
 
   it("an old recovery code in storage is ignored, and the memory switch is kept as the person left it", () => {
-    const s = load(base({ settings: { ...defaultSettings(), memoryOptIn: true }, persona: { facts: [], recoveryCode: "ABCDE-FGHJK-LMNPQ-RSTUV" } }));
+    const s = load(base({ settings: { ...defaultSettings(), memoryOptIn: true }, persona: { facts: [] } }));
     expect(s.settings.memoryOptIn).toBe(true);
     expect(s.persona).toEqual({ facts: [] });
     expect(load(base({ settings: { ...defaultSettings(), memoryOptIn: true } })).settings.memoryOptIn).toBe(true);

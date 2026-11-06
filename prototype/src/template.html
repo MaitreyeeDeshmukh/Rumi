@@ -75,6 +75,17 @@ p{margin:0}
 /* ---------- App shell ---------- */
 .app{position:relative;height:100%;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);overflow:hidden;font-size:1rem}
 .viewport{flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;min-height:0}
+/* Overlay scrollbars: hide the native bar (it reserves a strip of space) and float a thin thumb on top instead.
+   The thumb is created by overlayScroll.ts, shows while scrolling and fades out shortly after. */
+.viewport,.onb-body,.sheet,.call-log,.share-preview{scrollbar-width:none;-ms-overflow-style:none}
+.viewport::-webkit-scrollbar,.onb-body::-webkit-scrollbar,.sheet::-webkit-scrollbar,.call-log::-webkit-scrollbar,.share-preview::-webkit-scrollbar{display:none;width:0;height:0}
+.sb-thumb{position:absolute;z-index:60;width:4px;border-radius:999px;background:color-mix(in srgb,var(--ink) 42%,transparent);opacity:0;transition:opacity .35s ease;pointer-events:none;touch-action:none}
+.sb-thumb::before{content:"";position:absolute;inset:0 -9px}
+.sb-thumb.show{opacity:1;pointer-events:auto}
+.reduce .sb-thumb{transition:none}
+/* Stop control shown whenever Rumi is reading aloud, on every screen */
+.speak-stop-wrap{position:absolute;left:0;right:0;bottom:92px;display:flex;justify-content:center;z-index:70;pointer-events:none}
+.speak-stop{pointer-events:auto;box-shadow:0 6px 18px -6px rgba(0,0,0,.4);background:var(--surface)}
 .screen{min-height:100%;animation:enter .24s ease-out}
 @keyframes enter{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:none}}
 .app.reduce *, .app.reduce *::before, .app.reduce *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}

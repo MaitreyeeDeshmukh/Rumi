@@ -1,0 +1,55 @@
+// /settings copy (spec 4.8, plan 04). tests/unit/copy.test.ts lints every string.
+import { PRIVACY } from "@/content/privacy";
+
+export const SETTINGS = {
+  saved: "Saved.",
+  notSaved: "Changed, but not saved on this device.",
+  deleted: "Everything is deleted.",
+  about: { legend: "About you", name: "What should I call you?", helper: "Name your helper" },
+  reading: { legend: "Reading", output: "Read, listen, or both", detail: "Short or detailed" },
+  look: {
+    legend: "Look",
+    theme: "Theme",
+    size: "Text size, in percent",
+    sizes: [
+      { value: "1", label: "100" },
+      { value: "1.15", label: "115" },
+      { value: "1.3", label: "130" },
+      { value: "1.5", label: "150" },
+    ],
+    reduce: "Reduce motion",
+    reduceHint: "Fewer things move on the screen.",
+  },
+  sound: { legend: "Sound", label: "Play a soft sound when my kit is ready" },
+  memory: {
+    legend: "Memory",
+    title: "Let Rumi remember how I like to be supported",
+    body: [
+      "Rumi can save short sentences you chose. An example is “Please speak slowly.”",
+      "It can also save how much help you needed. Then you do not start over each time.",
+      "This is off. If you turn it on, only the id of each choice is saved.",
+      "It is saved in Rumi’s own database, not with another company.",
+      "Rumi does not save your health details or your name.",
+      "It does not save what you write in your plan.",
+      "You can delete everything at any time.",
+    ],
+    toggle: "Remember my support sentences",
+    remembers: "What Rumi remembers",
+    nothing: "Nothing yet.",
+    forget: "Forget everything",
+    forgetTitle: "Forget everything?",
+    forgetBody: "Delete all remembered choices from Rumi?",
+    keep: "Keep them",
+    confirmForget: "Delete",
+  },
+  data: { legend: "Your data", rows: PRIVACY.keeps.rows },
+  erase: {
+    legend: "Delete everything",
+    body: "This removes your settings, plan, practice, and recap from this device.",
+    open: "Delete everything",
+    title: "Delete everything?",
+    warning: "You cannot undo this. Rumi will start again from the welcome page.",
+    cancel: "Cancel",
+    confirm: "Delete",
+  },
+} as const;

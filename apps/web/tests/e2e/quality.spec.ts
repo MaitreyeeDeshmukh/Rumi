@@ -1,9 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { FOOTER_NAV, MAIN_NAV, ROUTES } from "../../src/lib/site";
+import { BANNED_PLACEHOLDERS, BANNED_WORDS } from "../../src/lib/banned";
+import { FOOTER_LINKS, MAIN_NAV, ROUTES } from "../../src/lib/site";
 
 const WIDTHS = [320, 375, 414, 768, 1280];
-const BANNED = /lorem ipsum|\bTODO\b|placeholder|example\.com|undefined|\[object Object\]/i;
 
 test.describe("every page meets the shipping rules", () => {
   for (const route of ROUTES) {
@@ -15,7 +15,14 @@ test.describe("every page meets the shipping rules", () => {
       const desc = await page.locator('meta[name="description"]').getAttribute("content");
       expect(desc?.length ?? 0).toBeGreaterThan(40);
       await expect(page.locator("h1")).toHaveCount(1);
-      expect(await page.locator("main").innerText()).not.toMatch(BANNED);
+      const text = await page.locator("main").innerText();
+      expect(text).not.toMatch(BANNED_PLACEHOLDERS);
+      expect(text).not.toMatch(BANNED_WORDS);
+    });
+
+    test(`${route}: Urgent help is visible`, async ({ page }) => {
+      await page.goto(route);
+      await expect(page.getByRole("link", { name: "Urgent help" }).first()).toBeVisible();
     });
 
     test(`${route}: no horizontal scroll at any width`, async ({ page }) => {
@@ -48,7 +55,7 @@ test.describe("every page meets the shipping rules", () => {
 
 test.describe("navigation works", () => {
   test("every header and footer link resolves", async ({ page, request }) => {
-    for (const link of [...MAIN_NAV, ...FOOTER_NAV]) {
+    for (const link of [...MAIN_NAV, ...FOOTER_LINKS]) {
       const res = await request.get(link.href);
       expect(res.status(), link.href).toBe(200);
     }
@@ -96,8 +103,8 @@ test.describe("errors are friendly", () => {
   test("unknown page shows the custom 404 with a way home", async ({ page }) => {
     const res = await page.goto("/this-page-does-not-exist");
     expect(res?.status()).toBe(404);
-    await expect(page.getByRole("heading", { name: /can.t find that page/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Go to Home" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /could not find that page/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Go to the home page" })).toBeVisible();
     expect(await page.locator("body").innerText()).not.toMatch(/stack|exception|next\.js|500|ECONN/i);
   });
 });

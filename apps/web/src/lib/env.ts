@@ -32,6 +32,8 @@ const schema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: nonEmpty.optional(),
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: nonEmpty.optional(),
+  /** Public address on /contact. The contact page fails the production build without it. */
+  NEXT_PUBLIC_CONTACT_EMAIL: z.string().email().optional(),
   GROQ_API_KEY: nonEmpty.optional(),
   GROQ_MODEL_QUALITY: nonEmpty.optional(),
   GROQ_MODEL_FAST: nonEmpty.optional(),
@@ -209,4 +211,10 @@ export function runtimeConfigProblems(): string[] {
   if (process.env.MOCK_AI === "1" && isVercelProduction() && process.env.ALLOW_MOCK_IN_PROD !== "1") problems.add("MOCK_AI_BLOCKED_IN_PRODUCTION");
   if (mockOutsideLocalDev()) problems.add("MOCK_AI_ACTIVE");
   return [...problems];
+}
+
+/** Public address on /contact (NEXT_PUBLIC_CONTACT_EMAIL). undefined when unset or not an address. */
+export function contactEmail(): string | undefined {
+  const parsed = z.string().email().safeParse(process.env.NEXT_PUBLIC_CONTACT_EMAIL);
+  return parsed.success ? parsed.data : undefined;
 }

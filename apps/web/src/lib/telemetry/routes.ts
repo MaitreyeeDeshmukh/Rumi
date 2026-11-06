@@ -3,7 +3,10 @@
  * invent route names. A test fails when a static page exists under src/app that is not listed here: add it.
  * Dynamic pages (for example /plan/[id]) report as "unknown" on purpose: their path holds ids.
  */
-export const KNOWN_ROUTES: ReadonlySet<string> = new Set(["/", "/accessibility", "/help", "/privacy", "/safety"]);
+export const KNOWN_ROUTES: ReadonlySet<string> = new Set([
+  "/", "/about", "/accessibility", "/contact", "/get-ready", "/help", "/home", "/how-it-works", "/kit", "/practice",
+  "/privacy", "/remember", "/safety", "/say-it", "/settings", "/share", "/welcome", "/%5Ferror-test",
+]);
 
 /** The route if it is a known page (query and trailing slash ignored), else "unknown". */
 export function knownRoute(route: string): string {

@@ -1,8 +1,9 @@
 declare const ReactDOM: any;
 import {
   useState, useEffect, useRef, AppCtx, useApp, Icon, Mascot, MASCOT_COLORS, Chip, Choice, Field, Sim, Empty,
-  loadState, saveState, makeDefault, mergeLoaded, speakText, prefersReduced, greeting, todayISO, fmtLong, fmtTime, relDay, daysFromToday, addGrowth,
+  loadState, saveState, makeDefault, mergeLoaded, speakText, stopSpeaking, useSpeaking, prefersReduced, greeting, todayISO, fmtLong, fmtTime, relDay, daysFromToday, addGrowth,
 } from './core';
+import { initOverlayScrollbars } from './overlayScroll';
 import { ENCOURAGEMENT } from './data';
 import { HealthHome, NewAppt, ApptSaved, CallScript, ApptDetail, PrepScreen, PracticeSetup, Practice, Recap, RecordScreen, Summaries, Transcript, SummaryView, ShareScreen, upcomingAppts, ApptCard } from './health';
 import { RescueHome, Changed, RescueFlow, RescueAppt, SayIt, Overwhelmed, Breathe, PauseHere, Unsure, Trusted } from './rescue';
@@ -34,12 +35,18 @@ function App() {
   const toastTimer = useRef(null as any);
   const viewport = useRef(null as any);
 
+  useEffect(() => initOverlayScrollbars(), []);
   useEffect(() => { saveState(s); }, [s]);
   useEffect(() => { document.documentElement.style.fontSize = (s.settings.fontScale * 100) + '%'; }, [s.settings.fontScale]);
 
   const update = (fn: (d: any) => void) => setS((prev: any) => { const n = JSON.parse(JSON.stringify(prev)); fn(n); return n; });
   const toast = (m: string) => { clearTimeout(toastTimer.current); setToastMsg({ m, k: Date.now() }); toastTimer.current = setTimeout(() => setToastMsg(null), 5000); };
   const speak = (t: string) => speakText(t, toast);
+  const speaking = useSpeaking();
+  useEffect(() => { // Esc stops reading aloud
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') stopSpeaking(); };
+    document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k);
+  }, []);
   const reduced = s.settings.reducedMotion || prefersReduced();
 
   const nav = {
@@ -52,6 +59,8 @@ function App() {
     back: () => setRoute((r: any) => { const st = r.stacks[r.tab]; if (st.length < 2) return r; return { ...r, stacks: { ...r.stacks, [r.tab]: st.slice(0, -1) } }; }),
     reset: (tab: string) => setRoute((r: any) => ({ tab, stacks: { ...r.stacks, [tab]: [r.stacks[tab][0]] } })),
     goTab: (tab: string) => setRoute((r: any) => r.tab === tab ? { tab, stacks: { ...r.stacks, [tab]: [r.stacks[tab][0]] } } : { ...r, tab }),
+    // Back to the home dashboard with every tab stack cleared (used when profile setup starts and finishes).
+    home: () => setRoute({ tab: 'home', stacks: freshStacks() }),
   };
   const resetAll = () => { const d = makeDefault(); setS(d); setRoute({ tab: 'home', stacks: freshStacks() }); };
 
@@ -69,7 +78,7 @@ function App() {
   const ctx = { s, update, nav, toast, speak, reduced, resetAll, route };
   const cls = ['app', reduced ? 'reduce' : '', s.settings.simplified ? 'simple' : ''].join(' ');
   const flows = [
-    { n: '1', t: 'Set up a profile', go: () => update((d: any) => { d.onboarded = false; }) },
+    { n: '1', t: 'Set up a profile', go: () => { update((d: any) => { d.onboarded = false; }); nav.home(); } },
     { n: '2', t: 'Book, prepare, practice', go: () => { update((d: any) => { d.onboarded = true; }); nav.push('newAppt', {}, 'health'); } },
     { n: '3', t: 'Summarize and share a visit', go: () => { update((d: any) => { d.onboarded = true; }); nav.push('transcript', {}, 'health'); } },
     { n: '4', t: 'Rescue: bus canceled', go: () => { update((d: any) => { d.onboarded = true; }); nav.push('rescueFlow', { flow: 'bus' }, 'rescue'); } },
@@ -100,6 +109,7 @@ function App() {
                 {TABS.map(t => <button key={t.id} className={'tab tab-' + t.id} aria-current={route.tab === t.id ? 'page' : undefined} onClick={() => nav.goTab(t.id)}><span className="tab-ic"><Icon name={t.icon} size={22} /></span><span>{t.label}</span></button>)}
               </nav>}
             </>}
+            {speaking && <div className="speak-stop-wrap"><button type="button" className="btn btn-secondary speak-stop" onClick={stopSpeaking}><Icon name="stop" size={18} />Stop reading</button></div>}
             <div className="toast-wrap" aria-live="polite" role="status">{toastMsg && <div className="toast" key={toastMsg.k}><Icon name="check" size={18} /><span>{toastMsg.m}</span><button className="icon-btn" aria-label="Dismiss" onClick={() => setToastMsg(null)}><Icon name="x" size={16} /></button></div>}</div>
           </div>
         </div>
@@ -110,7 +120,7 @@ function App() {
 
 // ---------- Onboarding ----------
 function Onboarding() {
-  const { s, update } = useApp();
+  const { s, update, nav } = useApp();
   const [step, setStep] = useState(0);
   const [name, setName] = useState(s.profile.name);
   const [comp, setComp] = useState(s.profile.companion || 'Rumi');
@@ -193,7 +203,7 @@ function Onboarding() {
       <div className="onb-foot">
         {step === 0 && <button className="btn btn-primary big" onClick={() => go(1)}>Get started</button>}
         {step > 0 && step < 6 && <button className="btn btn-primary big" onClick={next}>{step === 1 && !name.trim() ? 'Skip for now' : 'Continue'}</button>}
-        {step === 6 && <button className="btn btn-primary big" onClick={() => update((d: any) => { d.onboarded = true; })}>Go to my dashboard</button>}
+        {step === 6 && <button className="btn btn-primary big" onClick={() => { update((d: any) => { d.onboarded = true; }); nav.home(); }}>Go to my dashboard</button>}
       </div>
     </div>
   );
