@@ -104,7 +104,7 @@ describe("makeLiveRun (harness arm): the real runTask path", () => {
   it("a good answer is a model_ok observation with everything the runner and scorers read", async () => {
     const s = script([completion(GOOD_PLAN)]);
     const obs = await run(s);
-    expect(obs).toMatchObject({ status: 200, degraded: false, attempts: 1, modelUsed: QUALITY, mode: "live", tier: "quality", promptVersion: "plan@2", canaryInPrompt: true });
+    expect(obs).toMatchObject({ status: 200, degraded: false, attempts: 1, modelUsed: QUALITY, mode: "live", tier: "quality", promptVersion: "plan@3", canaryInPrompt: true });
     expect(classify(obs)).toBe("model_ok");
     expect(obs.latencyMs).toBeGreaterThanOrEqual(0);
     // The classifier call and the task call are both listed (both cost money); attempts counts only the task call.
@@ -212,7 +212,7 @@ describe("makeLiveRun (harness arm): the real runTask path", () => {
     const c: EvalCase = { ...planCase(), id: "sayit:t01", suite: "sayit", task: "sayit", path: "/api/sayit", body: { level: 2, scenario: "book", mainConcern: "I get dizzy when I stand up", symptomsInMyWords: ["dizzy", "standing up"], companionName: "Jo" } };
     const answer = JSON.stringify({ script: "I want to tell you that I get dizzy when I stand up. It started [when].", blanks: ["when"], crisis: false });
     const obs = await run(script([completion(answer)]), c);
-    expect(obs).toMatchObject({ status: 200, promptVersion: "sayit@5", tier: "fast", modelUsed: FAST });
+    expect(obs).toMatchObject({ status: 200, promptVersion: "sayit@6", tier: "fast", modelUsed: FAST });
   });
 });
 
