@@ -327,7 +327,7 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
   };
   const ev = run.ev;
   let stage: Stage = "guard";
-  let cookie: string | null = null;
+  const cookie: string | null = null;
   /** The parsed body, once it has been read. Only a refused body (400, 413) is looked at again, for the crisis scan. */
   let body: unknown;
   let bodyRead = false;
