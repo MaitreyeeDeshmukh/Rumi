@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Logo } from "@/components/nav/Logo";
 import { MenuSheet } from "@/components/nav/MenuSheet";
 import { OpenRumiButton } from "@/components/nav/OpenRumiButton";
-import { UrgentHelpButton } from "@/components/nav/UrgentHelpButton";
 import { NAV } from "@/content/nav";
 import { MAIN_NAV } from "@/lib/site";
 
@@ -24,7 +23,6 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="flex flex-wrap items-center gap-2">
-          <UrgentHelpButton chrome />
           <OpenRumiButton kind="secondary" chrome className="hidden lg:inline-flex" />
           <MenuSheet />
         </div>

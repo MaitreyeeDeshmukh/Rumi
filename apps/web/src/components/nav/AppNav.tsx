@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { APP_NAV, SAY_IT } from "@/components/nav/appNavItems";
 import { Logo } from "@/components/nav/Logo";
-import { UrgentHelpButton } from "@/components/nav/UrgentHelpButton";
 import { cn } from "@/components/ui/cn";
 import { NAV } from "@/content/nav";
 import { INFO_LINKS } from "@/lib/site";
@@ -70,7 +69,6 @@ export function AppNav() {
         {/* Logo and Urgent help stay in view at any window height; only the links below scroll. */}
         <div className="grid shrink-0 justify-items-start gap-2">
           <Logo />
-          <UrgentHelpButton />
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {[...APP_NAV, SAY_IT].map(({ href, label, icon: Icon }) => (

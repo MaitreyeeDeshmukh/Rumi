@@ -9,13 +9,16 @@ export function Segmented({
   value,
   onValueChange,
   options,
+  showLabel = false,
 }: {
+  /** The group's accessible name. With `showLabel` it is also written above the row. */
   label: string;
+  showLabel?: boolean;
   value: string;
   onValueChange: (value: string) => void;
   options: readonly { value: string; label: string }[];
 }) {
-  return (
+  const row = (
     <RadioGroupPrimitive.Root
       aria-label={label}
       value={value}
@@ -36,5 +39,14 @@ export function Segmented({
         </RadioGroupPrimitive.Item>
       ))}
     </RadioGroupPrimitive.Root>
+  );
+  if (!showLabel) return row;
+  return (
+    <div className="grid gap-2">
+      <p aria-hidden="true" className="m-0 text-sm font-bold text-muted-ink">
+        {label}
+      </p>
+      {row}
+    </div>
   );
 }

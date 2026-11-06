@@ -16,7 +16,6 @@ import {
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useCrisis } from "@/components/CrisisProvider";
-import { UrgentHelpButton } from "@/components/nav/UrgentHelpButton";
 import { DoctorAvatar } from "@/components/practice/DoctorAvatar";
 import { HelpSheet, type HelpState } from "@/components/practice/HelpSheet";
 import { PlanSheet } from "@/components/practice/PlanSheet";
@@ -337,7 +336,6 @@ export function CallScreen({
             <ArrowLeft aria-hidden="true" className="size-5" />
             {NAV.back}
           </Button>
-          <UrgentHelpButton chrome />
         </header>
 
         <h1 ref={title} tabIndex={-1} className="sr-only">

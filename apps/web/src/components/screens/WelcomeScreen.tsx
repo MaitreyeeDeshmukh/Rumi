@@ -7,6 +7,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceCard, ChoiceGroup } from "@/components/ui/choice-card";
 import { Field, fieldControlClass } from "@/components/ui/field";
 import { Segmented } from "@/components/ui/segmented";
+import { ThemeSwatch } from "@/components/ui/theme-swatch";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { WELCOME } from "@/content/welcome";
 import type { RumiState, Settings, ThemeName } from "@/features/shared/types";
@@ -84,12 +85,14 @@ function WelcomeBody({ settings, hydrated }: { settings: Settings; hydrated: boo
           <fieldset className="m-0 grid gap-3 border-0 p-0">
             <legend className="mb-1 p-0 font-bold text-ink">{WELCOME.infoLegend}</legend>
             <Segmented
+              showLabel
               label={WELCOME.outputLabel}
               value={output}
               onValueChange={(v) => setOutput(v as Settings["outputMode"])}
               options={options(WELCOME.output)}
             />
             <Segmented
+              showLabel
               label={WELCOME.detailLabel}
               value={detail}
               onValueChange={(v) => setDetail(v as Settings["detail"])}
@@ -110,7 +113,8 @@ function WelcomeBody({ settings, hydrated }: { settings: Settings; hydrated: boo
             >
               {THEMES.map((t) => (
                 <ChoiceCard key={t.id} value={t.id} title={t.label}>
-                  {WELCOME.lookHint[t.id]}
+                  <ThemeSwatch theme={t.id} />
+                  <span className="block">{WELCOME.lookHint[t.id]}</span>
                 </ChoiceCard>
               ))}
             </ChoiceGroup>
