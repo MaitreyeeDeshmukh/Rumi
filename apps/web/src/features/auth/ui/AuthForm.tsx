@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
-import { authOptional } from "@/lib/supabase/config";
+import { authOptional, devBypassEmail } from "@/lib/supabase/config";
 import { useAuth } from "../AuthProvider";
 import { checkCredentials, type CredentialErrors } from "../authController";
 import { AccountStatus } from "./AccountStatus";
@@ -40,14 +40,15 @@ export function AuthForm({ mode, next }: { mode: AuthMode; next: string }) {
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "");
     const password = String(form.get("password") ?? "");
-    const found = checkCredentials(email, password, mode);
+    const bypass = isLogin && devBypassEmail() !== null && email.trim().toLowerCase() === devBypassEmail();
+    const found = bypass ? { email: null, password: null } : checkCredentials(email, password, mode);
     setErrors(found);
     setServerError(null);
     setLastEmail(email.trim().toLowerCase());
     if (found.email !== null) return emailRef.current?.focus();
     if (found.password !== null) return passwordRef.current?.focus();
     setPending(true);
-    const result = await (isLogin ? auth.signInWithPassword(email, password) : auth.signUpWithPassword(email, password));
+    const result = await (bypass ? auth.signInAsDeveloper(email) : isLogin ? auth.signInWithPassword(email, password) : auth.signUpWithPassword(email, password));
     setPending(false);
     if (!result.ok) {
       setServerError({ text: result.message, tick: Date.now(), unconfirmed: result.unconfirmed === true });

@@ -35,3 +35,10 @@ export const authProxyRefreshEnabled = (): boolean => process.env.AUTH_PROXY_REF
  * it into the browser bundle too, which is why it lives here and not in env.ts.
  */
 export const authOptional = (): boolean => process.env.NEXT_PUBLIC_AUTH_OPTIONAL === "1";
+
+/**
+ * The developer bypass: this one email logs in with no password, so a developer can reach every screen. Only outside a production
+ * build (`next dev`, tests), so it is off on Vercel (previews and production both build with NODE_ENV=production) whatever the variable
+ * says. Null means off. Literal `process.env.NAME` reads so Next inlines the value into the browser bundle.
+ */
+export const devBypassEmail = (): string | null => (process.env.NODE_ENV === "production" ? null : process.env.NEXT_PUBLIC_DEV_BYPASS_EMAIL?.trim().toLowerCase() || null);
