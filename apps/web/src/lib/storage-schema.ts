@@ -4,6 +4,7 @@
  * The stored text is untrusted (another tab, an old version, a person editing it by hand).
  */
 import { z } from 'zod';
+import { DEFAULT_VOICE, VOICE_KEYS } from '@/lib/voice/voices';
 import { ID_RE, LIMITS, PLAN_ITEM_KINDS } from '@/features/shared/constants';
 import {
   FocusSchema,
@@ -43,6 +44,7 @@ export const defaultSettings = (): Settings => ({
   outputMode: 'both',
   detail: 'short',
   speechRate: 1,
+  voice: DEFAULT_VOICE,
   finishSound: false,
   memoryOptIn: false,
 });
@@ -87,6 +89,7 @@ const SettingsSchema = z
     outputMode: z.enum(['read', 'listen', 'both']).catch('both'),
     detail: z.enum(['short', 'detailed']).catch('short'),
     speechRate: z.number().min(0.5).max(2).catch(1),
+    voice: z.enum(VOICE_KEYS).catch(DEFAULT_VOICE),
     finishSound: z.boolean().catch(false),
     memoryOptIn: z.boolean().catch(false),
   })

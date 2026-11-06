@@ -71,6 +71,14 @@ describe("loadState: one bad field never resets everything", () => {
     expect(s.plan?.id).toBe("plan-1");
   });
 
+  it("keeps a listed voice, and an unlisted, missing or odd voice becomes the default", () => {
+    expect(load(base({ settings: { voice: "zander" } })).settings.voice).toBe("zander");
+    for (const voice of ["", "Zander", "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", 5, null, "__proto__"]) {
+      expect(load(base({ settings: { voice } })).settings.voice).toBe(defaultSettings().voice);
+    }
+    expect(load(base({ settings: { theme: "soft" } })).settings.voice).toBe(defaultSettings().voice); // data saved before voices existed
+  });
+
   it("settings that is not an object gives default settings and keeps the rest", () => {
     const s = load(base({ settings: "oops", plan: plan() }));
     expect(s.settings).toEqual(defaultSettings());

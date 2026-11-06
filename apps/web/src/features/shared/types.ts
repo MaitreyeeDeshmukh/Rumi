@@ -2,6 +2,7 @@
  * Stored and API types for Rumi. Frozen in Phase 0 (see 07-p0-roast-resolutions.md).
  * Everything the browser sends to the server is untrusted; these types describe shape, not trust.
  */
+import type { VoiceKey } from '@/lib/voice/voices';
 import type { FACT_KINDS, FOCUS_VALUES, HELP_LEVELS, PLAN_ITEM_KINDS, SPEAKERS } from './constants';
 
 export type ThemeName = 'soft' | 'contrast' | 'low';
@@ -20,6 +21,8 @@ export interface Settings {
   outputMode: 'read' | 'listen' | 'both';
   detail: 'short' | 'detailed';
   speechRate: number;
+  /** Which Cartesia voice speaks (see lib/voice/voices.ts). One setting, read by the voice step, settings and profile setup. */
+  voice: VoiceKey;
   finishSound: boolean;
   memoryOptIn: boolean;
 }
