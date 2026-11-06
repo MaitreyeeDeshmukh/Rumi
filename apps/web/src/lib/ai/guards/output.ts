@@ -124,8 +124,8 @@ const unique = (codes: GuardCode[]): GuardCode[] => [...new Set(codes)];
 /** The clause before a match, without earlier sentences. */
 const clauseBefore = (t: string, index: number): string => (t.slice(0, index).split(" . ").pop() ?? "").trim();
 
-// "I take 20 mg" and "I have been taking Prozac" are the person talking about themselves, not advice.
-const FIRST_PERSON_END = /(?:^|\s)(?:i|ive|im|we|weve)(?:\s+(?:have|am|was|had|also|usually|always|just|only|sometimes|often|regularly|still|now|then|been|really|currently|do|did|dont|didnt|never|already|will|can|cant))*\s*$/;
+// "I take 20 mg", "I do not take any medicine" and "I have been taking Prozac" are the person talking about themselves, not advice.
+const FIRST_PERSON_END = /(?:^|\s)(?:i|ive|im|we|weve)(?:\s+(?:have|am|was|had|also|usually|always|just|only|sometimes|often|regularly|still|now|then|been|really|currently|do|did|not|dont|didnt|never|already|will|can|cant))*\s*$/;
 // "Ask whether I should take ibuprofen" is a question for the clinician, not advice.
 const REPORTED = /\b(?:ask|asked|asking|asks|whether|wonder|wondering|question|questions|if|worried|worry|afraid|scared|fear|concerned|curious)\b/;
 

@@ -3,7 +3,7 @@
 // Its fixed lines repeat the constants of persona.ts; a test fails if the two drift apart.
 import type { Focus } from "../src/features/shared/types";
 
-export const PRACTICE_VERSION = "practice@3";
+export const PRACTICE_VERSION = "practice@4";
 
 /** After this many clinician turns the practice closes, whatever else was said. The fallback uses the same number. */
 export const MAX_CLINICIAN_TURNS = 7;
@@ -21,7 +21,9 @@ Rules:
 - If the user says they are not sure, say: "Take your time. You can use Help me say it." Do not answer for them.
 - If the user says stop, enough, too many questions, or that they are tired, say: "We can stop here. You can end the practice." and set isLastTurn to true.
 - If the user says they will read from notes, say: "Reading from your notes is fine." Then ask your next question.
-- coveredItemIds: the labels (q1, q2, ...) of plan items that the user's LATEST message said or asked. Be strict. Use [] if none. Only this latest message counts.
+- coveredItemIds: the labels (q1, q2, ...) of plan items that the user's LATEST message said or asked, in any words. Be strict: a vague message such as "Okay" covers nothing. Use [] if none. Only this latest message counts.
+Example: item q1 "I want to tell you my knee hurts on stairs." is covered by the latest message "My knee hurts when I climb stairs.", so coveredItemIds is ["q1"].
+- Do not close before you have asked at least three questions (the opening line counts as one), unless the user asks to stop. A user who says they are not sure or do not know has not asked to stop.
 - Close only when the FOCUS below says to close, or after ${MAX_CLINICIAN_TURNS} clinician turns. When you close, say: "Thank you for practicing. You can end the practice now." and set isLastTurn to true.`;
 
 /** One block per focus. Only the selected block is put in the prompt. Each starts with a marker line "FOCUS: <name>." and says when to close. */

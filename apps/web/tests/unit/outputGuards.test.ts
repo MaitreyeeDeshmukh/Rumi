@@ -305,3 +305,15 @@ describe("07 D14 escape hatches pass every output guard with an empty ledger", (
     expect(claimsHumanCodes(text)).toEqual([]);
   });
 });
+
+describe("adviceCodes: first-person negation is narration, not advice", () => {
+  it.each(["I do not take any medicine.", "I do not take ibuprofen.", "I am not taking any pills.", "I did not take my pills today.", "I can not take ibuprofen.", "I have not taken ibuprofen."])(
+    "lets through: %s",
+    (text) => expect(adviceCodes(text, empty())).toEqual([]),
+  );
+
+  it.each(["You should not take ibuprofen.", "Do not take ibuprofen.", "I would not take ibuprofen.", "Take ibuprofen.", "Please do not stop taking your pills."])(
+    "still blocks real advice: %s",
+    (text) => expect(adviceCodes(text, empty())).not.toEqual([]),
+  );
+});

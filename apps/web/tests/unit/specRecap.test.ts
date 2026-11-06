@@ -24,7 +24,7 @@ const labelled = (): RecapModelOutT => ({
 
 describe("recapSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap; advice guard off, memory off", () => {
-    expect(recapSpec).toMatchObject({ name: "recap", promptVersion: "recap@3", tier: "quality", temperature: 0.1, maxOutputTokens: 2000, adviceGuard: false, useMemory: false });
+    expect(recapSpec).toMatchObject({ name: "recap", promptVersion: "recap@4", tier: "quality", temperature: 0.1, maxOutputTokens: 2000, adviceGuard: false, useMemory: false });
   });
 
   it("accepts the sample visit and the saved recap; mock and fallback satisfy the reply schema", () => {

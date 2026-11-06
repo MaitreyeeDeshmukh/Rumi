@@ -23,7 +23,7 @@ const say = (clinicianSay: string, extra: Partial<PracticeModelOutT> = {}): Prac
 
 describe("practiceSpec wiring", () => {
   it("uses the pinned tier, temperature and token cap", () => {
-    expect(practiceSpec).toMatchObject({ name: "practice", promptVersion: "practice@3", tier: "fast", temperature: 0.6, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
+    expect(practiceSpec).toMatchObject({ name: "practice", promptVersion: "practice@4", tier: "fast", temperature: 0.6, maxOutputTokens: 900, adviceGuard: true, useMemory: true });
   });
 
   it("accepts the demo plan in a request, and mock and fallback satisfy the reply schema", () => {
