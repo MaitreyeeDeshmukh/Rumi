@@ -1,33 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import {
-  ClipboardList,
-  Lightbulb,
-  Mic,
-  MicOff,
-  Pause,
-  Repeat,
-  RotateCcw,
-  Square,
-  Turtle,
-  VolumeX,
-} from "lucide-react";
+import { ArrowUp, ClipboardList, Lightbulb, Mic, MicOff, Pause, Repeat, RotateCcw, Turtle, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useCrisis } from "@/components/CrisisProvider";
 import { DoctorAvatar } from "@/components/practice/DoctorAvatar";
 import { HelpSheet, type HelpState } from "@/components/practice/HelpSheet";
 import { PlanSheet } from "@/components/practice/PlanSheet";
-import type { Ready } from "@/components/practice/Readiness";
 import { useInertShell } from "@/components/practice/useInertShell";
-import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
-import { fieldControlClass } from "@/components/ui/field";
+import { cn } from "@/components/ui/cn";
 import { ArrowLeft } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/notice";
 import { Sheet } from "@/components/ui/sheet";
-import { StickyActions } from "@/components/ui/sticky-actions";
 import { NAV } from "@/content/nav";
 import { PRACTICE } from "@/content/practice";
 import { isCrisis } from "@/lib/crisis";
@@ -46,6 +32,8 @@ type Msg = {
   text: string;
   usedHelp?: boolean;
   repeated?: boolean;
+  /** A note before the practice (for example "Rumi used the first part of this file."). Never sent to the AI or saved in the session. */
+  setup?: boolean;
   /** Plan lines covered so far (clinician lines only). */
   covered: string[];
   last?: boolean;
@@ -53,6 +41,11 @@ type Msg = {
 
 const MIN_RATE = 0.7;
 const icon = "size-5 shrink-0";
+/** The whole visit: the clinician starts with the first line of the plan and works through them. */
+const FOCUS: Focus = "whole";
+/** The small quick answers under a message, like the suggestions in a chat app. */
+const CHIP =
+  "inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-surface px-4 text-[.95rem] font-bold text-ink transition-colors duration-150 hover:bg-lav disabled:cursor-not-allowed disabled:opacity-60";
 
 function lastIndexOfMe(msgs: Msg[]): number {
   for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].role === "me") return i;
@@ -60,26 +53,22 @@ function lastIndexOfMe(msgs: Msg[]): number {
 }
 
 /**
- * The practice call: a full-screen layer above the app shell (spec 4.4). It owns its top bar, one history entry,
- * and the Esc rule. While it is up the shell behind it is inert.
+ * The practice chat: a full-screen layer above the app shell (spec 4.4), laid out like a chat app. The clinician
+ * starts with the first line of the plan and the practice goes on in the same chat. It owns its top bar, one history
+ * entry, and the Esc rule. While it is up the shell behind it is inert.
  */
-export function CallScreen({
-  plan,
-  focus,
-  readyBefore,
-  onFinish,
-}: {
-  plan: VisitPlan;
-  focus: Focus;
-  readyBefore?: Ready;
-  onFinish: (session: PracticeSession) => void;
-}) {
+export function CallScreen({ plan, note, onFinish }: { plan: VisitPlan; note?: string; onFinish: (session: PracticeSession) => void }) {
   const { state } = useRumi();
   const { show } = useCrisis();
   const router = useRouter();
   const { outputMode, companionName } = state.settings;
 
-  const [msgs, setMsgs] = useState<Msg[]>(() => [{ id: 0, role: "clinician", text: openingLine(), covered: [] }]);
+  const [msgs, setMsgs] = useState<Msg[]>(() => [
+    ...(note ? [{ id: 0, role: "clinician" as const, text: note, setup: true, covered: [] }] : []),
+    { id: 1, role: "clinician", text: PRACTICE.greeting, setup: true, covered: [] },
+    { id: 2, role: "clinician", text: openingLine(), covered: [] },
+  ]);
+  const focus = FOCUS;
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null as "turn" | "help" | null);
@@ -103,7 +92,7 @@ export function CallScreen({
   const title = useRef(null as HTMLHeadingElement | null);
   const input = useRef(null as HTMLTextAreaElement | null);
   const end = useRef(null as HTMLDivElement | null);
-  const nextId = useRef(1);
+  const nextId = useRef(3);
   const stopListening = useRef(() => {});
   const detach = useRef(() => {});
 
@@ -133,11 +122,14 @@ export function CallScreen({
     end.current?.scrollIntoView({ block: "end" });
   }, [msgs.length]);
 
-  const real = msgs.filter((m) => !m.repeated);
-  const lastClinician = [...real].reverse().find((m) => m.role === "clinician") ?? msgs[0];
+  const setupMsgs = msgs.filter((m) => m.setup);
+  const real = msgs.filter((m) => !m.repeated && !m.setup);
+  const lastClinician = [...real].reverse().find((m) => m.role === "clinician") ?? msgs[msgs.length - 1];
   const covered = lastClinician.covered;
   const isLast = lastClinician.last === true;
   const hasAnswer = real.some((m) => m.role === "me");
+  // Ready-made answers under the box: the next lines of the plan that no answer has covered yet. Tapping one fills the box.
+  const starters = isLast ? [] : uncovered(plan, focus, covered).slice(0, 3);
   const layerOpen = leaveOpen || endOpen || planOpen || paused || help !== null;
   const readAloud = outputMode !== "read" && canSpeak();
 
@@ -156,7 +148,6 @@ export function CallScreen({
     planId: plan.id,
     startedAt: new Date(started).toISOString(),
     focus,
-    readyBefore,
     turns: real.map(({ role, text: t, usedHelp }) => (usedHelp ? { role, text: t, usedHelp } : { role, text: t })),
     coveredItemIds: covered,
     helpCount,
@@ -213,7 +204,7 @@ export function CallScreen({
       covered: [...new Set([...covered, ...res.data.coveredItemIds])],
       last: res.data.isLastTurn,
     };
-    setMsgs([...real, me, reply]);
+    setMsgs([...setupMsgs, ...real, me, reply]);
     setText("");
     setHelpPending(false);
     say(reply.text);
@@ -321,46 +312,38 @@ export function CallScreen({
       role="region"
       aria-label={PRACTICE.callRegion}
       onKeyDown={onKeyDown}
-      // No tab bar here, so the sticky Send sits at the bottom edge.
-      style={{ "--tabbar-h": "0px", scrollPaddingBottom: "calc(var(--sticky-h) + 1rem)" } as CSSProperties}
-      className="fixed inset-0 z-[var(--z-call)] overflow-y-auto bg-bg text-ink"
+      style={{ "--tabbar-h": "0px" } as CSSProperties}
+      className="fixed inset-0 z-[var(--z-call)] flex flex-col bg-bg text-ink"
     >
-      <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4">
-        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-line bg-bg py-2 pt-[max(.5rem,env(safe-area-inset-top))]">
-          <Button
-            kind="secondary"
-            disabled={leaving}
-            aria-label={fill(PRACTICE.backTo, { title: PAGES["/practice"].title })}
-            onClick={() => setLeaveOpen(true)}
-          >
-            <ArrowLeft aria-hidden="true" className="size-5" />
-            {NAV.back}
-          </Button>
-        </header>
+      <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-2 pt-[max(.5rem,env(safe-area-inset-top))]">
+        <Button kind="secondary" disabled={leaving} aria-label={fill(PRACTICE.backTo, { title: PAGES["/practice"].title })} onClick={() => setLeaveOpen(true)}>
+          <ArrowLeft aria-hidden="true" className="size-5" />
+          {NAV.back}
+        </Button>
+        <p className="m-0 min-w-0 truncate text-center font-bold">{PRACTICE.callTitle}</p>
+        <Button kind="secondary" onClick={() => setEndOpen(true)} disabled={leaving}>
+          {PRACTICE.endPractice}
+        </Button>
+      </header>
 
-        <h1 ref={title} tabIndex={-1} className="sr-only">
-          {PRACTICE.callTitle}
-        </h1>
+      <h1 ref={title} tabIndex={-1} className="sr-only">
+        {PRACTICE.callTitle}
+      </h1>
 
-        <div className="grid flex-1 content-start gap-4 py-4">
-          <Banner>{PRACTICE.banner}</Banner>
-          <div className="flex items-center gap-4">
-            <DoctorAvatar speaking={busy || speaking} />
-          </div>
-
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto grid w-full max-w-3xl gap-6 px-4 py-6">
           <div role="log" aria-live="polite" aria-label={PRACTICE.logLabel}>
-            <ol className="m-0 grid list-none gap-3 p-0">
+            <ol className="m-0 grid list-none gap-6 p-0">
               {msgs.map((m) => (
-                <li
-                  key={m.id}
-                  data-role={m.role}
-                  className="grid gap-0.5 rounded-card border border-line-strong bg-surface p-3 data-[role=me]:bg-primary-soft"
-                >
-                  <span className="text-sm font-bold text-muted-ink">
-                    {m.role === "me" ? PRACTICE.you : PRACTICE.clinician}
-                    {m.repeated ? ` ${PRACTICE.repeated}` : ""}
-                  </span>
-                  <span>{m.text}</span>
+                <li key={m.id} data-role={m.role} className={cn("flex items-start gap-3", m.role === "me" && "justify-end")}>
+                  {m.role === "clinician" ? <DoctorAvatar speaking={m.id === lastClinician.id && (busy || speaking)} className="mt-0.5 size-9" /> : null}
+                  <div className={cn("min-w-0", m.role === "me" ? "max-w-[85%] rounded-3xl bg-primary-soft px-4 py-2.5" : "flex-1 py-1")}>
+                    <span className="sr-only">
+                      {m.role === "me" ? PRACTICE.you : PRACTICE.clinician}
+                      {m.repeated ? ` ${PRACTICE.repeated}` : ""}
+                    </span>
+                    <p className="m-0 max-w-none text-[1.05rem] leading-relaxed">{m.text}</p>
+                  </div>
                 </li>
               ))}
             </ol>
@@ -374,111 +357,132 @@ export function CallScreen({
               </Button>
             </Notice>
           ) : null}
-
-          <div role="group" aria-label={PRACTICE.toolbarLabel} className="flex flex-wrap gap-x-1 gap-y-1">
-            <Button kind="tertiary" onClick={pause} disabled={leaving}>
-              <Pause aria-hidden="true" className={icon} />
-              {PRACTICE.pause}
-            </Button>
-            <Button kind="tertiary" onClick={repeat} disabled={toolbarBusy}>
-              <Repeat aria-hidden="true" className={icon} />
-              {PRACTICE.repeat}
-            </Button>
-            {readAloud ? (
-              <Button kind="tertiary" onClick={slowDown} disabled={toolbarBusy || rate <= MIN_RATE}>
-                <Turtle aria-hidden="true" className={icon} />
-                {PRACTICE.slowDown}
-              </Button>
-            ) : null}
-            {speaking ? (
-              <Button kind="tertiary" onClick={stopReading}>
-                <VolumeX aria-hidden="true" className={icon} />
-                {PRACTICE.stopReading}
-              </Button>
-            ) : null}
-            <Button kind="tertiary" onClick={() => void openHelp()} loading={helpBusy} disabled={toolbarBusy}>
-              <Lightbulb aria-hidden="true" className={icon} />
-              {PRACTICE.help}
-            </Button>
-            <Button kind="tertiary" onClick={() => setPlanOpen(true)} disabled={leaving}>
-              <ClipboardList aria-hidden="true" className={icon} />
-              {PRACTICE.showPlan}
-            </Button>
-            {hasAnswer ? (
-              <Button kind="tertiary" onClick={tryThatAgain} disabled={toolbarBusy}>
-                <RotateCcw aria-hidden="true" className={icon} />
-                {PRACTICE.tryAgain}
-              </Button>
-            ) : null}
-            <Button kind="tertiary" onClick={() => setEndOpen(true)} disabled={leaving}>
-              <Square aria-hidden="true" className={icon} />
-              {PRACTICE.endPractice}
-            </Button>
-          </div>
           <div ref={end} />
         </div>
+      </div>
 
-        <div className="lg:sticky lg:bottom-0">
-          <form onSubmit={onSubmit}>
-            <StickyActions>
-              <div className="grid gap-2">
-                {isLast ? null : (
-                  <>
-                    <label htmlFor="practice-answer" className="font-bold">
-                      {PRACTICE.answerLabel}
-                    </label>
-                    <div className="flex items-end gap-2">
-                      <textarea
-                        id="practice-answer"
-                        ref={input}
-                        rows={1}
-                        className={`${fieldControlClass} min-h-12 min-w-0 flex-1 resize-none`}
-                        value={text}
-                        disabled={paused || leaving}
-                        onChange={(e) => {
-                          setText(e.target.value);
-                          if (status === PRACTICE.blank) setStatus("");
-                        }}
-                        onKeyDown={(e) => {
-                          // Enter sends, Shift+Enter adds a line, and a key that only finishes a word (IME) is left alone.
-                          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            if (!paused && !leaving && !busy) void send();
-                          }
-                        }}
-                      />
-                      {canListen() ? (
-                        <Button kind="secondary" onClick={mic} disabled={paused || leaving} aria-pressed={listening}>
-                          {listening ? <MicOff aria-hidden="true" className={icon} /> : <Mic aria-hidden="true" className={icon} />}
-                          <span className="sr-only">{listening ? PRACTICE.micStop : PRACTICE.micStart}</span>
-                        </Button>
-                      ) : null}
-                      <Button kind={paused ? "secondary" : "primary"} type="submit" arrow disabled={paused || leaving} loading={busy}>
-                        {PRACTICE.send}
-                      </Button>
-                    </div>
-                  </>
-                )}
-                <p role="status" className="note m-0 min-h-6">
-                  {line}
-                </p>
-                {isLast ? (
-                <Button
-                  kind={paused ? "secondary" : "primary"}
-                  type="submit"
-                  arrow
-                  block
-                  disabled={paused || leaving}
-                  loading={busy}
-                >
-                  {PRACTICE.seeSummary}
-                </Button>
+      <footer className="px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <form onSubmit={onSubmit} className="mx-auto grid w-full max-w-3xl gap-2">
+          <div role="group" aria-label={PRACTICE.toolbarLabel} className="flex flex-wrap items-start gap-2">
+            <button type="button" className={CHIP} onClick={() => void openHelp()} disabled={toolbarBusy || helpBusy}>
+              <Lightbulb aria-hidden="true" className={icon} />
+              {PRACTICE.help}
+            </button>
+            <button type="button" className={CHIP} onClick={repeat} disabled={toolbarBusy}>
+              <Repeat aria-hidden="true" className={icon} />
+              {PRACTICE.repeat}
+            </button>
+            {speaking ? (
+              <button type="button" className={CHIP} onClick={stopReading}>
+                <VolumeX aria-hidden="true" className={icon} />
+                {PRACTICE.stopReading}
+              </button>
+            ) : null}
+            <details className="group">
+              <summary className={`${CHIP} list-none [&::-webkit-details-marker]:hidden`}>{PRACTICE.more}</summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" className={CHIP} onClick={() => setPlanOpen(true)} disabled={leaving}>
+                  <ClipboardList aria-hidden="true" className={icon} />
+                  {PRACTICE.showPlan}
+                </button>
+                <button type="button" className={CHIP} onClick={pause} disabled={leaving}>
+                  <Pause aria-hidden="true" className={icon} />
+                  {PRACTICE.pause}
+                </button>
+                {readAloud ? (
+                  <button type="button" className={CHIP} onClick={slowDown} disabled={toolbarBusy || rate <= MIN_RATE}>
+                    <Turtle aria-hidden="true" className={icon} />
+                    {PRACTICE.slowDown}
+                  </button>
+                ) : null}
+                {hasAnswer ? (
+                  <button type="button" className={CHIP} onClick={tryThatAgain} disabled={toolbarBusy}>
+                    <RotateCcw aria-hidden="true" className={icon} />
+                    {PRACTICE.tryAgain}
+                  </button>
                 ) : null}
               </div>
-            </StickyActions>
-          </form>
-        </div>
-      </div>
+            </details>
+          </div>
+
+          {!isLast && starters.length > 0 && text.trim() === "" ? (
+            <div role="group" aria-label={PRACTICE.startersLabel} className="flex flex-wrap gap-2">
+              {starters.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={CHIP}
+                  disabled={paused || leaving || busy}
+                  onClick={() => {
+                    setText(item.text);
+                    input.current?.focus();
+                  }}
+                >
+                  {item.text}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {isLast ? (
+            <Button kind={paused ? "secondary" : "primary"} type="submit" arrow block disabled={paused || leaving} loading={busy}>
+              {PRACTICE.seeSummary}
+            </Button>
+          ) : (
+            <div className="flex items-end gap-1 rounded-[28px] border-2 border-line-strong bg-surface p-2 pl-5 [box-shadow:var(--shadow)] focus-within:outline-[3px] focus-within:outline-offset-2 focus-within:outline-focus">
+              <label htmlFor="practice-answer" className="sr-only">
+                {PRACTICE.answerLabel}
+              </label>
+              <textarea
+                id="practice-answer"
+                ref={input}
+                rows={1}
+                placeholder={PRACTICE.placeholder}
+                className="max-h-48 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent py-3 text-ink outline-none placeholder:text-muted-ink"
+                value={text}
+                disabled={paused || leaving}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  if (status === PRACTICE.blank) setStatus("");
+                }}
+                onKeyDown={(e) => {
+                  // Enter sends, Shift+Enter adds a line, and a key that only finishes a word (IME) is left alone.
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    if (!paused && !leaving && !busy) void send();
+                  }
+                }}
+              />
+              {canListen() ? (
+                <button
+                  type="button"
+                  onClick={mic}
+                  disabled={paused || leaving}
+                  aria-pressed={listening}
+                  className="grid size-12 shrink-0 cursor-pointer place-items-center rounded-full border-2 border-line-strong bg-surface text-ink hover:bg-lav disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {listening ? <MicOff aria-hidden="true" className={icon} /> : <Mic aria-hidden="true" className={icon} />}
+                  <span className="sr-only">{listening ? PRACTICE.micStop : PRACTICE.micStart}</span>
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                data-kind="primary"
+                disabled={paused || leaving || busy}
+                aria-busy={busy || undefined}
+                className="grid size-12 shrink-0 cursor-pointer place-items-center rounded-full bg-primary text-primary-ink hover:bg-[color-mix(in_srgb,var(--primary),#000_8%)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <ArrowUp aria-hidden="true" className={icon} />
+                <span className="sr-only">{PRACTICE.send}</span>
+              </button>
+            </div>
+          )}
+          <p role="status" className="note m-0 min-h-6 text-center">
+            {line}
+          </p>
+          <p className="note m-0 text-center">{PRACTICE.banner}</p>
+        </form>
+      </footer>
 
       <Sheet open={leaveOpen} onOpenChange={(o) => (o ? setLeaveOpen(true) : keepPracticing())} title={PRACTICE.leaveTitle}>
         <p className="m-0">{PRACTICE.leaveText}</p>

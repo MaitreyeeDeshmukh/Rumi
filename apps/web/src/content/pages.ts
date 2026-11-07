@@ -85,7 +85,7 @@ export const PAGES_COPY = {
   "/get-ready": {
     title: "Get ready",
     h1: "Get ready.",
-    lead: "Say what you want to talk about. Rumi makes a plan.",
+    lead: "Get ready for your visit. Say what you want to talk about. Rumi makes a plan.",
     description: "Say what you want to talk about at your visit. Rumi turns it into a plan you can change.",
     primary: { empty: "Make my plan", plan: "Looks right", saved: "Go to Practice" },
   },

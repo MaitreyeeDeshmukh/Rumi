@@ -25,7 +25,7 @@ export function SiteChrome({ children }: { children: ReactNode }) {
           </ul>
         </nav>
       </noscript>
-      <main id="main" tabIndex={-1}>
+      <main id="main" tabIndex={-1} data-wide>
         <BackRow />
         <FocusOnNavigate />
         <div className="page-enter">{children}</div>

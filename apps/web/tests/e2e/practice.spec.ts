@@ -7,10 +7,22 @@ const call = (page: Page) => page.locator("[data-call-screen]");
 const main = (page: Page) => page.locator("main");
 const leaveSheet = (page: Page) => page.getByRole("dialog", { name: "Leave practice?" });
 
+/** The Practice start: pick "My plan" and start. The chat opens with the clinician's hello and first question. */
+async function choosePlan(page: Page) {
+  await page.getByRole("radio", { name: "My plan" }).click();
+  await page.getByRole("button", { name: "Start practice" }).click();
+}
+
+/** Pause, Slow down, Show my plan and Try that again sit under "More". Opens it once. */
+async function openMore(layer: ReturnType<typeof call>) {
+  const more = layer.locator("details");
+  if (!(await more.evaluate((el) => (el as HTMLDetailsElement).open))) await more.locator("summary").click();
+}
+
 async function start(page: Page) {
   await seed(page, "planCard");
   await page.goto("/practice");
-  await page.getByRole("button", { name: "Start practice" }).click();
+  await choosePlan(page);
   await expect(call(page)).toBeVisible();
 }
 
@@ -20,27 +32,38 @@ async function answer(page: Page, text: string) {
 }
 
 test.describe("practice: before the call", () => {
-  test("no plan: empty state with one primary, Go to Get ready", async ({ page }) => {
+  test("no plan: General practice is chosen, with My plan, a booked visit and a recording as the other choices", async ({ page }) => {
     await seed(page, "empty");
     await page.goto("/practice");
     await expect(main(page).getByRole("link", { name: /^Back/ })).toBeVisible();
-    await expect(main(page).getByText("You need a plan first.")).toBeVisible();
-    const primary = main(page).locator('[data-kind="primary"]');
-    await expect(primary).toHaveCount(1);
-    await expect(primary).toHaveText("Go to Get ready");
-    await expect(primary).toHaveAttribute("href", "/get-ready");
+    await expect(main(page).getByText("You need a plan first.")).toHaveCount(0);
+    await expect(main(page).getByRole("radio", { name: "General practice" })).toBeChecked();
+    await expect(main(page).getByRole("button", { name: "Start practice" })).toBeEnabled();
+    await main(page).getByRole("radio", { name: "My plan" }).click();
+    await expect(main(page).getByRole("link", { name: "Go to Get ready" })).toHaveAttribute("href", "/get-ready");
+    await expect(main(page).getByRole("button", { name: "Start practice" })).toBeDisabled();
+    await main(page).getByRole("radio", { name: "A visit I booked" }).click();
+    await expect(main(page).getByRole("link", { name: "Book an appointment" })).toHaveAttribute("href", "/appointments/new");
   });
 
-  test("picker: five parts, whole visit chosen, readiness is optional, one primary Start practice", async ({ page }) => {
-    await seed(page, "planCard");
+  test("no plan: general practice opens the chat with a hello, the first question and ready-made answers", async ({ page }) => {
+    await seed(page, "empty");
     await page.goto("/practice");
-    const group = main(page).getByRole("radiogroup", { name: "Part to practice" });
-    await expect(group.getByRole("radio")).toHaveCount(5);
-    await expect(group.getByRole("radio", { name: "The whole visit" })).toBeChecked();
-    await expect(main(page).getByRole("radiogroup", { name: "How ready do I feel? 1 to 5" }).getByRole("radio")).toHaveCount(5);
-    const primary = main(page).locator('[data-kind="primary"]');
-    await expect(primary).toHaveCount(1);
-    await expect(primary).toHaveText("Start practice");
+    await main(page).getByRole("button", { name: "Start practice" }).click();
+    const layer = call(page);
+    await expect(layer.getByText("Welcome. I am Dr. Lee. We will practice your visit together.")).toBeVisible();
+    await expect(layer.getByText("Hi. What brings you in today?")).toBeVisible();
+    // Tapping a ready-made answer fills the box, so nobody has to start from a blank box.
+    await layer.getByRole("group", { name: "Tap one to start your answer" }).getByRole("button").first().click();
+    await expect(layer.getByLabel("Your answer")).not.toHaveValue("");
+  });
+
+  test("a recording or file shows a file button and a link to record a visit", async ({ page }) => {
+    await seed(page, "empty");
+    await page.goto("/practice");
+    await main(page).getByRole("radio", { name: "A recording or file" }).click();
+    await expect(main(page).getByRole("button", { name: "Choose a file" })).toBeVisible();
+    await expect(main(page).getByRole("link", { name: "Record a visit" })).toHaveAttribute("href", "/record");
   });
 });
 
@@ -73,6 +96,9 @@ test.describe("practice: the call screen", () => {
     // Repeat shows the line again, marked.
     await layer.getByRole("button", { name: "Repeat" }).click();
     await expect(layer.getByText("Clinician (repeated)")).toBeVisible();
+
+    // The less used controls are under More.
+    await openMore(layer);
 
     // Slow down (when speech is on) says so.
     const slow = layer.getByRole("button", { name: "Slow down" });
@@ -170,7 +196,7 @@ test.describe("practice: the call screen", () => {
     expect(stored).toBe(1);
 
     await primary.click();
-    await expect(main(page).getByRole("button", { name: "Start practice" })).toBeVisible();
+    await expect(call(page)).toBeVisible(); // Practice again goes straight back into the chat
   });
 
   test("End practice asks first, then shows the summary", async ({ page }) => {
@@ -191,7 +217,7 @@ test.describe("practice: leaving and history", () => {
     await page.goto("/home");
     await main(page).getByRole("link", { name: "Start practice" }).first().click();
     await expect(page).toHaveURL(/\/practice$/);
-    await page.getByRole("button", { name: "Start practice" }).click();
+    await choosePlan(page);
     await expect(call(page)).toBeVisible();
     expect(await page.evaluate(() => history.state?.rumiCall)).toBe(true);
 
@@ -232,7 +258,7 @@ test.describe("practice: leaving and history", () => {
     await seed(page, "planCard");
     await page.goto("/home");
     await page.goto("/practice");
-    await page.getByRole("button", { name: "Start practice" }).click();
+    await choosePlan(page);
     await expect(call(page)).toBeVisible();
     await call(page).getByRole("button", { name: "End practice" }).click();
     await page.getByRole("dialog", { name: "End practice?" }).getByRole("button", { name: "End now" }).click();
@@ -252,6 +278,7 @@ test.describe("practice: leaving and history", () => {
     await expect(help).toHaveCount(0);
     await expect(leaveSheet(page)).toHaveCount(0);
 
+    await openMore(layer);
     await layer.getByRole("button", { name: "Show my plan" }).click();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Your plan" })).toHaveCount(0);

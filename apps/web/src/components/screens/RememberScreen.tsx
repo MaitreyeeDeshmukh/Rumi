@@ -91,7 +91,7 @@ export function RememberScreen() {
   const voices = voicesOf(SAMPLE_VISIT);
 
   return (
-    <Screen title={PAGES["/remember"].h1} lead={PAGES["/remember"].lead}>
+    <Screen title={PAGES["/remember"].h1} lead={PAGES["/remember"].lead} footer>
       <div data-needs-js>
         {!hydrated ? null : (
           <div ref={live} tabIndex={-1} className="grid gap-5 outline-none">

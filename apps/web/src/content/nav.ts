@@ -33,4 +33,6 @@ export const NAV = {
   tryAgain: "Try again",
   appLabel: "App",
   helpAndInfo: "Help and info",
+  accountMenu: "Account",
+  lookMenu: "Choose a look",
 } as const;

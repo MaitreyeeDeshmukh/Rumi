@@ -95,5 +95,8 @@ export const HOME = {
   memory: "Memory: {state}",
   memoryOn: "On",
   memoryOff: "Off",
+  memoryTurnOn: "Turn on Memory",
+  memoryNotNow: "Not now",
+  memoryWorking: "Working on it.",
   manage: "Manage in Settings",
 } as const;

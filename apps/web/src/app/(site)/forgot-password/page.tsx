@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { ForgotPasswordForm } from "@/features/auth/ui";
 import { AUTH_COPY } from "@/features/auth/ui/copy";
-import { S } from "@/features/auth/ui/styles";
+import { AuthPanel } from "@/components/marketing/AuthPanel";
+import { Screen } from "@/components/ui/screen";
 
 export const metadata: Metadata = {
   title: "Forgot password",
@@ -11,10 +12,8 @@ export const metadata: Metadata = {
 
 export default function ForgotPasswordPage() {
   return (
-    <article className={S.page}>
-      <h1>{AUTH_COPY.forgot.title}</h1>
-      <p className="intro">{AUTH_COPY.forgot.intro}</p>
-      <ForgotPasswordForm />
-    </article>
+    <Screen title={AUTH_COPY.forgot.title} lead={AUTH_COPY.forgot.intro} aside={<AuthPanel />} footer={false}>
+      <div className="max-w-md"><ForgotPasswordForm /></div>
+    </Screen>
   );
 }

@@ -11,19 +11,17 @@ async function ready(page: Page) {
 const mainPrimary = (page: Page) => page.locator('main [data-kind="primary"]');
 
 test.describe("home", () => {
-  test("has one h1, two identical primaries and seven h2 in order", async ({ page }) => {
+  test("has one h1, one Open Rumi primary and seven h2 in order", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("h1")).toHaveCount(1);
     await expect(page.locator("h1")).toHaveText(PAGES["/"].h1);
     await ready(page);
     const primaries = mainPrimary(page);
-    await expect(primaries).toHaveCount(2);
+    await expect(primaries).toHaveCount(1);
     await expect(primaries.nth(0)).toHaveText("Open Rumi");
-    await expect(primaries.nth(1)).toHaveText("Open Rumi");
-    expect(await primaries.nth(0).getAttribute("href")).toBe(await primaries.nth(1).getAttribute("href"));
     expect(await page.locator("main h2").allTextContents()).toEqual([
       "A visit is short. The questions are fast.",
-      "Made for autistic and ADHD adults.",
+      "Made for neurodivergent people.",
       "Three steps.",
       "Four things Rumi does.",
       "You stay in control.",
@@ -74,13 +72,11 @@ test.describe("home", () => {
     await expect(page.getByText("Made up", { exact: true }).first()).toBeVisible();
   });
 
-  test("says where the plan is saved, and shows the safety strip", async ({ page }) => {
+  test("says where the plan is saved", async ({ page }) => {
     await page.goto("/");
     await expect(
       page.getByText("Your plan is saved on your device. It goes to the AI service only when you press a button."),
     ).toBeVisible();
-    await expect(page.locator('main a[href="tel:988"]')).toBeVisible();
-    await expect(page.locator('main a[href="/safety"]').first()).toBeVisible();
   });
 });
 

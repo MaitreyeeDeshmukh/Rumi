@@ -10,7 +10,7 @@ export const HOME = {
     text: "A doctor visit is often short. The doctor asks questions quickly. Many people freeze. A parent or helper often answers instead. Then you leave without knowing what was decided.",
   },
   audience: {
-    h2: "Made for autistic and ADHD adults.",
+    h2: "Made for neurodivergent people.",
     text: "You may live at home, on campus, or in supported housing. Someone may usually speak for you at the doctor. Rumi helps you do it yourself. You do not need a diagnosis. Rumi never asks for one.",
   },
   steps: {

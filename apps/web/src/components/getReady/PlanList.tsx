@@ -135,7 +135,7 @@ export function PlanList({
         <Field id={`${uid}-add`} label={GET_READY.addLabel} hint={GET_READY.addHint} error={addError ? GET_READY.blank : undefined}>
           <input
             type="text"
-            maxLength={200}
+            maxLength={1000}
             className={fieldControlClass}
             value={addText}
             onChange={(e) => {

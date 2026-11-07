@@ -20,10 +20,10 @@ const LOOK: Record<Variant, { hair: string; skin: string; hairPath: string }> = 
   },
 };
 
-export function DoctorAvatar({ speaking, variant = "patel" }: { speaking: boolean; variant?: Variant }) {
+export function DoctorAvatar({ speaking, variant = "patel", className = "size-28" }: { speaking: boolean; variant?: Variant; className?: string }) {
   const { hair, skin, hairPath } = LOOK[variant];
   return (
-    <svg viewBox="0 0 200 200" className="size-28 shrink-0" aria-hidden="true" data-speaking={speaking ? "true" : "false"}>
+    <svg viewBox="0 0 200 200" className={`${className} shrink-0`} aria-hidden="true" data-speaking={speaking ? "true" : "false"}>
       <circle cx="100" cy="100" r="96" fill="#3A3650" />
       <circle cx="100" cy="100" r="96" fill="none" stroke="#BBAAE8" strokeWidth={speaking ? 10 : 4} />
       <path d="M38 196c6-38 30-56 62-56s56 18 62 56Z" fill="#F4F2F8" />

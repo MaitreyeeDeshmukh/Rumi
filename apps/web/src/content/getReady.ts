@@ -2,6 +2,7 @@
 export const GET_READY = {
   boxLabel: "Tell me what is going on. Speak or type.",
   boxHint: "Write in your own words. Short is fine.",
+  starters: ["I want to talk about pain.", "I want to talk about sleep.", "I want to talk about a medicine."],
   whatNext: "Rumi turns your words into a plan. You can change every line.",
   blank: "Write one sentence first.",
   loading: "Making your plan…",
@@ -28,7 +29,7 @@ export const GET_READY = {
   undo: "Undo",
   addLabel: "Add my own",
   addButton: "Add line",
-  addHint: "One idea in each line.",
+  addHint: "Write as much as you like. Rumi splits it into lines.",
   looksRight: "Looks right",
   saved: "Your plan is saved.",
   cardHeading: "How I like to be supported",

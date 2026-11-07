@@ -93,7 +93,7 @@ export function AppointmentScreen() {
             </section>
 
             <div className="grid gap-3">
-              <ButtonLink kind="primary" arrow block href="/practice">
+              <ButtonLink kind="primary" arrow block href={`/practice?appt=${a.id}`}>
                 {APPT.practice}
               </ButtonLink>
               <ButtonLink kind="secondary" block href={`/record?appt=${a.id}`}>
