@@ -41,4 +41,7 @@ export const HOME_FAQ_QUESTIONS: readonly string[] = [
 
 export const FAQ_COPY = {
   allHelp: "See all help",
+  searchLabel: "Search the questions",
+  searchPlaceholder: "Search for a question",
+  noMatch: "No question matches that. Try another word.",
 } as const;

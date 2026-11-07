@@ -10,9 +10,9 @@ import { MAIN_NAV } from "@/lib/site";
 export function SiteHeader() {
   return (
     <header className="no-print border-b border-line pt-[env(safe-area-inset-top)]">
-      <div className="mx-auto flex w-full max-w-[var(--main-max)] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
+      <div className="mx-auto flex w-full max-w-[var(--main-max)] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-[var(--gutter,1rem)] py-2">
         <Logo />
-        <nav aria-label={NAV.mainLabel} className="hidden lg:flex lg:gap-1">
+        <nav aria-label={NAV.mainLabel} className="hidden lg:ml-auto lg:flex lg:items-center lg:gap-1">
           {MAIN_NAV.map((l) => (
             <Link
               key={l.href}
@@ -22,12 +22,12 @@ export function SiteHeader() {
               {l.label}
             </Link>
           ))}
-        </nav>
-        <div className="flex flex-wrap items-center gap-2">
-          <ButtonLink kind="secondary" chrome href="/login">
+          <ButtonLink kind="secondary" chrome href="/login" className="ml-2">
             {NAV.logIn}
           </ButtonLink>
-          <OpenRumiButton kind="secondary" chrome className="hidden lg:inline-flex" />
+        </nav>
+        <div className="flex flex-wrap items-center gap-2">
+          <OpenRumiButton kind="secondary" chrome className="chrome-open hidden lg:inline-flex" />
           <MenuSheet />
         </div>
       </div>

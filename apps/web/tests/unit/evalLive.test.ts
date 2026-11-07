@@ -104,7 +104,7 @@ describe("makeLiveRun (harness arm): the real runTask path", () => {
   it("a good answer is a model_ok observation with everything the runner and scorers read", async () => {
     const s = script([completion(GOOD_PLAN)]);
     const obs = await run(s);
-    expect(obs).toMatchObject({ status: 200, degraded: false, attempts: 1, modelUsed: QUALITY, mode: "live", tier: "quality", promptVersion: "plan@3", canaryInPrompt: true });
+    expect(obs).toMatchObject({ status: 200, degraded: false, attempts: 1, modelUsed: QUALITY, mode: "live", tier: "quality", promptVersion: "plan@4", canaryInPrompt: true });
     expect(classify(obs)).toBe("model_ok");
     expect(obs.latencyMs).toBeGreaterThanOrEqual(0);
     // The classifier call and the task call are both listed (both cost money); attempts counts only the task call.

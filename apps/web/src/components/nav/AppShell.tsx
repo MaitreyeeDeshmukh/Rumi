@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { AppNav } from "@/components/nav/AppNav";
 import { BackRow } from "@/components/nav/BackRow";
 import { cn } from "@/components/ui/cn";
@@ -23,7 +23,10 @@ export function AppShell({
   footer: ReactNode;
   children: ReactNode;
 }) {
-  const welcome = usePathname() === "/welcome";
+  const path = usePathname();
+  const welcome = path === "/welcome";
+  // The dashboard uses the room beside the sidebar; every other screen keeps the readable width.
+  const wide = path === "/home";
   const barBox = useRef(null as HTMLDivElement | null);
 
   // The bar stays at the top of the screen on phones, so focus and anchors need that much room: --appbar-h (no state).
@@ -49,7 +52,13 @@ export function AppShell({
       <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
         {welcome ? null : <AppNav />}
         <div className="flex min-w-0 flex-1 flex-col">
-          <main id="main" tabIndex={-1} data-no-tabs={welcome ? "" : undefined}>
+          <main
+            id="main"
+            tabIndex={-1}
+            data-no-tabs={welcome ? "" : undefined}
+            className={wide ? "lg:px-8" : undefined}
+            style={wide ? ({ "--main-max": "84rem" } as CSSProperties) : undefined}
+          >
             <BackRow />
             <FocusOnNavigate />
             {noJs}

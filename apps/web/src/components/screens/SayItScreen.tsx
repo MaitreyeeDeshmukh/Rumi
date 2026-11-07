@@ -111,7 +111,7 @@ export function SayItScreen() {
   ) : null;
 
   return (
-    <Screen title={page.h1} lead={page.lead}>
+    <Screen title={page.h1} lead={page.lead} footer>
       <div data-needs-js className="grid gap-6">
         {view?.script != null ? (
           <section aria-labelledby={`${id}-title`} className="grid gap-4">

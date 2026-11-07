@@ -49,7 +49,8 @@ export function useDashboardInput(): { ready: boolean; props: HomeViewProps } {
   const before = sessions.at(-2);
   // A card with no lines is not a card yet. Sessions without a plan (the plan was removed) still show what was said.
   const card = supportCard && Array.isArray((supportCard as { items?: unknown }).items) && (supportCard as { items: unknown[] }).items.length > 0 ? supportCard : null;
-  const summary = last ? (plan ? summarizeSession(last, plan) : withoutPlan(last)) : null;
+  // A practice made from a booked visit, a recording or a file used other lines, so it is not scored against my plan.
+  const summary = last ? (plan && last.planId === plan.id ? summarizeSession(last, plan) : withoutPlan(last)) : null;
 
   return {
     ready: hydrated,

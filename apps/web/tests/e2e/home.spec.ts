@@ -29,7 +29,7 @@ test.describe("dashboard (/home)", () => {
     await expect(steps.getByRole("listitem").first()).toContainText("In progress");
     await expect(main(page).getByText("Headaches for two weeks", { exact: true })).toBeVisible();
     await expect(main(page).getByText("4 lines on, 1 line off")).toBeVisible();
-    await expect(main(page).getByRole("link", { name: "Edit plan" })).toHaveAttribute("data-kind", "secondary");
+    await expect(main(page).getByRole("link", { name: "Open Get ready" })).toHaveAttribute("data-kind", "secondary");
   });
 
   test("after one practice: sample visit next, last practice and the help words", async ({ page }) => {
@@ -41,9 +41,9 @@ test.describe("dashboard (/home)", () => {
     await expect(last).toContainText("You said 2 of 4 things yourself.");
     await expect(last).toContainText("You said 1 with help.");
     await expect(last).not.toContainText("Last time you needed"); // one practice: no trend
-    const again = last.getByRole("link", { name: "Practice again" });
-    await expect(again).toHaveAttribute("href", "/practice");
-    await expect(again).toHaveAttribute("data-kind", "secondary");
+    const open = main(page).getByRole("link", { name: "Open Practice" });
+    await expect(open).toHaveAttribute("href", "/practice");
+    await expect(open).toHaveAttribute("data-kind", "secondary");
     const help = main(page).locator("section", { has: page.getByRole("heading", { name: "Help you usually need" }) });
     await expect(help).toContainText("Describing what is wrong");
     await expect(help.locator("li", { hasText: "Describing what is wrong" })).toContainText("No help");
@@ -264,6 +264,27 @@ test.describe("dashboard (/home)", () => {
     await expect(main(page).getByText("Memory: Off")).toBeVisible();
     await expect(main(page).getByRole("link", { name: "Manage in Settings" })).toHaveAttribute("href", "/settings");
     await expect(main(page).getByText("Your plan is saved on this device.")).toBeVisible();
+  });
+});
+
+test.describe("memory switch on the dashboard", () => {
+  test("asks first; Not now keeps Memory off; Turn on Memory switches it on; the switch turns it off", async ({ page }) => {
+    await seed(page, "empty");
+    await page.goto("/home");
+    const toggle = main(page).getByRole("switch", { name: "Remember my support sentences" });
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(main(page).getByText("You can delete everything at any time.")).toBeVisible();
+    await expect(toggle).not.toBeChecked(); // the switch waits for the answer
+    await main(page).getByRole("button", { name: "Not now" }).click();
+    await expect(main(page).getByText("Memory: Off")).toBeVisible();
+    await toggle.click();
+    await main(page).getByRole("button", { name: "Turn on Memory" }).click();
+    await expect(toggle).toBeChecked();
+    await expect(main(page).getByText("Memory: On")).toBeVisible();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect(main(page).getByText("Memory: Off")).toBeVisible();
   });
 });
 

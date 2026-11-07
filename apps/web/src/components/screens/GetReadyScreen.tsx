@@ -1,17 +1,18 @@
 "use client";
 
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useCrisis } from "@/components/CrisisProvider";
 import { MicButton } from "@/components/getReady/MicButton";
+import { Scene } from "@/components/getReady/Scene";
 import { PlanList, type Removed } from "@/components/getReady/PlanList";
 import { SupportCardSection } from "@/components/getReady/SupportCardSection";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { Field, fieldControlClass } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
+import { ArrowUp } from "@/components/ui/icons";
 import { Screen } from "@/components/ui/screen";
 import { StickyActions } from "@/components/ui/sticky-actions";
 import { GET_READY } from "@/content/getReady";
-import { newSupportCard, planCall } from "@/features/adapters/getReadyKit";
+import { newSupportCard, planCall, splitIntoPlanLines } from "@/features/adapters/getReadyKit";
 import { isCrisis } from "@/lib/crisis";
 import type { PlanItem, RumiState, VisitPlan } from "@/features/shared/types";
 import { PAGES } from "@/lib/pages";
@@ -36,6 +37,15 @@ function GetReadyBody() {
   const [draft, setDraft] = useState(null as VisitPlan | null);
   const [removed, setRemoved] = useState(null as Removed | null);
   const [message, setMessage] = useState("");
+  const [micNote, setMicNote] = useState("");
+
+  // The box grows with its text (up to its max height), and shrinks again when text is removed.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [rawText]);
 
   const plan = draft ?? state.plan;
   const card = state.supportCard;
@@ -96,8 +106,15 @@ function GetReadyBody() {
     }, true);
     setRemoved(null);
   };
-  const addLine = (text: string) =>
-    editItems((items) => [...items, { id: `u-${Date.now().toString(36)}`, text, kind: "concern", source: "user", enabled: true }]);
+  const addLine = (text: string) => {
+    const lines = splitIntoPlanLines(text);
+    if (lines.length === 0) return;
+    const stamp = Date.now().toString(36);
+    editItems((items) => [
+      ...items,
+      ...lines.map((l, n) => ({ id: `u-${stamp}-${n}`, text: l.text, kind: l.kind, source: "user" as const, enabled: true })),
+    ]);
+  };
 
   const confirm = () => {
     if (!plan) return;
@@ -113,22 +130,75 @@ function GetReadyBody() {
   return (
     <>
       {phase === "empty" ? (
-        <form onSubmit={make} className="grid gap-4">
-          <Field id={`${uid}-box`} label={GET_READY.boxLabel} hint={GET_READY.boxHint} error={blank ? GET_READY.blank : undefined}>
+        <form data-phase="empty" onSubmit={make} className="mx-auto mt-8 grid w-full max-w-4xl gap-4">
+          <div className="flex items-end gap-1 rounded-[28px] border-2 border-line-strong bg-surface p-2 pl-5 shadow-[var(--shadow)] focus-within:outline-[3px] focus-within:outline-offset-2 focus-within:outline-focus">
+            <label htmlFor={`${uid}-box`} className="sr-only">
+              {GET_READY.boxLabel}
+            </label>
             <textarea
               ref={box}
-              rows={6}
+              id={`${uid}-box`}
+              rows={1}
               maxLength={2000}
-              className={fieldControlClass}
+              placeholder={GET_READY.boxHint}
+              aria-invalid={blank}
+              aria-describedby={blank ? `${uid}-blank` : undefined}
+              className="max-h-48 min-h-12 flex-1 resize-none overflow-y-auto bg-transparent py-3 text-ink outline-none placeholder:text-muted-ink"
               value={rawText}
               onChange={(e) => {
                 setRawText(e.target.value);
                 setBlank(false);
               }}
+              onKeyDown={(e) => {
+                // Enter sends; Shift+Enter adds a line. Enter that confirms an IME word must not send.
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                void make();
+              }}
             />
-          </Field>
-          <MicButton onText={(t) => setRawText((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))} />
-          <p className="m-0 text-muted-ink">{GET_READY.whatNext}</p>
+            <MicButton
+              compact
+              onNote={setMicNote}
+              onText={(t) => setRawText((prev) => (prev.trim() ? `${prev.trim()} ${t}` : t))}
+            />
+            <button
+              type="submit"
+              data-kind="primary"
+              disabled={loading}
+              aria-busy={loading || undefined}
+              className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-primary-ink hover:bg-[color-mix(in_srgb,var(--primary),#000_8%)] disabled:cursor-progress disabled:opacity-70"
+            >
+              <ArrowUp aria-hidden="true" className="size-5" />
+              <span className="sr-only">{GET_READY.makePlan}</span>
+            </button>
+          </div>
+          {blank ? (
+            <p id={`${uid}-blank`} className="m-0 font-bold text-danger">
+              {GET_READY.blank}
+            </p>
+          ) : null}
+          {micNote ? (
+            <p role="status" className="m-0 text-ink">
+              {micNote}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap justify-center gap-2">
+            {GET_READY.starters.map((text) => (
+              <button
+                key={text}
+                type="button"
+                onClick={() => {
+                  setRawText((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+                  setBlank(false);
+                  box.current?.focus();
+                }}
+                className="min-h-10 rounded-full border border-line bg-surface px-4 text-[.95rem] font-bold text-ink hover:bg-lav"
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+          <p className="m-0 text-center text-muted-ink">{GET_READY.whatNext}</p>
           {error !== null ? (
             <Notice tone="warn" title={GET_READY.errorTitle}>
               {error ? <p>{error}</p> : null}
@@ -140,14 +210,9 @@ function GetReadyBody() {
           <p role="status" className="m-0 min-h-6 text-ink">
             {loading ? GET_READY.loading : ""}
           </p>
-          <StickyActions>
-            <Button kind="primary" type="submit" block arrow loading={loading}>
-              {GET_READY.makePlan}
-            </Button>
-          </StickyActions>
         </form>
       ) : (
-        <div className="grid gap-5">
+        <div data-phase={phase} className="grid gap-5">
           {degraded ? <Notice tone="info">{GET_READY.degraded}</Notice> : null}
           <section aria-labelledby={`${uid}-plan`} className="grid gap-4">
             <div>
@@ -190,8 +255,11 @@ export function GetReadyScreen() {
   const { hydrated } = useRumi();
   const page = PAGES["/get-ready"];
   return (
-    <Screen title={page.h1} lead={page.lead}>
-      <div data-needs-js>{hydrated ? <GetReadyBody /> : null}</div>
-    </Screen>
+    <div className="gr">
+      <Scene />
+      <Screen title={page.h1} lead={page.lead}>
+        <div data-needs-js>{hydrated ? <GetReadyBody /> : null}</div>
+      </Screen>
+    </div>
   );
 }
