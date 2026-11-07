@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { removeAllFiles } from "@/features/sync/files";
 import { OWNER_TABLES } from "@/lib/auth/ownerTables";
 import { AppError, asAppError, fingerprintOf, toResponse } from "@/lib/errors";
 import { createLogger } from "@/lib/log";
@@ -31,7 +32,7 @@ async function tablesNotErased(admin: SupabaseClient, userId: string): Promise<s
 
 /**
  * Deletes the signed-in person's account. Same-origin and signed in only. The auth user is removed with the admin API
- * (every owner row follows by ON DELETE CASCADE), then every owner table is counted again; a count that fails or
+ * (every owner row follows by ON DELETE CASCADE; the original files in Storage are removed just before), then every owner table is counted again; a count that fails or
  * shows rows is tried once more, and anything still left is an error, never a success. The id comes from the verified
  * token and nothing else.
  * The session cookies are expired as soon as the user is gone, on the success answer and on any later error answer,
@@ -47,6 +48,13 @@ export async function POST(req: Request): Promise<Response> {
     const { user } = await guardRequest(req, { requireAuth: true });
     guarded = true;
     const admin = getAdminClient();
+
+    // Original files first: they are not rows, so deleting the user would leave them behind. If this fails nothing is deleted yet.
+    try {
+      await removeAllFiles(admin, user.userId);
+    } catch (e) {
+      throw new AppError("store_unavailable", { cause: e });
+    }
 
     const { error } = await admin.auth.admin.deleteUser(user.userId);
     if (error) throw new AppError("store_unavailable", { cause: error });

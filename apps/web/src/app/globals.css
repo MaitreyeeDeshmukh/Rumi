@@ -118,7 +118,7 @@ main[data-no-tabs] .sticky-actions[data-sticky="true"] { bottom: env(safe-area-i
 .skip-link:focus { left: 0; }
 
 /* The Back button sits to the left of the page heading, on the same row, so it does not use a row of its own. */
-.back-row { float: left; margin: 0 var(--space-3) 0 0; }
+.back-row { float: left; margin: 0 var(--space-3) 0 0; position: relative; z-index: 1; /* above the page-enter wrapper, whose animation would otherwise paint over it and swallow clicks */ }
 .back-row a { min-height: 2.5rem; padding-block: .25rem; padding-inline: .75rem; }
 main h1 { display: flow-root; min-height: 2.5rem; }
 main h1 + * { clear: left; }
@@ -146,3 +146,94 @@ main h1 + * { clear: left; }
   .printable, .printable * { visibility: visible !important; }
   .printable { position: absolute; left: 0; top: 0; width: 100%; color: #000; background: #fff; white-space: pre-wrap; }
 }
+
+/* Landing page motion. CSS only (no JavaScript), calm and slow, and it settles after a few cycles (no endless loops). Every animation sits behind no-preference and is
+   switched off by the Reduce motion setting, so reduced-motion users get the finished page with nothing moving. */
+.hero-glow { background: radial-gradient(55% 90% at 90% 0%, color-mix(in srgb, var(--lav) 70%, transparent) 0%, transparent 70%), radial-gradient(45% 80% at 0% 100%, color-mix(in srgb, var(--sage) 60%, transparent) 0%, transparent 70%); }
+.hero-blob { position: absolute; border-radius: 9999px; filter: blur(48px); opacity: .55; pointer-events: none; }
+.hero-blob-a { width: 16rem; height: 16rem; top: -5rem; right: 12%; background: var(--lav-strong); }
+.hero-blob-b { width: 13rem; height: 13rem; bottom: -4rem; left: 30%; background: var(--apricot); }
+[data-app-theme="contrast"] .hero-blob { display: none; }
+.num-badge { display: inline-flex; width: 2.5rem; height: 2.5rem; align-items: center; justify-content: center; border-radius: 9999px; font-weight: 750; color: var(--ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-in { animation: hero-in .8s var(--ease) both; animation-delay: calc(var(--i, 0) * 140ms); }
+  .hero-card { animation: card-in .7s var(--ease) both; animation-delay: calc(350ms + var(--i, 0) * 220ms); }
+  .hero-tag { animation: tag-pop .5s var(--ease) both; animation-delay: calc(700ms + var(--i, 0) * 220ms); }
+  .float { animation: float 7s ease-in-out 3; }
+  .hero-blob-a { animation: drift 16s ease-in-out 2 alternate; }
+  .hero-blob-b { animation: drift 20s ease-in-out 2 alternate-reverse; }
+  @supports (animation-timeline: view()) {
+    .reveal { animation: reveal-up linear both; animation-timeline: view(); animation-range: entry 0% entry 40%; }
+  }
+  html[data-reduced-motion="true"] :is(.hero-in, .hero-card, .hero-tag, .float, .hero-blob, .reveal) { animation: none !important; }
+}
+@keyframes hero-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@keyframes card-in { from { opacity: 0; transform: translateY(24px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes tag-pop { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: none; } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(28px, 18px) scale(1.12); } }
+@keyframes reveal-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+
+/* Public pages use the whole window: the 64rem column limit is lifted while they are on screen. */
+/* Every public page (SiteChrome sets data-wide) shares the landing page width, gutter and footer. */
+html:has(main[data-wide]) { --main-max: none; --gutter: clamp(1rem, 4.5vw, 5rem); }
+html:has(main[data-wide]) main { padding-inline: var(--gutter); }
+html:has(main[data-wide]) main p { max-width: 62ch; }
+
+/* One Open Rumi on the landing page (Ready to try it), so the header and footer copies are hidden there. */
+html:has(.home-wide) .chrome-open { display: none; }
+html:has(.home-wide) body { overflow-x: clip; }
+
+/* Sign-in style pages (Screen with an aside): Back sits on its own row above the card, and the footer is left out. */
+html:has(.auth-card) main .back-row { float: none; margin: 0 0 var(--space-4); }
+html:has(.auth-card) main h1 { min-height: 0; }
+/* From 1024 px the Back button lives inside the card (top left of the panel). */
+@media (min-width: 1024px) { html:has(.auth-card) main .back-row { display: none; } }
+html:has(.auth-card) footer { display: none; }
+
+/* Get ready prompt: a calm sky (clouds and a bird) behind a centred heading and one rounded prompt bar.
+   Only while the prompt is showing; the plan and card views are plain. Motion stops after a few minutes. */
+.gr { position: relative; }
+.gr > .page-enter { position: relative; }
+.gr-decor { display: none; }
+/* While the prompt shows, the page drops its column limit and the sky runs edge to edge. The prompt itself is a centred
+   composition (heading, bar, starters) over that full-width sky, like the reference. */
+html:has(.gr [data-scene]) { --main-max: none; --gutter: clamp(1rem, 3.5vw, 4rem); }
+html:has(.gr [data-scene]) main { padding: 0 var(--gutter, 1.5rem); position: relative; }
+html:has(.gr [data-scene]) main .back-row { position: absolute; top: var(--space-4); left: var(--gutter, 1.5rem); float: none; margin: 0; z-index: 2; }
+.gr:has([data-scene]) {
+  margin: 0 calc(-1 * var(--gutter, 1.5rem)); overflow: hidden; padding: clamp(5rem, 10vh, 7rem) var(--gutter, 1.5rem) 3rem;
+  min-height: calc(100dvh - var(--appbar-h, 0px)); display: grid; align-content: start;
+  background:
+    radial-gradient(70% 38% at 50% 100%, color-mix(in srgb, var(--apricot) 75%, transparent) 0%, transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--blue) 85%, var(--bg)) 0%, color-mix(in srgb, var(--lav) 85%, var(--bg)) 62%, color-mix(in srgb, var(--apricot) 55%, var(--bg)) 100%);
+}
+@media (max-width: 1023.98px) { .gr:has([data-scene]) { padding-bottom: calc(var(--tabbar-h) + 2rem); } }
+.gr:has([data-scene]) > .page-enter { width: 100%; max-width: 62rem; margin-inline: auto; text-align: center; }
+/* The chat fills the scene: the thread grows and the input bar sits at the bottom once the chat has started. */
+.gr:has([data-scene]) { display: flex; flex-direction: column; }
+.gr:has([data-scene]) > .page-enter { flex: 1; display: flex; flex-direction: column; }
+.gr:has([data-scene]) > .page-enter > [data-needs-js] { flex: 1; display: flex; flex-direction: column; }
+.gr:has([data-scene]) .gr-decor { display: block; position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.gr:has([data-scene]) h1 { font-size: clamp(1.8rem, 3.5vw, 2.6rem); line-height: 1.1; }
+.gr:has([data-scene]) .intro { font-size: clamp(1.1rem, 1.5vw, 1.4rem); margin-inline: auto; }
+[data-app-theme="contrast"] .gr:has([data-scene]) { background: var(--surface); }
+[data-app-theme="contrast"] .gr-decor { display: none !important; }
+.gr-cloud { position: absolute; height: 3.4rem; border-radius: 9999px; background: color-mix(in srgb, var(--primary) 30%, transparent); filter: blur(14px); }
+.gr-cloud-a { width: 15rem; top: 12%; left: 6%; }
+.gr-cloud-b { width: 22rem; top: 30%; left: 46%; }
+.gr-cloud-c { width: 12rem; top: 5%; left: 72%; }
+.gr-bird { position: absolute; width: 2.8rem; top: 16%; left: 62%; color: var(--primary); }
+.gr-wing { transform-origin: 30px 22px; }
+@media (prefers-reduced-motion: no-preference) {
+  .gr-cloud-a { animation: gr-drift 38s ease-in-out 8 alternate; }
+  .gr-cloud-b { animation: gr-drift 52s ease-in-out 6 alternate-reverse; }
+  .gr-cloud-c { animation: gr-drift 44s ease-in-out 7 alternate; }
+  .gr-bird { animation: gr-fly 46s linear 6; }
+  .gr-wing { animation: gr-flap .7s ease-in-out 400; }
+  html[data-reduced-motion="true"] :is(.gr-cloud, .gr-bird, .gr-wing) { animation: none !important; }
+}
+@keyframes gr-drift { from { transform: translateX(-3rem); } to { transform: translateX(6rem); } }
+@keyframes gr-fly { 0% { left: -8%; top: 24%; } 50% { left: 50%; top: 11%; } 100% { left: 108%; top: 21%; } }
+@keyframes gr-flap { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-32deg) scaleY(.85); } }

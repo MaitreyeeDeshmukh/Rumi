@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { AppointmentPicker, PICK_NONE } from "@/components/appointments/AppointmentPicker";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, fieldControlClass } from "@/components/ui/field";
 import { Mic } from "@/components/ui/icons";
@@ -26,8 +27,13 @@ type Phase = "idle" | "recording" | "working" | "saved";
 
 /** /record: records the visit in parts, shows the words as they come, saves them on this device. */
 export function RecordScreen() {
-  const apptId = useSearchParams().get("appt") ?? "";
+  const paramAppt = useSearchParams().get("appt") ?? "";
   const { state, update, hydrated } = useRumi();
+  // With no appointment in the address, the person picks one first (or "none of these").
+  const [chosen, setChosen] = useState(null as string | null);
+  const [pick, setPick] = useState("");
+  const [pickNow] = useState(() => new Date());
+  const apptId = paramAppt || (chosen && chosen !== PICK_NONE ? chosen : "");
   const appt = (state.appointments ?? []).find((x) => x.id === apptId);
 
   const supported = useSyncExternalStore(() => () => {}, canRecord, () => true);
@@ -117,6 +123,31 @@ export function RecordScreen() {
   };
 
   const busy = phase === "recording" || phase === "working";
+
+  const needsPick = hydrated && !paramAppt && chosen === null && (state.appointments ?? []).length > 0;
+  if (needsPick) {
+    return (
+      <Screen title={PAGES["/record"].h1} lead={PAGES["/record"].lead}>
+        <div data-needs-js className="grid max-w-2xl gap-5">
+          <AppointmentPicker
+            appointments={state.appointments ?? []}
+            value={pick}
+            onChange={setPick}
+            now={pickNow}
+            extra={[{ value: PICK_NONE, title: APPT.pickNone, hint: APPT.pickNoneHint }]}
+          />
+          <div className="grid gap-2">
+            <div>
+              <Button kind="primary" arrow disabled={!pick} onClick={() => setChosen(pick)}>
+                {APPT.pickContinue}
+              </Button>
+            </div>
+            {pick ? null : <p className="note m-0">{APPT.pickFirst}</p>}
+          </div>
+        </div>
+      </Screen>
+    );
+  }
 
   return (
     <Screen title={PAGES["/record"].h1} lead={PAGES["/record"].lead}>

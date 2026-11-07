@@ -3,6 +3,7 @@
  * on their behalf except one fixed footer line when a recap section is included.
  */
 import { supportSection, CONCERN_HEADING } from '@/features/support/card';
+import { bringBlock } from '@/features/checklist/bringBlock';
 import type { PlanStatus, RecapSection, RumiState } from '@/features/shared/types';
 
 export interface ShareSelection {
@@ -10,6 +11,8 @@ export interface ShareSelection {
   supportCard: boolean;
   recapSections: Partial<Record<RecapSection, boolean>>;
   saidMyself: boolean;
+  /** What to bring to the next visit. */
+  bring?: boolean;
 }
 export const EMPTY_SELECTION: ShareSelection = { plan: false, supportCard: false, recapSections: {}, saidMyself: false };
 
@@ -67,6 +70,7 @@ export function buildShareText(sel: ShareSelection, state: RumiState): string {
     sel.supportCard && state.supportCard ? supportSection(state.supportCard) : '',
     ...chosen.map((s) => recapBlock(state, s)),
     sel.saidMyself ? saidMyselfBlock(state) : '',
+    sel.bring ? bringBlock(state, new Date()) : '',
     chosen.length ? RECAP_FOOTER : '',
   ];
   return blocks.filter(Boolean).join('\n\n');

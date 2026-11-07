@@ -2,6 +2,44 @@
 export const GET_READY = {
   boxLabel: "Tell me what is going on. Speak or type.",
   boxHint: "Write in your own words. Short is fine.",
+  // Follow-up questions. Each tap answer is the person's own sentence. features/getReady/followUps.ts picks which to ask.
+  follow: {
+    reason: {
+      question: "What is the visit about?",
+      chips: ["A check-up.", "Something hurts.", "A question about my medicine.", "A test result.", "How I have been feeling."],
+    },
+    duration: {
+      question: "How long has this been going on?",
+      chips: ["It started a few days ago.", "It started a few weeks ago.", "It has been many months.", "It happens now and then."],
+    },
+    worry: {
+      question: "What worries you most?",
+      chips: ["I am worried it is serious.", "I am worried about the cost.", "I am worried I will forget things.", "I do not know yet."],
+    },
+    goal: {
+      question: "What do you want from this visit?",
+      chips: ["I want to know what is wrong.", "I want a plan for what to do.", "I want a test or a referral.", "I want my medicine checked."],
+    },
+    tried: {
+      question: "What have you tried so far?",
+      chips: ["I have tried resting.", "I take medicine for it.", "I have not tried anything yet."],
+    },
+    change: {
+      question: "What makes it better or worse?",
+      chips: ["Moving makes it worse.", "Rest makes it better.", "It is worse at night.", "I do not know yet."],
+    },
+  },
+  answerHint: "Type your answer, or tap one.",
+  skip: "Skip",
+  greeting: "Hello. I am Rumi. I will help you get ready for your visit. What would you like to talk about?",
+  thanks: "Thank you for telling me.",
+  thinking: "One moment.",
+  planNow: "Make my plan now",
+  groups: { concern: "What I want to tell", question: "What I want to ask", accommodation: "What would help me" },
+  makingPlan: "Thank you. I will make your plan now.",
+  threadLabel: "Your chat with Rumi",
+  planReady: "Your plan is ready.",
+  starters: ["I want to talk about pain.", "I want to talk about sleep.", "I want to talk about a medicine."],
   whatNext: "Rumi turns your words into a plan. You can change every line.",
   blank: "Write one sentence first.",
   loading: "Making your plan…",
@@ -28,7 +66,7 @@ export const GET_READY = {
   undo: "Undo",
   addLabel: "Add my own",
   addButton: "Add line",
-  addHint: "One idea in each line.",
+  addHint: "Write as much as you like. Rumi splits it into lines.",
   looksRight: "Looks right",
   saved: "Your plan is saved.",
   cardHeading: "How I like to be supported",

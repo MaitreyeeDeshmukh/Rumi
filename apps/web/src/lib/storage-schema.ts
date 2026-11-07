@@ -20,6 +20,7 @@ import {
 } from '@/features/shared/schemas';
 import type {
   Appointment,
+  ChatThread,
   PersonaFact,
   PersonaRemoval,
   PracticeSession,
@@ -39,6 +40,10 @@ export const MAX_SUPPORT_ITEMS = 20;
 const MAX_STORED_TURNS = 40;
 export const MAX_APPOINTMENTS = 50;
 export const MAX_VISITS = 10;
+export const MAX_CHATS = 30;
+export const MAX_CHAT_MESSAGES = 40;
+export const MAX_DOCUMENTS = 5;
+export const MAX_CHECKLIST = 30;
 export const MAX_VISIT_CHARS = 30_000;
 
 export const defaultSettings = (): Settings => ({
@@ -195,6 +200,36 @@ function parseRecap(raw: unknown): Recap | undefined {
 }
 
 const NoteList = z.unknown().transform((v) => validItems(z.string().max(200), v).slice(0, 12)).catch(() => []);
+const ChecklistItemSchema = z.object({
+  id: Id,
+  text: text(200),
+  source: z.enum(['letter', 'hospital', 'suggested', 'mine']).catch('mine'),
+  done: z.boolean().catch(false),
+  url: z.string().max(500).regex(/^https:\/\//).optional().catch(undefined),
+}).transform(({ url, ...rest }) => (url ? { ...rest, url } : rest));
+const DocumentSchema = z.object({
+  id: Id,
+  kind: z.enum(['text', 'image', 'pdf']).catch('text'),
+  name: text(120),
+  createdAt: text(40),
+  excerpt: text(4000),
+  confirmed: z.boolean().catch(false),
+});
+const ChatMessageSchema = z.object({ role: z.enum(['me', 'rumi']), text: text(1200) });
+const ChatThreadSchema = z.object({
+  id: Id,
+  kind: z.enum(['get-ready', 'practice']),
+  apptId: Id.optional().catch(undefined),
+  createdAt: text(40),
+  updatedAt: text(40),
+  messages: z.unknown().transform((v) => validItems(ChatMessageSchema, v).slice(-MAX_CHAT_MESSAGES)),
+});
+const parseChats = (raw: unknown): ChatThread[] =>
+  uniqueBy(validItems(ChatThreadSchema, raw), (c) => c.id)
+    .filter((c) => c.messages.length > 0)
+    .slice(-MAX_CHATS)
+    .map((c) => (c.apptId === undefined ? { id: c.id, kind: c.kind, createdAt: c.createdAt, updatedAt: c.updatedAt, messages: c.messages } : c));
+
 const AppointmentSchema = z.object({
   id: Id,
   care: z.enum(['primary', 'specialist', 'dentist', 'mental', 'other']).catch('other'),
@@ -208,11 +243,26 @@ const AppointmentSchema = z.object({
   questions: NoteList,
   bring: NoteList,
   symptoms: NoteList,
+  source: z.enum(['booked', 'added', 'scanned']).optional().catch(undefined),
+  address: text(200).optional().catch(undefined),
+  department: text(80).optional().catch(undefined),
+  instructions: z.unknown().transform((v) => validItems(z.string().max(300), v).slice(0, 12)).optional().catch(undefined),
+  documents: z.unknown().transform((v) => validItems(DocumentSchema, v).slice(0, MAX_DOCUMENTS)).optional().catch(undefined),
+  checklist: z.unknown().transform((v) => validItems(ChecklistItemSchema, v).slice(0, MAX_CHECKLIST)).optional().catch(undefined),
 });
 const VisitSchema = z.object({ id: Id, apptId: Id.optional().catch(undefined), createdAt: text(40), text: text(MAX_VISIT_CHARS) });
 
+/** Optional fields are left out when empty, so old data round-trips unchanged. */
+const dropEmpty = (a: z.infer<typeof AppointmentSchema>): Appointment => {
+  const out: Record<string, unknown> = { ...a };
+  for (const k of ['source', 'address', 'department', 'instructions', 'documents', 'checklist']) {
+    const v = out[k];
+    if (v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) delete out[k];
+  }
+  return out as unknown as Appointment;
+};
 const parseAppointments = (raw: unknown): Appointment[] =>
-  uniqueBy(validItems(AppointmentSchema, raw), (a) => a.id).slice(0, MAX_APPOINTMENTS) as Appointment[];
+  uniqueBy(validItems(AppointmentSchema, raw), (a) => a.id).slice(0, MAX_APPOINTMENTS).map(dropEmpty);
 const parseVisits = (raw: unknown): Visit[] =>
   uniqueBy(validItems(VisitSchema, raw), (v) => v.id)
     .filter((v) => v.text.trim() !== '')
@@ -277,6 +327,7 @@ export function parseState(raw: unknown): RumiState {
   const recap = parseRecap(raw.recap);
   const appointments = parseAppointments(raw.appointments);
   const visits = parseVisits(raw.visits);
+  const chats = parseChats(raw.chats);
   return {
     version: 1,
     settings,
@@ -288,5 +339,6 @@ export function parseState(raw: unknown): RumiState {
     // Absent when empty, so data saved before these existed round-trips unchanged.
     ...(appointments.length > 0 ? { appointments } : {}),
     ...(visits.length > 0 ? { visits } : {}),
+    ...(chats.length > 0 ? { chats } : {}),
   };
 }

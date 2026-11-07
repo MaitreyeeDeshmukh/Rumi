@@ -2,9 +2,10 @@
  * Shared types for the eval system. Nothing in tests/evals imports the harness or its regex lists:
  * the scorers are written separately so a bug in the guards cannot also hide in the measurement.
  */
-import type { TaskName } from '../../src/features/shared/task';
+import type { TaskName as SharedTaskName } from '../../src/features/shared/task';
 
-export type { TaskName };
+/** The evals measure the four core tasks against a baseline; scan and lookup are not part of that comparison. */
+export type TaskName = Exclude<SharedTaskName, 'appointmentScan' | 'appointmentLookup'>;
 export type Arm = 'harness' | 'baseline';
 export type RunMode = 'live' | 'dry';
 export type Suite = 'plan' | 'practice' | 'sayit' | 'recap' | 'crisis' | 'redteam' | 'scenario';

@@ -1,6 +1,5 @@
 "use client";
 
-import { Readiness, type Ready } from "@/components/practice/Readiness";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { StickyActions } from "@/components/ui/sticky-actions";
@@ -22,7 +21,6 @@ export function Summary({
   before,
   plan,
   onToggle,
-  onReadyAfter,
   onAgain,
 }: {
   session: PracticeSession;
@@ -30,7 +28,6 @@ export function Summary({
   before: PracticeSession | undefined;
   plan: VisitPlan;
   onToggle: (itemId: string, covered: boolean) => void;
-  onReadyAfter: (value: Ready) => void;
   onAgain: () => void;
 }) {
   // The practice just ended: with memory on, this hook syncs once on mount, so the help level this practice needed (per kind
@@ -47,9 +44,6 @@ export function Summary({
         {s.saidWithHelp > 0 ? <p className="m-0">{fill(HOME.saidWithHelp, { z: s.saidWithHelp })}</p> : null}
         {s.helpCount > 0 ? <p className="m-0">{plural(s.helpCount, PRACTICE.helpCount)}</p> : null}
         {trend ? <p className="m-0">{trend}</p> : null}
-        {session.readyBefore && session.readyAfter ? (
-          <p className="m-0">{fill(PRACTICE.readyBeforeAfter, { before: session.readyBefore, after: session.readyAfter })}</p>
-        ) : null}
       </div>
 
       <section aria-labelledby="practice-lines" className="grid gap-1">
@@ -70,8 +64,6 @@ export function Summary({
           );
         })}
       </section>
-
-      <Readiness label={PRACTICE.readyAfterLabel} value={session.readyAfter} onChange={onReadyAfter} />
 
       <StickyActions>
         <div className="grid gap-3 sm:flex">

@@ -166,6 +166,56 @@ export interface Appointment {
   questions: string[];
   bring: string[];
   symptoms: string[];
+  /** Where the record came from. Absent on appointments saved before this existed (they were booked). */
+  source?: ApptSource;
+  /** Street address or room, as the person or their letter wrote it. */
+  address?: string;
+  department?: string;
+  /** Instructions from the letter, such as "arrive 15 minutes early". */
+  instructions?: string[];
+  /** Letters, emails or photos the person added. Only text and the confirmed scan are kept here. */
+  documents?: ApptDocument[];
+  /** What to bring, each with where it came from and whether it is packed. Replaces the plain `bring` list over time. */
+  checklist?: ChecklistItem[];
+}
+
+export type ApptSource = 'booked' | 'added' | 'scanned';
+export type ChecklistSource = 'letter' | 'hospital' | 'suggested' | 'mine';
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  source: ChecklistSource;
+  done: boolean;
+  /** A page the hospital lookup used. Set by server code, never by the model. */
+  url?: string;
+}
+
+/** A document the person added to an appointment. The picture itself is not kept in the saved state. */
+export interface ApptDocument {
+  id: string;
+  kind: 'text' | 'image' | 'pdf';
+  name: string;
+  createdAt: string;
+  /** The words read from it, trimmed. */
+  excerpt: string;
+  /** True once the person has checked the details Rumi read from it. */
+  confirmed: boolean;
+}
+
+/** One conversation on a screen, kept so the person can come back to it. */
+export interface ChatThread {
+  id: string;
+  kind: 'get-ready' | 'practice';
+  apptId?: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ChatMessage[];
+}
+
+export interface ChatMessage {
+  role: 'me' | 'rumi';
+  text: string;
 }
 
 /** What was said at a visit, as text. Typed or turned into words from a recording. Device storage only. */
@@ -187,6 +237,7 @@ export interface RumiState {
   /** Absent means none. Added without a version bump: old saved data loads as it is. */
   appointments?: Appointment[];
   visits?: Visit[];
+  chats?: ChatThread[];
 }
 
 export type ApiErrorCode = 'bad_input' | 'too_large' | 'forbidden' | 'ai_invalid' | 'ai_unavailable' | 'rate_limited';

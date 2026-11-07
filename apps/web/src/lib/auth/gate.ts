@@ -3,7 +3,7 @@
  * the log-in page and the proxy share one definition. tests/unit/authRequired.test.ts pins APP_ROUTES to the
  * folders of the (app) route group, so a new app screen cannot be left outside the gate.
  */
-export const APP_ROUTES = ["/appointment", "/appointments", "/get-ready", "/home", "/kit", "/practice", "/record", "/remember", "/say-it", "/settings", "/share", "/welcome"] as const;
+export const APP_ROUTES = ["/appointment", "/appointments", "/get-ready", "/home", "/kit", "/practice", "/record", "/remember", "/settings", "/share", "/welcome"] as const;
 
 /** True for an app screen or anything below it. */
 export const isAppPath = (pathname: string): boolean => APP_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`));

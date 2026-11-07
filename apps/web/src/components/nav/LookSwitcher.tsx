@@ -16,6 +16,9 @@ function subscribe(onChange: () => void): () => void {
 }
 const current = (): string => document.documentElement.getAttribute(ATTR) ?? THEMES[0].id;
 
+/** The look now on the page (null on the server). */
+export const useCurrentTheme = (): string | null => useSyncExternalStore(subscribe, current, () => null);
+
 /** Soft Focus, High Contrast, Low Light. Applied at once and saved. Rendered only on the client. */
 export function LookSwitcher() {
   const theme = useSyncExternalStore(subscribe, current, () => null);

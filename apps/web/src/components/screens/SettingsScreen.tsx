@@ -16,6 +16,7 @@ import { getBrowserClient } from "@/lib/supabase/browser";
 import { WELCOME } from "@/content/welcome";
 import { MEMORY_COPY } from "@/features/memory/consentCopy";
 import { useMemoryControls } from "@/features/memory/useMemoryControls";
+import { useSync } from "@/features/sync/SyncProvider";
 import type { RumiState, Settings, ThemeName } from "@/features/shared/types";
 import { announce } from "@/lib/announce";
 import { PAGES } from "@/lib/pages";
@@ -41,13 +42,15 @@ export function SettingsScreen() {
   const persisted = lastSave.ok && !readOnly;
   const { actions, facts } = useMemoryControls();
   const [memoryNote, setMemoryNote] = useState("");
+  const sync = useSync();
+  const [syncNote, setSyncNote] = useState("");
   const router = useRouter();
   const { status, isAnonymous } = useAuth();
   const [accountNote, setAccountNote] = useState("");
   const id = useId();
   const s = state.settings;
   const [touched, setTouched] = useState(false);
-  const [sheet, setSheet] = useState(null as "forget" | "erase" | null);
+  const [sheet, setSheet] = useState(null as "forget" | "erase" | "syncdel" | null);
 
   // One place for every change: write it, then tell the person (a sentence for sighted people, a live region for others).
   const save = (fn: (draft: RumiState) => void) => {
@@ -85,13 +88,46 @@ export function SettingsScreen() {
     }
   };
 
+  // Like the memory switch: it talks to the server first and flips only when that worked.
+  const toggleSync = async (on: boolean) => {
+    setSyncNote("");
+    const res = await (on ? sync.engine.enable() : sync.engine.disable());
+    setSyncNote(res.ok ? (on ? SETTINGS.sync.on : SETTINGS.sync.off) : res.reason === "paused" ? SETTINGS.sync.paused : SETTINGS.sync.failed);
+  };
+  const deleteCloudCopy = async () => {
+    setSheet(null);
+    const res = await sync.engine.deleteCloudCopy();
+    setSyncNote(res.ok ? SETTINGS.sync.deleted : SETTINGS.sync.failed);
+  };
+  const syncLine =
+    sync.status.phase === "syncing"
+      ? SETTINGS.sync.syncing
+      : sync.status.phase === "paused"
+        ? SETTINGS.sync.paused
+        : sync.status.phase === "offline"
+          ? SETTINGS.sync.offline
+          : sync.status.phase === "error"
+            ? SETTINGS.sync.error
+            : sync.status.on && sync.status.lastSyncedAt !== null
+              ? SETTINGS.sync.done
+              : "";
+
   const erase = async () => {
     setSheet(null);
+    // The cloud copy goes first. If it cannot be deleted now, nothing is deleted and the person is told.
+    if (sync.status.on) {
+      const gone = await sync.engine.deleteCloudCopy();
+      if (!gone.ok) {
+        setSyncNote(SETTINGS.sync.failed);
+        return;
+      }
+    }
     const res = await actions.deleteEverything();
     if (res.status !== "ok") {
       setMemoryNote(res.status === "paused" ? MEMORY_COPY.paused : MEMORY_COPY.forgetFailed);
       return;
     }
+    sync.engine.forgetMarks();
     announce(SETTINGS.deleted);
     router.push("/welcome");
   };
@@ -215,6 +251,35 @@ export function SettingsScreen() {
             </div>
           </Group>
 
+          <Group legend={SETTINGS.sync.legend}>
+            <h2 className="m-0 text-base">{SETTINGS.sync.title}</h2>
+            {SETTINGS.sync.body.map((line) => (
+              <p key={line} className="m-0">
+                {line}
+              </p>
+            ))}
+            {sync.available ? (
+              <>
+                <Toggle label={SETTINGS.sync.toggle} checked={sync.status.on} onCheckedChange={(v) => void toggleSync(v)} />
+                <p role="status" className="note m-0 min-h-6">
+                  {syncNote || syncLine}
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {sync.status.on ? (
+                    <Button kind="secondary" onClick={() => void sync.engine.syncNow()}>
+                      {SETTINGS.sync.now}
+                    </Button>
+                  ) : null}
+                  <Button kind="secondary" onClick={() => setSheet("syncdel")}>
+                    {SETTINGS.sync.deleteCopy}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <p className="m-0">{SETTINGS.sync.needAccount}</p>
+            )}
+          </Group>
+
           <Group legend={SETTINGS.data.legend}>
             <ul className="m-0 grid list-none gap-2 p-0">
               {SETTINGS.data.rows.map((row) => (
@@ -261,6 +326,17 @@ export function SettingsScreen() {
           </Button>
           <Button kind="secondary" onClick={() => setSheet(null)}>
             {SETTINGS.memory.keep}
+          </Button>
+        </div>
+      </Sheet>
+      <Sheet open={sheet === "syncdel"} onOpenChange={(o) => !o && setSheet(null)} title={SETTINGS.sync.deleteTitle}>
+        <p className="m-0">{SETTINGS.sync.deleteBody}</p>
+        <div className="grid gap-3">
+          <Button kind="danger" onClick={() => void deleteCloudCopy()}>
+            {SETTINGS.sync.confirmDelete}
+          </Button>
+          <Button kind="secondary" onClick={() => setSheet(null)}>
+            {SETTINGS.sync.keep}
           </Button>
         </div>
       </Sheet>

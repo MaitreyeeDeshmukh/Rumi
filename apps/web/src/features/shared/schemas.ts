@@ -87,6 +87,23 @@ export const PlanModelOut = z.object({
 });
 export const PlanReply = z.object({ plan: VisitPlanSchema, thin: z.boolean().optional(), ...reply });
 
+// ---- get ready chat (one turn of the conversation before the plan)
+export const GetReadyChatRequest = z.object({
+  /** Everything the person has said so far, one message per line. */
+  rawText: z.string().trim().min(1).max(LIMITS.rawTextMax),
+  /** The questions Rumi already asked, so it never repeats one. */
+  asked: z.array(z.string().max(200)).max(8),
+  skipped: z.number().int().min(0).max(8),
+  companionName: Companion,
+});
+export const GetReadyChatModelOut = z.object({
+  reply: z.string().max(300),
+  question: z.string().max(200),
+  ready: z.boolean(),
+  crisis: z.boolean(),
+});
+export const GetReadyChatReply = z.object({ reply: z.string().max(300), question: z.string().max(200), ready: z.boolean(), ...reply });
+
 // ---- practice
 export const PracticeRequest = z.object({
   plan: VisitPlanSchema,
@@ -160,6 +177,52 @@ export const RecapReply = z.object({
   ...reply,
 });
 
+// ---- appointment scan: the details of the person's own letter, email or photo
+/** Longest pasted or extracted text the scan reads. A letter is a page; more than this is not one appointment. */
+export const SCAN_TEXT_MAX = 4000;
+/** YYYY-MM-DD or empty. Checked again against the calendar and the source text in features/appointmentScan/ground.ts. */
+const ScanDate = z.string().regex(/^(?:\d{4}-\d{2}-\d{2})?$/);
+/** HH:MM on a 24-hour clock, or empty. */
+const ScanTime = z.string().regex(/^(?:\d{2}:\d{2})?$/);
+const scanFields = {
+  provider: z.string().max(80).default(''),
+  clinic: z.string().max(80).default(''),
+  date: ScanDate.default(''),
+  time: ScanTime.default(''),
+  address: z.string().max(200).default(''),
+  department: z.string().max(80).default(''),
+  reason: z.string().max(200).default(''),
+  instructions: z.array(z.string().max(200)).max(8).default([]),
+  bring: z.array(z.string().max(120)).max(12).default([]),
+};
+export const ScanFields = z.object(scanFields);
+export const AppointmentScanRequest = z.object({
+  text: z.string().trim().min(1).max(SCAN_TEXT_MAX),
+  companionName: Companion,
+});
+export const AppointmentScanModelOut = ScanFields;
+export const AppointmentScanReply = z.object({ fields: ScanFields, ...reply });
+/** A photo: the same fields plus the words read from it (kept as the document excerpt). */
+export const AppointmentPhotoModelOut = z.object({ transcript: z.string().max(SCAN_TEXT_MAX).default(''), ...scanFields });
+export const AppointmentPhotoReply = z.object({ fields: ScanFields, text: z.string().max(SCAN_TEXT_MAX), ...reply });
+
+// ---- hospital lookup: items come from the model, links from server code
+export const LookupRequest = z.object({
+  /** Who or where, as the person confirmed it. */
+  place: z.string().trim().min(2).max(160),
+  care: z.enum(['primary', 'specialist', 'dentist', 'mental', 'other']),
+});
+export const LookupModelOut = z.object({
+  found: z.boolean(),
+  items: z.array(z.object({ text: z.string().min(1).max(200) })).max(12),
+});
+export const LookupReply = z.object({
+  found: z.boolean(),
+  items: z.array(z.object({ text: z.string().min(1).max(160), url: z.string().max(500).regex(/^https:\/\//).optional() })).max(8),
+  /** Pages the search read, added by server code. */
+  sources: z.array(z.string().max(500).regex(/^https:\/\//)).max(5),
+});
+
 // ---- memory wire format: facts carry no free text; the server derives the sentence from fixed tables
 const FactKey = z.string().regex(FACT_KEY_RE);
 /** Is (kind, key, level) one of the facts Rumi can make? Shared by every fact schema below. */
@@ -224,6 +287,18 @@ export type SayItReplyT = z.infer<typeof SayItReply>;
 export type RecapRequestT = z.infer<typeof RecapRequest>;
 export type RecapModelOutT = z.infer<typeof RecapModelOut>;
 export type RecapReplyT = z.infer<typeof RecapReply>;
+export type ScanFieldsT = z.infer<typeof ScanFields>;
+export type AppointmentScanRequestT = z.infer<typeof AppointmentScanRequest>;
+export type AppointmentScanModelOutT = z.infer<typeof AppointmentScanModelOut>;
+export type AppointmentScanReplyT = z.infer<typeof AppointmentScanReply>;
+export type AppointmentPhotoModelOutT = z.infer<typeof AppointmentPhotoModelOut>;
+export type AppointmentPhotoReplyT = z.infer<typeof AppointmentPhotoReply>;
+export type LookupRequestT = z.infer<typeof LookupRequest>;
+export type LookupModelOutT = z.infer<typeof LookupModelOut>;
+export type LookupReplyT = z.infer<typeof LookupReply>;
 export type PersonaFactWireT = z.infer<typeof PersonaFactWire>;
 export type PersonaFactSyncT = z.infer<typeof PersonaFactSync>;
 export type PersonaFactRemovalT = z.infer<typeof PersonaFactRemoval>;
+export type GetReadyChatRequestT = z.infer<typeof GetReadyChatRequest>;
+export type GetReadyChatModelOutT = z.infer<typeof GetReadyChatModelOut>;
+export type GetReadyChatReplyT = z.infer<typeof GetReadyChatReply>;

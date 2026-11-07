@@ -19,7 +19,7 @@ export function ApptCard({ a }: { a: Appointment }) {
         {dayLong(a.date)} at {timeText(a.time)}
       </p>
       <p className="m-0 text-muted-ink">
-        {a.clinic}
+        {a.clinic || a.address}
         {a.reason ? `. ${a.reason}` : ""}
       </p>
       <p className="m-0 text-sm font-bold">{a.status === "confirmed" ? APPT.confirmed : APPT.toConfirm}</p>

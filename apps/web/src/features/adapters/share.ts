@@ -2,7 +2,7 @@
 import { EMPTY_SELECTION, buildShareText as buildReal, type ShareSelection as RealSelection } from "@/features/share/buildShareText";
 import type { RecapSection, RumiState } from "@/features/shared/types";
 
-export const SHARE_IDS = ["plan", "card", "discussed", "instructions", "medications", "next_steps", "said"] as const;
+export const SHARE_IDS = ["plan", "card", "discussed", "instructions", "medications", "next_steps", "said", "bring"] as const;
 export type ShareId = (typeof SHARE_IDS)[number];
 export type ShareSelection = Partial<Record<ShareId, boolean>>;
 
@@ -11,6 +11,7 @@ const toReal = (sel: ShareSelection): RealSelection => ({
   plan: !!sel.plan,
   supportCard: !!sel.card,
   saidMyself: !!sel.said,
+  bring: !!sel.bring,
   recapSections: Object.fromEntries((["discussed", "instructions", "medications", "next_steps"] as RecapSection[]).filter((id) => sel[id]).map((id) => [id, true])),
 });
 

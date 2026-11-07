@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { cn } from "@/components/ui/cn";
@@ -48,12 +48,21 @@ export function PlanList({
     setAddError(false);
   };
 
+  // Grouped like a plan: what to tell, what to ask, what would help. The order inside a group is kept.
+  const order = { concern: 0, question: 1, accommodation: 2 } as const;
+  const ordered = [...items].sort((a, b) => order[a.kind] - order[b.kind]);
+
   return (
     <div className="grid gap-4">
       <ul role="list" className="m-0 grid list-none gap-3 p-0">
-        {items.map((item) => (
+        {ordered.map((item, n) => (
+          <Fragment key={item.id}>
+            {n === 0 || ordered[n - 1].kind !== item.kind ? (
+              <li role="presentation" className="mt-3 first:mt-0">
+                <h3 className="m-0 text-lg">{GET_READY.groups[item.kind]}</h3>
+              </li>
+            ) : null}
           <li
-            key={item.id}
             className={cn(
               "grid gap-3 rounded-card border-2 bg-surface p-4",
               item.source === "suggested" ? "border-dashed border-line-strong" : "border-line",
@@ -117,6 +126,7 @@ export function PlanList({
               </>
             )}
           </li>
+          </Fragment>
         ))}
       </ul>
 
@@ -135,7 +145,7 @@ export function PlanList({
         <Field id={`${uid}-add`} label={GET_READY.addLabel} hint={GET_READY.addHint} error={addError ? GET_READY.blank : undefined}>
           <input
             type="text"
-            maxLength={200}
+            maxLength={1000}
             className={fieldControlClass}
             value={addText}
             onChange={(e) => {

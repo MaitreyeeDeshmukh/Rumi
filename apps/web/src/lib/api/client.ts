@@ -6,7 +6,7 @@
 import type { z } from 'zod';
 import type { ApiErrorCode, ApiResult } from '@/features/shared/types';
 
-export type ApiPath = '/api/plan' | '/api/practice' | '/api/sayit' | '/api/recap';
+export type ApiPath = '/api/plan' | '/api/practice' | '/api/sayit' | '/api/recap' | '/api/appointment/scan' | '/api/appointment/lookup' | '/api/get-ready/chat';
 
 export interface CallApiDeps {
   fetchFn: typeof fetch;

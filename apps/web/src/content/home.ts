@@ -10,7 +10,7 @@ export const HOME = {
     text: "A doctor visit is often short. The doctor asks questions quickly. Many people freeze. A parent or helper often answers instead. Then you leave without knowing what was decided.",
   },
   audience: {
-    h2: "Made for autistic and ADHD adults.",
+    h2: "Made for neurodivergent people.",
     text: "You may live at home, on campus, or in supported housing. Someone may usually speak for you at the doctor. Rumi helps you do it yourself. You do not need a diagnosis. Rumi never asks for one.",
   },
   steps: {
@@ -46,6 +46,7 @@ export const HOME = {
       "Rumi never sends anything for you. You copy or share it.",
       "You can edit or remove every line.",
       "Your plan is saved on your device. It goes to the AI service only when you press a button.",
+      "Account sync is off until you turn it on. Then your appointments and chats are kept for you.",
       "You can delete everything in Settings.",
       "Rumi is built not to give medical advice.",
     ],

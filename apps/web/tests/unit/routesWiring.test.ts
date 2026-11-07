@@ -11,6 +11,10 @@ import { POST as facts } from "@/app/api/memory/facts/route";
 import { POST as forget } from "@/app/api/memory/forget/route";
 import { POST as accountDelete } from "@/app/api/account/delete/route";
 import { GET as accountExport } from "@/app/api/account/export/route";
+import { POST as syncConsent } from "@/app/api/sync/consent/route";
+import { POST as syncData } from "@/app/api/sync/data/route";
+import { PUT as syncDoc } from "@/app/api/sync/doc/route";
+import { POST as syncForget } from "@/app/api/sync/forget/route";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const API = fileURLToPath(new URL("../../src/app/api/", import.meta.url));
@@ -39,6 +43,10 @@ describe("every product route runs the guard first and echoes the request id", (
     ["/api/memory/forget", forget],
     ["/api/account/delete", accountDelete],
     ["/api/account/export", accountExport, "GET"],
+    ["/api/sync/consent", syncConsent],
+    ["/api/sync/data", syncData],
+    ["/api/sync/doc", syncDoc, "PUT"],
+    ["/api/sync/forget", syncForget],
   ];
 
   it.each(routes)("%s refuses a cross-site request with 403, a fixed body and the request id (the guard is awaited)", async (path, handler, method) => {
@@ -74,7 +82,7 @@ describe("source rules for route handlers", () => {
 
   it("finds all the routes", () => {
     expect(files.map(rel).sort()).toEqual(
-      ["account/delete/route.ts", "account/export/route.ts", "client-error/route.ts", "health/route.ts", "memory/consent/route.ts", "memory/facts/route.ts", "memory/forget/route.ts", "plan/route.ts", "practice/route.ts", "ready/route.ts", "recap/route.ts", "sayit/route.ts", "voice/stt/route.ts", "voice/tts/route.ts"].sort(),
+      ["account/delete/route.ts", "account/export/route.ts", "appointment/lookup/route.ts", "appointment/photo/route.ts", "appointment/scan/route.ts", "dev-login/route.ts", "get-ready/chat/route.ts", "client-error/route.ts", "health/route.ts", "memory/consent/route.ts", "memory/facts/route.ts", "memory/forget/route.ts", "plan/route.ts", "practice/route.ts", "ready/route.ts", "recap/route.ts", "sayit/route.ts", "sync/consent/route.ts", "sync/data/route.ts", "sync/doc/route.ts", "sync/forget/route.ts", "voice/stt/route.ts", "voice/tts/route.ts"].sort(),
     );
   });
 

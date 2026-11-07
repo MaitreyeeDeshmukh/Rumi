@@ -5,14 +5,14 @@ import { PARENT, backAriaLabel, backHref, isAppRoute, navStack, navStore } from 
 const WITH_PARENT = Object.entries(PARENT).filter(([, p]) => p !== null);
 
 describe("backHref", () => {
-  it("falls back to the fixed parent for all 20 routes that have one", () => {
-    expect(WITH_PARENT).toHaveLength(20);
+  it("falls back to the fixed parent for all 19 routes that have one", () => {
+    expect(WITH_PARENT).toHaveLength(19);
     for (const [route, parent] of WITH_PARENT) expect(backHref(route, []), route).toBe(parent);
   });
   it("has the exact parent table", () => {
     for (const r of ["/how-it-works", "/about", "/contact", "/help", "/safety", "/privacy", "/accessibility", "/welcome", "/home"])
       expect(PARENT[r]).toBe("/");
-    for (const r of ["/get-ready", "/practice", "/remember", "/share", "/kit", "/say-it", "/settings"])
+    for (const r of ["/get-ready", "/practice", "/remember", "/share", "/kit", "/settings"])
       expect(PARENT[r]).toBe("/home");
     for (const r of ["/appointments", "/record"]) expect(PARENT[r]).toBe("/home");
     for (const r of ["/appointments/new", "/appointment"]) expect(PARENT[r]).toBe("/appointments");
@@ -70,7 +70,7 @@ describe("backAriaLabel", () => {
 
 describe("isAppRoute", () => {
   it("is true for the thirteen app routes only", () => {
-    for (const r of ["/home", "/welcome", "/get-ready", "/practice", "/remember", "/share", "/kit", "/say-it", "/settings", "/appointments", "/appointments/new", "/appointment", "/record"])
+    for (const r of ["/home", "/welcome", "/get-ready", "/practice", "/remember", "/share", "/kit", "/settings", "/appointments", "/appointments/new", "/appointment", "/record"])
       expect(isAppRoute(r), r).toBe(true);
     for (const r of ["/", "/help", "/contact", "/nope"]) expect(isAppRoute(r), r).toBe(false);
   });

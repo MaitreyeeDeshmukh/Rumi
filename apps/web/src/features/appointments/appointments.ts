@@ -85,11 +85,46 @@ export function buildAppointment(input: BookingInput, id: string, now: Date): Ap
   };
 }
 
+/** Doctor, clinic and address as one line, leaving out whatever is empty. */
+export const whereLine = (a: Pick<Appointment, "providerName" | "clinic" | "address">): string =>
+  [a.providerName, a.clinic, a.address].filter((p) => p && p.trim()).join(", ");
+
+export interface AddedInput {
+  care: CareType;
+  who: string;
+  place: string;
+  date: string;
+  time: string;
+  reason: string;
+}
+
+/** An appointment the person typed in from their own letter or email. Not a pretend booking, so it starts as to_confirm until they say so. */
+export function buildAddedAppointment(input: AddedInput, id: string, now: Date): Appointment {
+  const who = input.who.trim().slice(0, 80);
+  const place = input.place.trim().slice(0, 200);
+  return {
+    id,
+    care: input.care,
+    providerName: who,
+    clinic: "",
+    date: input.date,
+    time: input.time,
+    reason: input.reason.trim().slice(0, 200),
+    status: "to_confirm",
+    createdAt: now.toISOString(),
+    questions: [],
+    bring: [],
+    symptoms: [],
+    source: "added",
+    ...(place ? { address: place } : {}),
+  };
+}
+
 /** What to say when you phone the office. Short sentences, filled from the appointment. */
 export function callScript(a: Appointment, name: string): string {
   const lines = [
     `Hi, my name is ${name.trim() || "[your name]"}.`,
-    `I would like to book a ${APPT.care[a.care].toLowerCase()} visit with ${a.providerName} at ${a.clinic}.`,
+    `I would like to book a ${APPT.care[a.care].toLowerCase()} visit with ${a.clinic ? `${a.providerName} at ${a.clinic}` : a.providerName}.`,
     `Is ${dayLong(a.date)} at ${timeText(a.time)} open?`,
   ];
   if (a.reason.trim()) lines.push(`The visit is about this: ${a.reason.trim().replace(/[.!?]+$/, "")}.`);
@@ -117,7 +152,7 @@ export function icsFor(a: Appointment, now: Date): string {
     `DTSTART:${icsStamp(a.date, a.time)}`,
     `DTEND:${icsStamp(a.date, a.time, 60)}`,
     `SUMMARY:${icsText(`${APPT.care[a.care]} visit with ${a.providerName}`)}`,
-    `LOCATION:${icsText(a.clinic)}`,
+    `LOCATION:${icsText(a.address || a.clinic)}`,
     `DESCRIPTION:${icsText(`Confirm this time with the office. ${a.reason}`.trim())}`,
     "END:VEVENT",
     "END:VCALENDAR",

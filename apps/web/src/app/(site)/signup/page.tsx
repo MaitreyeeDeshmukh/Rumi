@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { AuthForm } from "@/features/auth/ui";
 import { AUTH_COPY } from "@/features/auth/ui/copy";
 import { safeNextPath } from "@/features/auth/nextPath";
-import { S } from "@/features/auth/ui/styles";
+import { AuthPanel } from "@/components/marketing/AuthPanel";
+import { Screen } from "@/components/ui/screen";
 
 export const metadata: Metadata = {
   title: "Sign up",
@@ -13,10 +14,8 @@ export const metadata: Metadata = {
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ next?: string | string[] }> }) {
   const next = safeNextPath((await searchParams).next);
   return (
-    <article className={S.page}>
-      <h1>{AUTH_COPY.signup.title}</h1>
-      <p className="intro">{AUTH_COPY.signup.intro}</p>
-      <AuthForm mode="signup" next={next} />
-    </article>
+    <Screen title={AUTH_COPY.signup.title} lead={AUTH_COPY.signup.intro} aside={<AuthPanel />} footer={false}>
+      <div className="max-w-md"><AuthForm mode="signup" next={next} /></div>
+    </Screen>
   );
 }

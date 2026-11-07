@@ -18,6 +18,7 @@ export const SHARE = {
     medications: "Medications",
     next_steps: "Next steps",
     said: "What I said myself",
+    bring: "What to bring",
   },
   planKinds: {
     concern: "What I want to say",

@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { APP_NAV, SAY_IT } from "@/components/nav/appNavItems";
+import { APP_NAV } from "@/components/nav/appNavItems";
 import { Logo } from "@/components/nav/Logo";
+import { SidebarAccount } from "@/components/nav/SidebarAccount";
 import { cn } from "@/components/ui/cn";
+import { ChevronDown } from "@/components/ui/icons";
 import { NAV } from "@/content/nav";
 import { INFO_LINKS } from "@/lib/site";
 
@@ -72,13 +74,13 @@ export function AppNav() {
           <Logo />
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-          {[...APP_NAV, SAY_IT].map(({ href, label, icon: Icon }) => (
+          {APP_NAV.filter((item) => item.href !== "/settings").map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
               aria-current={page(href)}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-control pr-3 pl-[calc(.75rem+3px)] font-bold text-ink no-underline hover:bg-lav aria-[current=page]:border-l-[3px] aria-[current=page]:border-primary aria-[current=page]:pl-3",
+                "flex min-h-10 items-center gap-3 text-[.95rem] rounded-control pr-3 pl-[calc(.75rem+3px)] font-bold text-ink no-underline hover:bg-lav aria-[current=page]:border-l-[3px] aria-[current=page]:border-primary aria-[current=page]:pl-3",
                 current,
               )}
             >
@@ -86,21 +88,29 @@ export function AppNav() {
               {label}
             </Link>
           ))}
-          <div role="group" aria-labelledby="app-help-info" className="mt-4">
-            <p id="app-help-info" className="mb-1 px-3 text-sm font-bold text-muted-ink">
-              {NAV.helpAndInfo}
-            </p>
-            {INFO_LINKS.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className="flex min-h-11 items-center rounded-control px-3 text-ink hover:bg-lav"
-              >
-                {l.label}
-              </Link>
-            ))}
+          {/* Closed until the arrow is pressed; open already when the current page is one of the info pages. */}
+          <div role="group" aria-labelledby="app-help-info" className="mt-3 border-t border-line pt-3">
+            <details open={INFO_LINKS.some((l) => l.href === pathname) || undefined} className="group">
+              <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between rounded-control px-3 hover:bg-lav [&::-webkit-details-marker]:hidden">
+                <span id="app-help-info" className="text-base font-bold text-muted-ink">
+                  {NAV.helpAndInfo}
+                </span>
+                <ChevronDown aria-hidden="true" className="size-5 shrink-0 text-muted-ink transition-transform group-open:rotate-180" />
+              </summary>
+              {INFO_LINKS.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  aria-current={page(l.href)}
+                  className={cn("flex min-h-9 items-center rounded-control px-3 text-[.95rem] text-ink no-underline hover:bg-lav", current)}
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </details>
           </div>
         </div>
+        <SidebarAccount />
       </nav>
     </>
   );

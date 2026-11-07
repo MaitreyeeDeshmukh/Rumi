@@ -23,7 +23,6 @@ const SPEC_ROUTES = [
   "/remember",
   "/share",
   "/kit",
-  "/say-it",
   "/settings",
   "/appointments",
   "/appointments/new",
@@ -93,7 +92,6 @@ describe("PAGES (spec 4.8)", () => {
       recap: "Go to Share",
     });
     expect(PAGES["/kit"].primary).toEqual({ empty: "Go to Get ready", ready: "Copy kit" });
-    expect(PAGES["/say-it"].primary).toEqual({ script: "Copy" });
     expect(PAGES["/settings"].primary).toBeNull();
     expect(PAGES["/share"].primary).toBe("Copy text");
   });

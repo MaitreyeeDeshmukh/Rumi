@@ -5,7 +5,7 @@
 import type { z } from 'zod';
 import type { GuardCode } from './guards';
 
-export type TaskName = 'plan' | 'practice' | 'sayit' | 'recap';
+export type TaskName = 'plan' | 'practice' | 'sayit' | 'recap' | 'appointmentScan' | 'appointmentLookup';
 export type Tier = 'quality' | 'fast';
 
 export type EvidenceSource = 'user_words' | 'plan' | 'transcript';
@@ -61,4 +61,9 @@ export interface TaskSpec<Req, Out, Reply> {
   maxOutputTokens: number;
   /** Used when MOCK_AI=1. Must satisfy `reply`. */
   mock: (r: Req) => Reply;
+  /**
+   * True only for a task whose job is to read the person's own addresses, phones and dates out of their own document
+   * (appointmentScan). The model then sees the text as written. The task must check every value against the source text.
+   */
+  skipRedaction?: boolean;
 }

@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useCrisis } from "@/components/CrisisProvider";
+import { AppointmentPicker } from "@/components/appointments/AppointmentPicker";
 import { RecapView } from "@/components/remember/RecapView";
 import { Banner } from "@/components/ui/banner";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,20 @@ export function RememberScreen() {
   // The visit named in the address, else the latest one saved.
   const mine = visits.find((v) => v.id === visitId) ?? (visitId ? undefined : visits[visits.length - 1]);
   const { show } = useCrisis();
+  // With no visit in the address, the person picks the appointment whose recording they want to recap.
+  const appointments = state.appointments ?? [];
+  const withVisit = appointments.filter((a) => visits.some((v) => v.apptId === a.id));
+  const loose = visits.filter((v) => !v.apptId);
+  const showPicker = !visitId && (withVisit.length > 0 || loose.length > 0);
+  const [pick, setPick] = useState("");
+  const [pickNow] = useState(() => new Date());
+  const recordings = (a: { id: string }) => visits.filter((v) => v.apptId === a.id).length;
+  const continuePick = () => {
+    if (pick === "sample") return setPhase({ k: "pick" });
+    const chosen = pick === "loose" ? loose : visits.filter((v) => v.apptId === pick);
+    const latest = chosen[chosen.length - 1];
+    if (latest) void runMine(latest);
+  };
   const [phase, setPhase] = useState({ k: "intro" } as Phase);
   const [speaker, setSpeaker] = useState("");
   const fails = useRef(0);
@@ -91,11 +106,36 @@ export function RememberScreen() {
   const voices = voicesOf(SAMPLE_VISIT);
 
   return (
-    <Screen title={PAGES["/remember"].h1} lead={PAGES["/remember"].lead}>
+    <Screen title={PAGES["/remember"].h1} lead={PAGES["/remember"].lead} footer>
       <div data-needs-js>
         {!hydrated ? null : (
           <div ref={live} tabIndex={-1} className="grid gap-5 outline-none">
-            {phase.k === "intro" && (
+            {phase.k === "intro" && showPicker && (
+              <div className="grid max-w-2xl gap-5">
+                <AppointmentPicker
+                  appointments={withVisit}
+                  value={pick}
+                  onChange={setPick}
+                  now={pickNow}
+                  note={(a) => (recordings(a) > 0 ? APPT.pickWithRecording : null)}
+                  extra={[
+                    ...(loose.length > 0 ? [{ value: "loose", title: APPT.pickLoose }] : []),
+                    { value: "sample", title: APPT.pickSample, hint: APPT.pickSampleHint },
+                  ]}
+                />
+                <div className="grid gap-2">
+                  <div>
+                    <Button kind="primary" arrow disabled={!pick} onClick={continuePick}>
+                      {APPT.pickContinue}
+                    </Button>
+                  </div>
+                  {pick ? null : <p className="note m-0">{APPT.pickFirst}</p>}
+                </div>
+                <p className="note m-0">{APPT.myVisitCrisisNote}</p>
+              </div>
+            )}
+
+            {phase.k === "intro" && !showPicker && (
               <>
                 {mine ? (
                   <div className="grid gap-2">

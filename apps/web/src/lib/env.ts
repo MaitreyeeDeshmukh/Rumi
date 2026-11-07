@@ -41,6 +41,8 @@ const schema = z.object({
   GROQ_MODEL_QUALITY: nonEmpty.optional(),
   GROQ_MODEL_FAST: nonEmpty.optional(),
   GROQ_MODEL_STT: nonEmpty.optional(),
+  GROQ_MODEL_VISION: nonEmpty.optional(),
+  GROQ_MODEL_SEARCH: nonEmpty.optional(),
   SESSION_SECRET: secret.optional(),
   CARTESIA_API_KEY: nonEmpty.optional(),
   CARTESIA_VERSION: nonEmpty.optional(),
@@ -171,6 +173,22 @@ export function getGroqSttConfig(): { apiKey: string; model: string } {
   if (!key.success) throw new ConfigError(["GROQ_API_KEY"]);
   const model = nonEmpty.safeParse(process.env.GROQ_MODEL_STT);
   return { apiKey: key.data, model: model.success ? model.data : "whisper-large-v3-turbo" };
+}
+
+/** Reading a photo of a letter (Groq vision model): the same key, a model name with a default. */
+export function getGroqVisionConfig(): { apiKey: string; model: string } {
+  const key = nonEmpty.safeParse(process.env.GROQ_API_KEY);
+  if (!key.success) throw new ConfigError(["GROQ_API_KEY"]);
+  const model = nonEmpty.safeParse(process.env.GROQ_MODEL_VISION);
+  return { apiKey: key.data, model: model.success ? model.data : "qwen/qwen3.8-27b" };
+}
+
+/** Hospital lookup (Groq model with the built-in web search tool): the same key, a model name with a default. */
+export function getGroqSearchConfig(): { apiKey: string; model: string } {
+  const key = nonEmpty.safeParse(process.env.GROQ_API_KEY);
+  if (!key.success) throw new ConfigError(["GROQ_API_KEY"]);
+  const model = nonEmpty.safeParse(process.env.GROQ_MODEL_SEARCH);
+  return { apiKey: key.data, model: model.success ? model.data : "openai/gpt-oss-120b" };
 }
 
 export interface UsageLimits {

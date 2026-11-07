@@ -34,7 +34,6 @@ describe("site navigation", () => {
       "/remember",
       "/share",
       "/kit",
-      "/say-it",
       "/settings",
       "/appointments",
       "/appointments/new",

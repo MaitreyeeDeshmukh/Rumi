@@ -24,6 +24,19 @@ describe("privacy page copy", () => {
     expect(all).toMatch(/delete everything at any time/);
   });
 
+  it("says what account sync stores, who can open it, and how to delete it", () => {
+    expect(all).toMatch(/account sync is off until you turn it on/);
+    expect(all).toMatch(/appointments, the text of your documents, and your chats/);
+    expect(all).toMatch(/photos and files/);
+    expect(all).toMatch(/only you can open them/);
+    expect(all).toMatch(/link works for one minute/);
+    expect(all).toMatch(/turn sync off at any time/);
+    expect(all).toMatch(/delete your cloud copy in settings/);
+    expect(all).toMatch(/removes the files too/);
+    expect(all).toMatch(/deleting your account removes everything/);
+    expect(all).not.toMatch(/nothing is stored|never stored/);
+  });
+
   it("does not claim that nothing leaves the device (the AI helper sends text out)", () => {
     expect(all).not.toMatch(/does not send them to us or to anyone/);
     expect(all).not.toMatch(/never leaves/);

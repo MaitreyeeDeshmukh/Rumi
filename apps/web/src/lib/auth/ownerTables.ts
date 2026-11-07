@@ -22,4 +22,8 @@ export const OWNER_TABLES = [
   "recap_plan_status",
   "persona_facts",
   "persona_removed",
+  "appt_appointments",
+  "appt_documents",
+  "chat_threads",
+  "chat_messages",
 ] as const;

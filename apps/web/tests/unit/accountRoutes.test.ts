@@ -24,6 +24,8 @@ const m = vi.hoisted(() => ({
   getServerClient: vi.fn(),
   logError: vi.fn(),
   logInfo: vi.fn(),
+  storageList: vi.fn(),
+  storageRemove: vi.fn(),
 }));
 vi.mock("@/lib/auth/requireUser", () => ({ requireUser: m.requireUser }));
 vi.mock("@/lib/log", () => ({ createLogger: () => ({ info: m.logInfo, warn: vi.fn(), error: m.logError }) }));
@@ -31,6 +33,7 @@ vi.mock("@/lib/supabase/server", () => ({ getServerClient: m.getServerClient }))
 vi.mock("@/lib/supabase/admin", () => ({
   getAdminClient: () => ({
     auth: { admin: { deleteUser: m.deleteUser } },
+    storage: { from: () => ({ list: m.storageList, remove: m.storageRemove }) },
     from: (table: string) => ({
       select: () => ({
         eq: (column: string, value: string) => {
@@ -70,6 +73,8 @@ beforeEach(() => {
   m.getServerClient.mockReset().mockResolvedValue({ rpc: m.rpc });
   m.logError.mockReset();
   m.logInfo.mockReset();
+  m.storageList.mockReset().mockResolvedValue({ data: [], error: null });
+  m.storageRemove.mockReset().mockResolvedValue({ data: [], error: null });
 });
 
 describe("POST /api/account/delete", () => {
@@ -85,6 +90,22 @@ describe("POST /api/account/delete", () => {
     const cookies = r.headers.getSetCookie();
     expect(cookies).toHaveLength(2);
     expect(cookies.every((c) => c.startsWith("sb-p-auth-token") && c.includes("Max-Age=0"))).toBe(true);
+  });
+
+  it("removes the person's original files before the user, and deletes nothing if that fails", async () => {
+    m.storageList.mockResolvedValueOnce({ data: [{ name: "appt-1", id: null }], error: null });
+    m.storageList.mockResolvedValueOnce({ data: [{ name: "doc-1", id: "x" }], error: null });
+    const r = await deleteAccount(post());
+    expect(r.status).toBe(200);
+    expect(m.storageList.mock.calls[0][0]).toBe(ME);
+    expect(m.storageRemove).toHaveBeenCalledWith([`${ME}/appt-1/doc-1`]);
+
+    m.deleteUser.mockClear();
+    m.storageList.mockReset().mockResolvedValue({ data: null, error: { message: "secret-row-42" } });
+    const bad = await deleteAccount(post());
+    expect(bad.status).toBe(503);
+    expect(m.deleteUser).not.toHaveBeenCalled();
+    expect(await bad.text()).not.toContain("secret-row-42");
   });
 
   it("uses the id from the token, never one the client sends", async () => {
@@ -274,7 +295,8 @@ function ownerTablesOf(sql: string): string[] {
 
 /** The quoted names in the array of core_export_my_data: the tables the export reads. */
 function exportedTablesOf(sql: string): string[] {
-  const body = /function public\.core_export_my_data[\s\S]*?\bend \$\$;/i.exec(sql)?.[0] ?? "";
+  // A later migration may define it again (create or replace): the last definition is the one in force.
+  const body = [...sql.matchAll(/function public\.core_export_my_data[\s\S]*?\bend \$\$;/gi)].at(-1)?.[0] ?? "";
   const list = /array\[([^\]]*)\]/i.exec(body)?.[1] ?? "";
   return [...list.matchAll(/'(\w+)'/g)].map((t) => t[1]);
 }

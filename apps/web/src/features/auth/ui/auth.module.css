@@ -4,7 +4,15 @@
  */
 .page { width: 100%; max-width: 28rem; margin: 0 auto; }
 .form { display: grid; gap: 1.25rem; margin-top: 1.5rem; }
-.field { display: grid; gap: 0.375rem; }
+.field { display: grid; gap: 0.375rem; text-align: left; }
+.inputWrap { position: relative; }
+.inputPad { padding-right: 3.25rem; }
+.eye {
+  position: absolute; top: 50%; right: 0.375rem; display: inline-flex; align-items: center; justify-content: center;
+  width: 2.75rem; height: 2.75rem; transform: translateY(-50%); color: var(--muted, #5e5c70); background: transparent;
+  border: 0; border-radius: 10px; cursor: pointer;
+}
+.eye:hover { color: var(--primary, #66558d); background: var(--primary-soft, #eae5f3); }
 .label { font-weight: 700; }
 .hint { margin: 0; font-size: 0.875rem; color: var(--muted, #5e5c70); }
 .input {
@@ -30,12 +38,12 @@
   display: inline-flex; align-items: center; min-height: 2.75rem; font-weight: 700; color: var(--primary, #66558d);
   text-decoration: underline; text-underline-offset: 4px;
 }
-.links { display: grid; gap: 0.25rem; margin-top: 1.5rem; }
+.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25rem 1.5rem; margin-top: 1.5rem; }
 .alert { padding: 0.75rem; font-weight: 700; color: #b3261e; border: 2px solid #b3261e; border-radius: 12px; }
 .notice { padding: 0.75rem; margin: 0; background: var(--surface, #ffffff); border: 2px solid var(--line, #e6e2eb); border-radius: 12px; }
 .status { padding: 0.75rem; margin: 0; font-weight: 700; border: 2px solid var(--primary, #66558d); border-radius: 12px; }
 .divider { margin: 0; font-size: 0.875rem; text-align: center; color: var(--muted, #5e5c70); }
-.account { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; font-size: 0.875rem; }
+.account { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 0.75rem; font-size: 0.875rem; }
 .gap2 { display: grid; gap: 0.5rem; }
 .gap3 { display: grid; gap: 0.75rem; }
 .gap4 { display: grid; gap: 1rem; }

@@ -4,6 +4,7 @@ import { AppBar } from "@/components/nav/AppBar";
 import { AppFooter } from "@/components/nav/AppFooter";
 import { AppShell } from "@/components/nav/AppShell";
 import { NAV } from "@/content/nav";
+import { SyncProvider } from "@/features/sync/SyncProvider";
 
 // Every app screen wraps its interactive content in an element with data-needs-js; without JavaScript this hides it.
 const HIDE_NEEDS_JS = "[data-needs-js]{display:none}";
@@ -21,7 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </noscript>
       }
     >
-      {children}
+      <SyncProvider>{children}</SyncProvider>
     </AppShell>
   );
 }

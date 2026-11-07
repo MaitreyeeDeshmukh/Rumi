@@ -332,8 +332,8 @@ set local "request.jwt.claims" = '{"sub":"aaaaaaaa-0000-0000-0000-00000000000a",
 set local role authenticated;
 do $$ declare e jsonb; k text; own int; total int; begin
   e := public.core_export_my_data();
-  if (select count(*) from jsonb_object_keys(e)) <> 19 then
-    raise exception 'FAIL: export has % keys, expected 18 tables + _truncated', (select count(*) from jsonb_object_keys(e)); end if;
+  if (select count(*) from jsonb_object_keys(e)) <> 23 then
+    raise exception 'FAIL: export has % keys, expected 22 tables + _truncated', (select count(*) from jsonb_object_keys(e)); end if;
   if e -> '_truncated' <> '{}'::jsonb then raise exception 'FAIL: _truncated should be empty'; end if;
   -- every table with an owner_id column is exported (catches a new owner table the export forgot)
   if exists (select 1 from information_schema.columns c join information_schema.tables tb using (table_schema, table_name)

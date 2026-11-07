@@ -10,10 +10,18 @@
  */
 import type { VoiceKey } from '@/lib/voice/voices';
 import {
+  AppointmentPhotoReply,
+  AppointmentScanReply,
+  LookupReply,
   PlanReply,
   PracticeReply,
   RecapReply,
   SayItReply,
+  type AppointmentPhotoReplyT,
+  type AppointmentScanReplyT,
+  type AppointmentScanRequestT,
+  type LookupReplyT,
+  type LookupRequestT,
   type PlanReplyT,
   type PlanRequestT,
   type PracticeReplyT,
@@ -70,9 +78,19 @@ const calls = (callApi: CallApi) => ({
       const { body, memoryCode } = withMemory(state, req);
       return callApi('/api/recap', body, RecapReply, opts(memoryCode, []));
     },
+    /** Typed: the pasted letter or email text. */
+    appointmentScanCall(state: RumiState, req: AppointmentScanRequestT): Promise<ApiResult<AppointmentScanReplyT>> {
+      const { body, memoryCode } = withMemory(state, req);
+      return callApi('/api/appointment/scan', body, AppointmentScanReply, opts(memoryCode, [req.text]));
+    },
+    /** Typed: nothing. The place is a name the person already confirmed. */
+    appointmentLookupCall(state: RumiState, req: LookupRequestT): Promise<ApiResult<LookupReplyT>> {
+      const { body, memoryCode } = withMemory(state, req);
+      return callApi('/api/appointment/lookup', body, LookupReply, opts(memoryCode, []));
+    },
 });
 
-export const { planCall, practiceCall, sayItCall, recapCall } = calls(
+export const { planCall, practiceCall, sayItCall, recapCall, appointmentScanCall, appointmentLookupCall } = calls(
   createCallApi({
     fetchFn: (input, init) => fetch(input, init),
     isCrisis,
@@ -107,5 +125,39 @@ export async function speakCall(
     return blob.size > 0 && blob.size <= SPEAK_MAX_BYTES ? blob : null;
   } catch {
     return null;
+  }
+}
+
+/** A picture of a letter is at most this big after the browser shrinks it (src/lib/vision/photo.ts PHOTO_BYTES_MAX). */
+const PHOTO_MAX_BYTES = 3_000_000;
+const PHOTO_TIMEOUT_MS = 30_000;
+
+/**
+ * Sends one picture of an appointment letter and gets back the draft fields and the words read from it. Never throws:
+ * a failure is {ok:false}. The picture is not kept anywhere on the device or the server.
+ */
+export async function appointmentPhotoCall(
+  photo: Blob,
+  { fetchFn = (input, init) => fetch(input, init) }: { fetchFn?: typeof fetch } = {},
+): Promise<ApiResult<AppointmentPhotoReplyT>> {
+  const fail = (code: 'bad_input' | 'too_large' | 'ai_unavailable' | 'ai_invalid' | 'rate_limited' | 'forbidden'): ApiResult<AppointmentPhotoReplyT> => ({
+    ok: false,
+    error: { code, message: code === 'too_large' ? 'That picture is too big. Take it again from further away.' : code === 'rate_limited' ? 'There were too many requests. Wait a minute and try again.' : 'Rumi could not read that picture. You can paste or type the details instead.' },
+  });
+  try {
+    if (photo.size > PHOTO_MAX_BYTES) return fail('too_large');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return fail('ai_unavailable');
+    const res = await fetchFn('/api/appointment/photo', {
+      method: 'POST',
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS),
+      headers: { 'Content-Type': photo.type },
+      body: photo,
+    });
+    if (!res.ok) return fail(res.status === 413 ? 'too_large' : res.status === 429 ? 'rate_limited' : res.status === 403 ? 'forbidden' : res.status === 400 ? 'bad_input' : 'ai_unavailable');
+    const parsed = AppointmentPhotoReply.safeParse(await res.json());
+    return parsed.success ? { ok: true, data: parsed.data } : fail('ai_invalid');
+  } catch {
+    return fail('ai_unavailable');
   }
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { AddAppointmentForm } from "@/components/appointments/AddAppointmentForm";
+import { ScanAppointment } from "@/components/appointments/ScanAppointment";
 import { CallScriptBox, downloadIcs } from "@/components/appointments/parts";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceCard, ChoiceGroup } from "@/components/ui/choice-card";
@@ -8,6 +10,7 @@ import { Field, fieldControlClass } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { Screen } from "@/components/ui/screen";
 import { APPT } from "@/content/appointments";
+import { SCAN } from "@/content/appointmentScan";
 import {
   CARE_KEYS,
   buildAppointment,
@@ -37,6 +40,8 @@ export function NewAppointmentScreen() {
   const [reason, setReason] = useState("");
   const [problem, setProblem] = useState("");
   const [saved, setSaved] = useState(null as Appointment | null);
+  // First choice: read a letter or photo, type in an appointment you already have, or practice booking a pretend one.
+  const [mode, setMode] = useState(null as "details" | "pretend" | "scan" | null);
 
   const providers = care ? providersFor(care as CareType) : [];
   const provider = providers.find((p) => p.id === providerId);
@@ -85,6 +90,35 @@ export function NewAppointmentScreen() {
               {APPT.details}
             </ButtonLink>
           </div>
+        </div>
+      </Screen>
+    );
+  }
+
+  if (mode !== "pretend") {
+    return (
+      <Screen title={PAGES["/appointments/new"].h1} lead={PAGES["/appointments/new"].lead}>
+        <div data-needs-js>
+          {!hydrated ? null : mode === "details" ? (
+            <AddAppointmentForm />
+          ) : mode === "scan" ? (
+            <ScanAppointment onType={() => setMode("details")} />
+          ) : (
+            <div className="grid max-w-2xl gap-4">
+              <h2 className="m-0 text-xl">{APPT.howLead}</h2>
+              <ChoiceGroup aria-label={APPT.howLead} value="" onValueChange={(v: string) => setMode(v === "pretend" ? "pretend" : v === "scan" ? "scan" : "details")}>
+                <ChoiceCard value="scan" title={SCAN.way}>
+                  {SCAN.wayHint}
+                </ChoiceCard>
+                <ChoiceCard value="details" title={APPT.haveDetails}>
+                  {APPT.haveDetailsHint}
+                </ChoiceCard>
+                <ChoiceCard value="pretend" title={APPT.pretend}>
+                  {APPT.pretendHint}
+                </ChoiceCard>
+              </ChoiceGroup>
+            </div>
+          )}
         </div>
       </Screen>
     );

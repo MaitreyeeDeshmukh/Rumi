@@ -434,6 +434,8 @@ export async function runTask<Req, Out, Reply>(spec: TaskSpec<Req, Out, Reply>, 
       r,
       (s) => {
         ev.injectionHits += scanInjection(s);
+        // A scan task reads the person's own details out of their own document, so the text goes as written (spec.skipRedaction).
+        if (spec.skipRedaction === true) return s;
         const red = redactPii(s); // each field is at most MAX_GUARD_CHARS here (checked when the request was cleaned)
         ev.redactions += red.count;
         return red.text;

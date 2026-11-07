@@ -19,7 +19,7 @@ const NOT_UI = ["lib/literalLint.ts"];
 const NOT_UI_DIRS = [
   "features/auth/", "features/memory/", "features/shared/", "features/plan/", "features/practice/", "features/recap/",
   "features/sayit/", "features/share/", "features/appointments/", "features/support/", "features/state/",
-  "lib/ai/", "lib/security/", "lib/api/", "lib/auth/", "lib/text/", "lib/telemetry/", "lib/supabase/",
+  "features/appointmentScan/", "lib/lookup/", "lib/vision/", "lib/ai/", "lib/security/", "lib/api/", "lib/auth/", "lib/text/", "lib/telemetry/", "lib/supabase/",
   "lib/errors.ts", "lib/log.ts", "lib/crisis.ts", "lib/env.ts", "lib/requestContext.ts", "lib/storage.ts", "lib/storage-schema.ts",
 ];
 

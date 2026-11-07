@@ -87,7 +87,6 @@ export const HOME = {
   kitNeeds: "Your kit needs a plan and a support card.",
   goGetReady: "Go to Get ready",
   quickHeading: "Quick links",
-  sayIt: "I need help saying something",
   share: "Share something",
   settings: "Settings",
   privacyHeading: "Privacy",
@@ -95,5 +94,8 @@ export const HOME = {
   memory: "Memory: {state}",
   memoryOn: "On",
   memoryOff: "Off",
+  memoryTurnOn: "Turn on Memory",
+  memoryNotNow: "Not now",
+  memoryWorking: "Working on it.",
   manage: "Manage in Settings",
 } as const;

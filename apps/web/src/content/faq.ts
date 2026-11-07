@@ -7,7 +7,7 @@ export const FAQ: readonly { q: string; a: string }[] = [
   },
   {
     q: "What does Rumi save about me?",
-    a: "On your device: your settings, plan, practice, and recap. When you press a button, the text you wrote goes to an AI service. It makes the answer. Rumi does not save that text on its servers.",
+    a: "On your device: your settings, plan, practice, recap, appointments, and chats. When you press a button, the text you wrote goes to an AI service. It makes the answer. Rumi does not save that text on its servers. Account sync is off until you turn it on. Then Rumi keeps your appointments, documents, and chats in its own database.",
   },
   {
     q: "Does Rumi remember me next time?",
@@ -41,4 +41,7 @@ export const HOME_FAQ_QUESTIONS: readonly string[] = [
 
 export const FAQ_COPY = {
   allHelp: "See all help",
+  searchLabel: "Search the questions",
+  searchPlaceholder: "Search for a question",
+  noMatch: "No question matches that. Try another word.",
 } as const;

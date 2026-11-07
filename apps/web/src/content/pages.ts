@@ -85,7 +85,7 @@ export const PAGES_COPY = {
   "/get-ready": {
     title: "Get ready",
     h1: "Get ready.",
-    lead: "Say what you want to talk about. Rumi makes a plan.",
+    lead: "Get ready for your visit. Say what you want to talk about. Rumi makes a plan.",
     description: "Say what you want to talk about at your visit. Rumi turns it into a plan you can change.",
     primary: { empty: "Make my plan", plan: "Looks right", saved: "Go to Practice" },
   },
@@ -137,7 +137,7 @@ export const PAGES_COPY = {
   "/appointments/new": {
     title: "Book an appointment",
     h1: "Book an appointment.",
-    lead: "Three small steps. Rumi does not contact the office.",
+    lead: "Add a visit you already have, or practice booking one. Rumi does not contact the office.",
     description: "Pick a kind of care, a made-up doctor, and a time. Rumi saves it on your device and writes a call script.",
     primary: "Save this appointment",
   },
@@ -154,14 +154,6 @@ export const PAGES_COPY = {
     lead: "Record what the doctor says. Then Rumi helps you remember it.",
     description: "Record a visit with the microphone or type notes. Rumi turns your voice into text and keeps it on your device.",
     primary: "Start recording",
-  },
-  "/say-it": {
-    title: "Say it",
-    h1: "Say it.",
-    lead: "Pick what you need to say. Rumi writes a short script.",
-    description:
-      "Short scripts for things like booking an appointment or asking someone to repeat. Rumi does not call anyone.",
-    primary: { script: "Copy" },
   },
   "/settings": {
     title: "Settings",

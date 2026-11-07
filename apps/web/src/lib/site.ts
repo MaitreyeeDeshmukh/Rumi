@@ -57,7 +57,6 @@ export const ROUTES: readonly string[] = [
   "/remember",
   "/share",
   "/kit",
-  "/say-it",
   "/settings",
   "/appointments",
   "/appointments/new",

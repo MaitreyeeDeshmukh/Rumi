@@ -215,7 +215,7 @@ test.describe("JavaScript off", () => {
 // ---- App shell (Task 10) ----
 const TABS = ["Home", "Get ready", "Practice", "Remember", "Settings"];
 const INFO = ["Help", "Contact", "Privacy", "Accessibility", "Safety and crisis help"];
-const APP_PAGES = ["/home", "/get-ready", "/practice", "/remember", "/share", "/kit", "/say-it", "/settings"];
+const APP_PAGES = ["/home", "/get-ready", "/practice", "/remember", "/share", "/kit", "/settings"];
 const appNav = (page: Page) => page.locator('nav[aria-label="App"]:visible');
 
 test.describe("app tab bar (375)", () => {

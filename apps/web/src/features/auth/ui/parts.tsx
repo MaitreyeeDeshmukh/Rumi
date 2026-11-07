@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type Ref } from "react";
+import { Eye, EyeOff } from "@/components/ui/icons";
 import { AUTH_COPY } from "./copy";
 import { S } from "./styles";
 
@@ -21,7 +22,7 @@ export function TextField({ id, name, label, autoComplete, error, hint, inputRef
       <label htmlFor={id} className={S.label}>
         {label}
       </label>
-      <input
+        <input
         ref={inputRef}
         id={id}
         name={name}
@@ -61,20 +62,34 @@ export function PasswordField({ id, name = "password", label, autoComplete, erro
       <label htmlFor={id} className={S.label}>
         {label}
       </label>
-      <input
-        ref={inputRef}
-        id={id}
-        name={name}
-        type={visible ? "text" : "password"}
-        autoComplete={autoComplete}
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        maxLength={256}
-        aria-invalid={error !== null}
-        aria-describedby={described || undefined}
-        className={S.input}
-      />
+      <div className={S.inputWrap}>
+        <input
+          ref={inputRef}
+          id={id}
+          name={name}
+          type={visible ? "text" : "password"}
+          autoComplete={autoComplete}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={256}
+          aria-invalid={error !== null}
+          aria-describedby={described || undefined}
+          className={onToggle ? `${S.input} ${S.inputPad}` : S.input}
+        />
+        {onToggle ? (
+          <button
+            type="button"
+            className={S.eye}
+            onClick={onToggle}
+            aria-controls={id}
+            aria-pressed={visible}
+            aria-label={visible ? AUTH_COPY.fields.hide : AUTH_COPY.fields.show}
+          >
+            {visible ? <EyeOff aria-hidden="true" className="size-5" /> : <Eye aria-hidden="true" className="size-5" />}
+          </button>
+        ) : null}
+      </div>
       {error !== null ? (
         <p id={`${id}-error`} className={S.fieldError}>
           {error}
@@ -84,11 +99,6 @@ export function PasswordField({ id, name = "password", label, autoComplete, erro
         <p id={`${id}-hint`} className={S.hint}>
           {hint}
         </p>
-      ) : null}
-      {onToggle ? (
-        <button type="button" className={S.toggle} onClick={onToggle} aria-controls={id}>
-          {visible ? AUTH_COPY.fields.hide : AUTH_COPY.fields.show}
-        </button>
       ) : null}
     </div>
   );

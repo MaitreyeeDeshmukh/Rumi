@@ -1,18 +1,19 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { Checklist } from "@/components/appointments/Checklist";
 import { CallScriptBox, ListEditor } from "@/components/appointments/parts";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { Screen } from "@/components/ui/screen";
 import { APPT } from "@/content/appointments";
-import { callScript, dayLong, timeText } from "@/features/appointments/appointments";
+import { callScript, dayLong, timeText, whereLine } from "@/features/appointments/appointments";
 import type { Appointment, RumiState } from "@/features/shared/types";
 import { PAGES } from "@/lib/pages";
 import { useRumi } from "@/lib/rumiActive";
 
-type NoteKey = "questions" | "bring" | "symptoms";
+type NoteKey = "questions" | "symptoms";
 
 /** /appointment?id=...: the facts, the call script, the notes to prepare, and the ways on (practice, record). */
 export function AppointmentScreen() {
@@ -23,11 +24,14 @@ export function AppointmentScreen() {
   const a = (state.appointments ?? []).find((x) => x.id === id);
   const visits = (state.visits ?? []).filter((v) => v.apptId === id);
 
-  const change = (fn: (x: Appointment) => void) =>
-    update((d: RumiState) => {
-      const x = (d.appointments ?? []).find((y) => y.id === id);
-      if (x) fn(x);
-    });
+  const change = useCallback(
+    (fn: (x: Appointment) => void) =>
+      update((d: RumiState) => {
+        const x = (d.appointments ?? []).find((y) => y.id === id);
+        if (x) fn(x);
+      }),
+    [update, id],
+  );
   const setNotes = (key: NoteKey, next: string[]) => change((x) => (x[key] = next));
   const remove = () => {
     update((d: RumiState) => {
@@ -59,7 +63,7 @@ export function AppointmentScreen() {
                 <strong>{APPT.when}:</strong> {dayLong(a.date)} at {timeText(a.time)}
               </p>
               <p className="m-0">
-                <strong>{APPT.where}:</strong> {a.providerName}, {a.clinic}
+                <strong>{APPT.where}:</strong> {whereLine(a)}
               </p>
               <p className="m-0">
                 <strong>{APPT.care[a.care]}</strong>
@@ -80,6 +84,8 @@ export function AppointmentScreen() {
 
             <CallScriptBox initial={callScript(a, state.settings.name)} />
 
+            <Checklist a={a} change={change} />
+
             <section id="prep" aria-labelledby="appt-prep" className="grid gap-4">
               <div>
                 <h2 id="appt-prep" className="mt-0 mb-1 text-xl">
@@ -88,12 +94,11 @@ export function AppointmentScreen() {
                 <p className="m-0 text-muted-ink">{APPT.prepLead}</p>
               </div>
               <ListEditor title={APPT.questions} addLabel={APPT.questionsAdd} items={a.questions} onChange={(n) => setNotes("questions", n)} />
-              <ListEditor title={APPT.bring} addLabel={APPT.bringAdd} items={a.bring} onChange={(n) => setNotes("bring", n)} />
               <ListEditor title={APPT.symptoms} addLabel={APPT.symptomsAdd} items={a.symptoms} onChange={(n) => setNotes("symptoms", n)} />
             </section>
 
             <div className="grid gap-3">
-              <ButtonLink kind="primary" arrow block href="/practice">
+              <ButtonLink kind="primary" arrow block href={`/practice?appt=${a.id}`}>
                 {APPT.practice}
               </ButtonLink>
               <ButtonLink kind="secondary" block href={`/record?appt=${a.id}`}>

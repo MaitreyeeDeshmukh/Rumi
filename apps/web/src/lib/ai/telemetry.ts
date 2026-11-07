@@ -60,7 +60,7 @@ const CRISIS_SOURCES: readonly string[] = ["tier1", "model_yes", "model_flag", "
 const PROVIDER_ERRORS: readonly string[] = ["timeout", "http", "rate_limited", "rejected", "config", "empty", "aborted", "skipped"];
 const FINISH_REASONS: readonly string[] = ["stop", "length", "other"];
 
-const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap"];
+const TASKS: readonly string[] = ["plan", "practice", "sayit", "recap", "appointmentScan", "appointmentLookup"];
 const OUTCOMES: readonly string[] = ["ok", "mock", "crisis", "fallback", "error"];
 const TIERS: readonly string[] = ["quality", "fast", "none"];
 const ERROR_CODES: readonly string[] = ["bad_input", "too_large", "forbidden", "ai_invalid", "ai_unavailable", "rate_limited", "config", "unauthorized", "timeout", "internal", "store_unavailable"];
