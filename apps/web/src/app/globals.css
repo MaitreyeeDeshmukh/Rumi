@@ -118,7 +118,8 @@ main[data-no-tabs] .sticky-actions[data-sticky="true"] { bottom: env(safe-area-i
 .skip-link:focus { left: 0; }
 
 /* The Back button sits to the left of the page heading, on the same row, so it does not use a row of its own. */
-.back-row { float: left; margin: 0 var(--space-3) 0 0; }
+/* position + z-index: .page-enter (a transform animation, so a stacking context) is the next sibling and would paint over the float and swallow clicks on Back. */
+.back-row { float: left; margin: 0 var(--space-3) 0 0; position: relative; z-index: 1; }
 .back-row a { min-height: 2.5rem; padding-block: .25rem; padding-inline: .75rem; }
 main h1 { display: flow-root; min-height: 2.5rem; }
 main h1 + * { clear: left; }

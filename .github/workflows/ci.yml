@@ -79,12 +79,18 @@ jobs:
         run: pnpm check
       - name: Build
         working-directory: apps/web
+        # The browser tests drive app screens without a Supabase session, so the sign-up gate is off for the build and the run
+        # (not for `pnpm check` above: the unit tests read this variable themselves).
+        env:
+          NEXT_PUBLIC_AUTH_OPTIONAL: "1"
         run: pnpm build
       - name: Dependency audit
         working-directory: apps/web
         run: pnpm audit --audit-level=high
       - name: Browser tests (phone and desktop, axe)
         working-directory: apps/web
+        env:
+          NEXT_PUBLIC_AUTH_OPTIONAL: "1"
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm test:e2e
