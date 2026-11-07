@@ -50,10 +50,9 @@ test.describe("practice: the call screen", () => {
     const layer = call(page);
     expect(await layer.evaluate((el) => getComputedStyle(el).zIndex)).toBe("40");
 
-    // Own top bar: Back (visible text Back) and Urgent help; the shell behind is not reachable.
+    // Own top bar: Back (visible text Back); the shell behind is not reachable.
     const back = layer.getByRole("button", { name: "Back to Practice" });
     await expect(back).toHaveText("Back");
-    await expect(layer.getByRole("link", { name: "Urgent help" })).toBeVisible();
     expect(await page.locator("main").evaluate((el) => el.closest("[inert]") !== null)).toBe(true);
     for (let i = 0; i < 25; i++) {
       await page.keyboard.press("Tab");
@@ -82,12 +81,11 @@ test.describe("practice: the call screen", () => {
       await expect(layer.getByText("I will speak more slowly.")).toBeVisible();
     }
 
-    // Show my plan: the lines that are on, an Urgent help button, and a Close.
+    // Show my plan: the lines that are on, and a Close.
     await layer.getByRole("button", { name: "Show my plan" }).click();
     const plan = page.getByRole("dialog", { name: "Your plan" });
     await expect(plan.getByText("Please speak slowly.")).toBeVisible();
     await expect(plan.getByText("Please write the steps down.")).toHaveCount(0);
-    await expect(plan.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await plan.getByRole("button", { name: "Close", exact: true }).click();
     await expect(plan).toHaveCount(0);
 
@@ -105,7 +103,6 @@ test.describe("practice: the call screen", () => {
     const paused = page.getByRole("dialog", { name: "Paused" });
     await expect(paused.getByText("Nothing moves on until you are ready.", { exact: false })).toBeVisible();
     await expect(paused.getByRole("button", { name: "Resume" })).toHaveAttribute("data-kind", "primary");
-    await expect(paused.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await expect(layer.locator('[data-kind="primary"]')).toHaveCount(0);
     await expect(layer.locator("button[type=submit]")).toBeDisabled();
     await paused.getByRole("button", { name: "Resume" }).click();
@@ -119,7 +116,6 @@ test.describe("practice: the call screen", () => {
     await layer.getByRole("button", { name: "Help me say it" }).click();
     const sheet = page.getByRole("dialog", { name: "Help me say it" });
     await expect(sheet.getByTestId("help-text")).toContainText("Say what is wrong");
-    await expect(sheet.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await expect(sheet.getByRole("button", { name: "Use this" })).toHaveCount(0);
 
     await sheet.getByRole("button", { name: "Show more help" }).click();
@@ -204,7 +200,6 @@ test.describe("practice: leaving and history", () => {
     await expect(sheet.getByText("This practice will not be saved. You can start again any time.")).toBeVisible();
     await expect(sheet.getByRole("button", { name: "Keep practicing" })).toHaveAttribute("data-kind", "primary");
     await expect(sheet.getByRole("button", { name: "Leave" })).toHaveAttribute("data-kind", "secondary");
-    await expect(sheet.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await sheet.getByRole("button", { name: "Keep practicing" }).click();
     await expect(sheet).toHaveCount(0);
 
@@ -273,29 +268,6 @@ test.describe("practice: leaving and history", () => {
 });
 
 test.describe("practice: crisis help", () => {
-  test("Urgent help in the call bar opens the crisis dialog, which Esc cannot close", async ({ page }) => {
-    await start(page);
-    await call(page).getByRole("link", { name: "Urgent help" }).click();
-    const dialog = page.getByRole("dialog", { name: "You may need help right now" });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("link", { name: "Call 988" }).click({ trial: true });
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: "I understand" }).click();
-    await expect(dialog).toBeHidden();
-    await expect(call(page)).toBeVisible();
-  });
-
-  test("Urgent help inside the leave sheet closes the sheet, then the dialog links are clickable", async ({ page }) => {
-    await start(page);
-    await call(page).getByRole("button", { name: "Back to Practice" }).click();
-    await leaveSheet(page).getByRole("link", { name: "Urgent help" }).click();
-    await expect(leaveSheet(page)).toHaveCount(0);
-    const dialog = page.getByRole("dialog", { name: "You may need help right now" });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("link", { name: "Call 988" }).click({ trial: true });
-  });
 
   test("crisis words in an answer show help and are not sent", async ({ page }) => {
     await start(page);

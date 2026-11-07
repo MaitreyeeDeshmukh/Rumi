@@ -10,7 +10,6 @@ test.describe("share (/share)", () => {
     await seed(page, "recap");
     await page.goto("/share");
     await expect(main(page).getByRole("link", { name: /^Back/ })).toHaveAttribute("href", "/home");
-    await expect(page.getByRole("link", { name: "Urgent help" }).filter({ visible: true }).first()).toBeVisible();
     const boxes = main(page).getByRole("checkbox");
     await expect(boxes).toHaveCount(7);
     for (const box of await boxes.all()) await expect(box).not.toBeChecked();

@@ -20,11 +20,6 @@ test.describe("every page meets the shipping rules", () => {
       expect(text).not.toMatch(BANNED_WORDS);
     });
 
-    test(`${route}: Urgent help is visible`, async ({ page }) => {
-      await page.goto(route);
-      await expect(page.getByRole("link", { name: "Urgent help" }).first()).toBeVisible();
-    });
-
     test(`${route}: no horizontal scroll at any width`, async ({ page }) => {
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 800 });

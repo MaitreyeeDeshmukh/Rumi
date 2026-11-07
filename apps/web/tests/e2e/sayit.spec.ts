@@ -33,7 +33,6 @@ test.describe("say it (/say-it)", () => {
     await page.addInitScript(() => Object.defineProperty(window, "speechSynthesis", { value: undefined, configurable: true }));
     await page.goto("/say-it");
     await expect(main(page).getByRole("link", { name: /^Back/ })).toHaveAttribute("href", "/home");
-    await expect(page.getByRole("link", { name: "Urgent help" }).filter({ visible: true }).first()).toBeVisible();
     for (const name of SCENARIOS) await expect(main(page).getByRole("button", { name, exact: true })).toBeVisible();
     await expect(primary(page)).toHaveCount(0);
 

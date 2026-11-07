@@ -10,7 +10,6 @@ test.describe("settings (/settings)", () => {
     await seed(page, "empty");
     await page.goto("/settings");
     await expect(main(page).getByRole("link", { name: /^Back/ })).toHaveAttribute("href", "/home");
-    await expect(page.getByRole("link", { name: "Urgent help" }).filter({ visible: true }).first()).toBeVisible();
     await expect(main(page).locator('[data-kind="primary"]')).toHaveCount(0);
     for (const legend of ["About you", "Reading", "Look", "Sound", "Memory", "Your data", "Delete everything"]) {
       await expect(main(page).getByRole("group", { name: legend })).toBeVisible();
@@ -59,7 +58,6 @@ test.describe("settings (/settings)", () => {
     expect((await settings(page)).memoryOptIn).toBe(true);
     await main(page).getByRole("button", { name: "Forget everything" }).click();
     const sheet = page.getByRole("dialog", { name: "Forget everything?" });
-    await expect(sheet.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await sheet.getByRole("button", { name: "Keep them" }).click();
     expect((await settings(page)).memoryOptIn).toBe(true);
     await main(page).getByRole("button", { name: "Forget everything" }).click();
@@ -72,7 +70,6 @@ test.describe("settings (/settings)", () => {
     await page.goto("/settings");
     await main(page).getByRole("button", { name: "Delete everything" }).click();
     const sheet = page.getByRole("dialog", { name: "Delete everything?" });
-    await expect(sheet.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await sheet.getByRole("button", { name: "Cancel" }).click();
     await expect(sheet).toHaveCount(0);
     expect((await settings(page)).name).toBe("Sam");

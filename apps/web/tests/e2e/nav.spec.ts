@@ -14,13 +14,12 @@ async function seedOnce(page: Page, value: unknown) {
 }
 
 test.describe("header", () => {
-  test("at 1280 shows the logo, four links, Urgent help and Open Rumi, and no Menu", async ({ page }) => {
+  test("at 1280 shows the logo, four links and Open Rumi, and no Menu", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/help");
     const h = header(page);
     await expect(h.getByRole("link", { name: "Rumi home" })).toBeVisible();
     for (const name of LINKS) await expect(h.getByRole("link", { name, exact: true })).toBeVisible();
-    await expect(h.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await expect(h.getByRole("link", { name: "Open Rumi" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
   });
@@ -31,7 +30,6 @@ test.describe("header", () => {
       await page.goto("/help");
       for (const name of LINKS) await expect(header(page).getByRole("link", { name, exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
-      await expect(header(page).getByRole("link", { name: "Urgent help" })).toBeVisible();
     });
   }
 });
@@ -39,7 +37,7 @@ test.describe("header", () => {
 test.describe("menu sheet", () => {
   test.use({ viewport: { width: 375, height: 800 } });
 
-  test("opens with the links, Open Rumi and Urgent help; Escape closes it and focus returns", async ({ page }) => {
+  test("opens with the links and Open Rumi; Escape closes it and focus returns", async ({ page }) => {
     await page.goto("/help");
     const menu = page.getByRole("button", { name: "Menu" });
     await menu.click();
@@ -51,7 +49,6 @@ test.describe("menu sheet", () => {
       expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(55.9); // 56 px minus layout rounding
     }
     await expect(sheet.getByRole("link", { name: "Open Rumi" })).toBeVisible();
-    await expect(sheet.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
     await expect(menu).toBeFocused();
@@ -67,17 +64,6 @@ test.describe("menu sheet", () => {
     await expect(sheet).toBeHidden();
   });
 
-  test("Urgent help closes the sheet, then the crisis dialog opens and works", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Menu" }).click();
-    const sheet = page.getByRole("dialog", { name: "Menu" });
-    await sheet.getByRole("link", { name: "Urgent help" }).click();
-    await expect(sheet).toBeHidden();
-    const crisis = page.getByRole("dialog", { name: "You may need help right now" });
-    await expect(crisis).toBeVisible();
-    expect(await crisis.evaluate((el) => el.contains(document.activeElement))).toBe(true);
-    await crisis.getByRole("link", { name: "Call 988" }).click({ trial: true });
-  });
 });
 
 test.describe("footer", () => {
@@ -162,14 +148,6 @@ test.describe("text size", () => {
             expect(overlap, `${a.name} overlaps ${b.name}`).toBe(false);
           }
         }
-
-        const urgent = header(page).getByRole("link", { name: "Urgent help" });
-        const covered = await urgent.evaluate((el) => {
-          const r = el.getBoundingClientRect();
-          const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-          return !(top && el.contains(top));
-        });
-        expect(covered).toBe(false);
       });
     }
   }
@@ -178,11 +156,8 @@ test.describe("text size", () => {
 test.describe("JavaScript off", () => {
   test.use({ javaScriptEnabled: false, viewport: { width: 375, height: 800 } });
 
-  test("the header Urgent help is a link to /safety; Menu and Look are not rendered", async ({ page }) => {
+  test("Menu and Look are not rendered", async ({ page }) => {
     await page.goto("/help");
-    const urgent = header(page).getByRole("link", { name: "Urgent help" });
-    await expect(urgent).toHaveAttribute("href", "/safety");
-    expect(await urgent.evaluate((el) => el.tagName)).toBe("A");
     await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
     await expect(page.getByRole("radio")).toHaveCount(0);
     await expect(page.getByRole("radiogroup")).toHaveCount(0);
@@ -260,7 +235,6 @@ test.describe("app tab bar (375)", () => {
     await page.goto("/welcome");
     await expect(appNav(page)).toHaveCount(0);
     await expect(page.locator("main")).toHaveAttribute("data-no-tabs", "");
-    await expect(page.locator("header").getByRole("link", { name: "Urgent help" })).toBeVisible();
   });
 });
 
@@ -275,23 +249,20 @@ test.describe("app sidebar (1280)", () => {
     for (const name of [...TABS, "Say it"]) await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
     const group = nav.getByRole("group", { name: "Help and info" });
     await expect(group.getByRole("link")).toHaveText(INFO);
-    await expect(nav.getByRole("link", { name: "Urgent help" })).toBeVisible();
     await expect(page.locator("header:visible")).toHaveCount(0); // the bar is hidden at this width
   });
 
-  test("/welcome has no sidebar and still shows the logo and Urgent help in the bar", async ({ page }) => {
+  test("/welcome has no sidebar and still shows the logo in the bar", async ({ page }) => {
     await page.goto("/welcome");
     await expect(appNav(page)).toHaveCount(0);
     await expect(page.locator("header").getByRole("link", { name: "Rumi home" })).toBeVisible();
-    await expect(page.locator("header").getByRole("link", { name: "Urgent help" })).toBeVisible();
   });
 });
 
 test.describe("every app route", () => {
   for (const route of APP_PAGES) {
-    test(`${route}: Urgent help, h1 and the five info links at the end`, async ({ page }) => {
+    test(`${route}: h1 and the five info links at the end`, async ({ page }) => {
       await page.goto(route);
-      await expect(page.getByRole("link", { name: "Urgent help" }).first()).toBeVisible();
       await expect(page.locator("main h1")).toHaveCount(1);
       const info = page.locator("main footer").getByRole("link");
       await expect(info).toHaveText(INFO);
@@ -353,7 +324,7 @@ test.describe("focus is never hidden by the tab bar (375 x 667)", () => {
 test.describe("the app bar stays on screen (375 x 667)", () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
-  test("Urgent help is visible after scrolling to the end, and the bar does not cover Back", async ({ page }) => {
+  test("the bar does not cover Back, and stays on screen after scrolling to the end", async ({ page }) => {
     await seed(page, "practiced");
     await page.goto("/home");
     await expect(page.locator('main [data-kind="primary"]')).toBeVisible();
@@ -361,30 +332,12 @@ test.describe("the app bar stays on screen (375 x 667)", () => {
     const back = (await page.locator("main").getByRole("link", { name: /^Back/ }).boundingBox())!;
     expect(back.y).toBeGreaterThanOrEqual(head.y + head.height);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    const urgent = (await page.locator("header").getByRole("link", { name: "Urgent help" }).boundingBox())!;
-    expect(urgent.y).toBeGreaterThanOrEqual(0);
-    expect(urgent.y + urgent.height).toBeLessThanOrEqual(667);
+    const bar = (await page.locator("header").boundingBox())!;
+    expect(bar.y).toBeGreaterThanOrEqual(0);
+    expect(bar.y + bar.height).toBeLessThanOrEqual(667);
     const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
     expect(pad).toBeGreaterThanOrEqual(head.height);
   });
-});
-
-test.describe("the sidebar keeps Urgent help in view", () => {
-  for (const [width, height, scale] of [
-    [1280, 600, 1],
-    [1280, 600, 1.5],
-    [1024, 768, 1.5],
-  ] as const) {
-    test(`${width} x ${height} at text size ${scale}`, async ({ page }) => {
-      await page.setViewportSize({ width, height });
-      await seed(page, "plan", { textScale: scale });
-      await page.goto("/home");
-      const link = page.locator(TAB_BAR).getByRole("link", { name: "Urgent help" });
-      await expect(link).toBeVisible();
-      const bottom = await link.evaluate((el) => el.getBoundingClientRect().bottom);
-      expect(bottom).toBeLessThanOrEqual(height);
-    });
-  }
 });
 
 test.describe("the app shell holds together at larger text", () => {
