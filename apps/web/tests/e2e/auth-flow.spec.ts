@@ -20,6 +20,22 @@ const UI = {
   deviceOnlyNotice: /data on this device only/i,
 };
 
+/**
+ * axe reads the colours on screen at that moment. A short entrance animation (the landing page fades its text in over
+ * about a second) would be read half faded, which fails colour contrast on a slow runner. Wait for the short ones to end.
+ * Long decorative animations are left alone: they never finish within the test.
+ */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => Number(a.effect?.getComputedTiming().endTime ?? 0) <= 3000)
+        .map((a) => a.finished.catch(() => undefined)),
+    ).then(() => undefined),
+  );
+}
+
 /** Collects every request the page makes, with its headers, so a test can search them. */
 function watchRequests(page: Page): { seen: string[] } {
   const seen: string[] = [];
@@ -89,6 +105,7 @@ test.describe("Supabase is unreachable: every page still works", () => {
       await page.waitForLoadState("networkidle");
 
       expect(errors, "uncaught errors on the page").toEqual([]);
+      await settled(page);
       const results = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
       expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
       expect(seen.filter((l) => SECRET_SHAPES.test(l))).toEqual([]);
@@ -171,10 +188,12 @@ test.describe("anonymous flow with a working Supabase", () => {
     await mockSupabase(context);
     await page.goto("/");
     await expect(page.locator("main")).toBeVisible();
+    await settled(page);
     const signedIn = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
     expect(signedIn.violations.map((v) => v.id)).toEqual([]);
     await page.evaluate(() => localStorage.clear());
     await page.reload();
+    await settled(page);
     const notice = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
     expect(notice.violations.map((v) => v.id)).toEqual([]);
   });
@@ -192,6 +211,7 @@ test.describe.fixme("sign-in refused", () => {
       await page.goto("/");
       await expect(page.getByText(UI.pausedLine)).toBeVisible();
       await expect(page.locator("main")).toBeVisible();
+      await settled(page);
       const results = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
       expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
       expect(mock.to("/rest/v1/"), "nothing is written to the cloud without a user").toEqual([]);
