@@ -58,7 +58,7 @@ jobs:
       NEXT_PUBLIC_E2E: "1"
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
@@ -153,7 +153,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
@@ -177,7 +177,7 @@ jobs:
       RUMI_REQUIRE_LANES: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
@@ -205,7 +205,7 @@ jobs:
       RUMI_E2E_AUTH: "1"
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
@@ -255,7 +255,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_value
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
@@ -291,7 +291,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
@@ -328,7 +328,7 @@ jobs:
       NEXT_PUBLIC_AUTH_OPTIONAL: "1"
     steps:
       - uses: actions/checkout@v4.2.2
-      - uses: pnpm/action-setup@v4.1.0
+      - uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: apps/web/package.json
       - uses: actions/setup-node@v4.4.0
