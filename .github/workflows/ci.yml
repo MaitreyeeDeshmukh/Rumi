@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - name: No stray Markdown files
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v4.4.0
         with:
           node-version-file: .nvmrc
@@ -57,7 +57,7 @@ jobs:
       NEXT_PUBLIC_CONTACT_EMAIL: team@rumi.test
       NEXT_PUBLIC_E2E: "1"
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - name: Find the database folder
         id: db
         run: |
@@ -152,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
@@ -176,7 +176,7 @@ jobs:
     env:
       RUMI_REQUIRE_LANES: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
@@ -204,7 +204,7 @@ jobs:
       MOCK_AI: "1"
       RUMI_E2E_AUTH: "1"
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
@@ -254,7 +254,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://rumi-ci.supabase.test
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_value
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
@@ -290,7 +290,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
@@ -308,7 +308,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2.3.9
@@ -327,7 +327,7 @@ jobs:
       # A production build with MOCK_AI requires sign-in on AI routes (401 otherwise); this run measures the app, not Auth.
       NEXT_PUBLIC_AUTH_OPTIONAL: "1"
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v4.1.0
         with:
           package_json_file: apps/web/package.json
