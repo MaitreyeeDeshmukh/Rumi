@@ -366,7 +366,7 @@ jobs:
           done
           echo "the app did not start" >&2
           exit 1
-      - uses: grafana/setup-k6-action@v1.1.0
+      - uses: grafana/setup-k6-action@v1.3.0
       - name: k6 smoke
         # localhost, not 127.0.0.1: next start builds request URLs with host "localhost", and the same-origin check (403) compares it to the Origin k6 sends.
         run: k6 run -e BASE_URL=http://localhost:3000 apps/web/tests/load/smoke.js
